@@ -3,6 +3,14 @@ import PushKit
 import Tauri
 import WebKit
 
+struct WatchCallAnsweredArgs: Decodable {
+    let channel: Channel
+}
+
+struct WatchCallEndedArgs: Decodable {
+    let channel: Channel
+}
+
 class CallKitPlugin: Plugin, CXProviderDelegate, PKPushRegistryDelegate {
     private var provider: CXProvider!
     private let callController = CXCallController()
@@ -17,6 +25,15 @@ class CallKitPlugin: Plugin, CXProviderDelegate, PKPushRegistryDelegate {
     // Last VoIP token received from PushKit; may arrive before the JS listener is ready.
     private var cachedVoipToken: String?
 
+    // channelId from the most recent answered call; may arrive before the JS listener is ready.
+    private var pendingAnsweredChannelId: String?
+
+    // Channels registered via watchCallAnswered — receives call-answered events directly.
+    private var callAnsweredChannels: [Channel] = []
+
+    // Channels registered via watchCallEnded — receives call-ended events directly.
+    private var callEndedChannels: [Channel] = []
+
     override public func load(webview: WKWebView) {
         let config = CXProviderConfiguration()
         config.supportsVideo = false
@@ -28,6 +45,7 @@ class CallKitPlugin: Plugin, CXProviderDelegate, PKPushRegistryDelegate {
         registry = PKPushRegistry(queue: .main)
         registry.delegate = self
         registry.desiredPushTypes = [.voIP]
+
     }
 
     // MARK: - PKPushRegistryDelegate
@@ -108,17 +126,27 @@ class CallKitPlugin: Plugin, CXProviderDelegate, PKPushRegistryDelegate {
             action.fail()
             return
         }
-        trigger("call-answered", data: [
-            "channelId": channelId,
-        ])
+        // Cache for the background/cold-start drain path (visibilitychange + initial drain).
+        pendingAnsweredChannelId = channelId
+        // Send directly to JS via Channel
+        let channels = callAnsweredChannels
+        DispatchQueue.main.async {
+            let payload: JsonObject = ["channelId": channelId]
+            channels.forEach { channel in
+                channel.send(payload)
+            }
+        }
         action.fulfill()
         pendingCalls.removeValue(forKey: action.callUUID)
     }
 
     public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-        trigger("call-ended", data: [
-            "callId": action.callUUID.uuidString,
-        ])
+        let callId = action.callUUID.uuidString
+        let channels = callEndedChannels
+        DispatchQueue.main.async {
+            let payload: JsonObject = ["callId": callId]
+            channels.forEach { channel in channel.send(payload) }
+        }
         action.fulfill()
         pendingCalls.removeValue(forKey: action.callUUID)
         if activeCallUUID == action.callUUID { activeCallUUID = nil }
@@ -126,12 +154,36 @@ class CallKitPlugin: Plugin, CXProviderDelegate, PKPushRegistryDelegate {
 
     // MARK: - Tauri commands
 
+    /// Registers a JS Channel to receive call-answered events.
+    @objc public func watchCallAnswered(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(WatchCallAnsweredArgs.self)
+        callAnsweredChannels.append(args.channel)
+        invoke.resolve()
+    }
+
+    /// Registers a JS Channel to receive call-ended events.
+    @objc public func watchCallEnded(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(WatchCallEndedArgs.self)
+        callEndedChannels.append(args.channel)
+        invoke.resolve()
+    }
+
     /// Returns the last VoIP token received from PushKit, or null if none has
     /// arrived yet. JS calls this once at startup after registering the
     /// voip-token-updated listener to drain any token that arrived before the
     /// listener was ready.
     @objc public func getVoipToken(_ invoke: Invoke) {
         invoke.resolve(["token": cachedVoipToken as Any])
+    }
+
+    /// Returns the channelId from the most recent answered call, then clears it.
+    /// JS calls this once after registering the call-answered listener so it can
+    /// handle any answer that arrived before the listener was ready (e.g. fresh
+    /// app launch triggered by a VoIP push).
+    @objc public func getPendingAnsweredCall(_ invoke: Invoke) {
+        let channelId = pendingAnsweredChannelId
+        pendingAnsweredChannelId = nil
+        invoke.resolve(["channelId": channelId as Any])
     }
 
     /// Called by the JS layer when the user leaves a call from within the app,

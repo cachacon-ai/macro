@@ -16,6 +16,9 @@
     "auth:allow-authenticate",
     "device-info:default",
     "call-kit:allow-get-voip-token",
-    "call-kit:allow-end-active-call"
+    "call-kit:allow-end-active-call",
+    "call-kit:allow-get-pending-answered-call",
+    "call-kit:allow-watch-call-answered",
+    "call-kit:allow-watch-call-ended"
   ]
 }

@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { createEffect, createRoot, createSignal } from 'solid-js';
 import type { SplitManager } from '../component/split-layout/layoutManager';
 
 /**
@@ -6,3 +6,26 @@ import type { SplitManager } from '../component/split-layout/layoutManager';
  */
 export const [globalSplitManager, setGlobalSplitManager] =
   createSignal<SplitManager>();
+
+/**
+ * Resolves once the global split manager is initialized. Safe to call from
+ * outside a reactive context (e.g. async event handlers).
+ */
+export function whenSplitManagerReady(): Promise<SplitManager> {
+  return new Promise((resolve) => {
+    const current = globalSplitManager();
+    if (current) {
+      resolve(current);
+      return;
+    }
+    createRoot((dispose) => {
+      createEffect(() => {
+        const m = globalSplitManager();
+        if (m) {
+          dispose();
+          resolve(m);
+        }
+      });
+    });
+  });
+}
