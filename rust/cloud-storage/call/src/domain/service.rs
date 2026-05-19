@@ -266,6 +266,84 @@ fn exclude_voip_recipients<'a>(
         .collect()
 }
 
+/// Mint a per-recipient LiveKit token concurrently and build the matching
+/// VoIP push payload for each.
+///
+/// Recipients whose token mint fails are dropped (and logged) so a single
+/// transient LiveKit API failure cannot block the rest of the group from
+/// ringing. Returns the successfully-prepared `(recipient, payload)` pairs
+/// in arbitrary order.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn build_voip_push_payloads<C>(
+    rtc_client: &C,
+    recipients: &[MacroUserIdStr<'static>],
+    room_name: &str,
+    call_id: Uuid,
+    channel_id: &str,
+    channel_name: &str,
+    caller_name: &str,
+    livekit_server_url: &str,
+) -> Vec<(MacroUserIdStr<'static>, VoipPushPayload)>
+where
+    C: CallRtcClient + ?Sized,
+{
+    let mints = recipients.iter().map(|recipient_id| async move {
+        match rtc_client
+            .generate_token(room_name, recipient_id.clone())
+            .await
+        {
+            Ok(livekit_token) => Some((
+                recipient_id.clone(),
+                VoipPushPayload {
+                    aps: Default::default(),
+                    call_id: call_id.to_string(),
+                    channel_id: channel_id.to_string(),
+                    channel_name: channel_name.to_string(),
+                    caller_name: caller_name.to_string(),
+                    livekit_server_url: Some(livekit_server_url.to_string()),
+                    livekit_token: Some(livekit_token),
+                },
+            )),
+            Err(e) => {
+                tracing::error!(
+                    error=?e,
+                    recipient=?recipient_id,
+                    "failed to mint LiveKit token for VoIP push"
+                );
+                None
+            }
+        }
+    });
+    futures::future::join_all(mints)
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+/// Fan out per-recipient VoIP pushes concurrently and collect the set of
+/// users that received at least one successful delivery.
+///
+/// Each `send_voip_push` future is awaited via `join_all` so a slow recipient
+/// does not block the rest. Recipients whose delivery returns `None` (no VoIP
+/// endpoint, SNS error, or repository failure) are filtered out by `flatten`.
+pub(crate) async fn dispatch_voip_pushes<V>(
+    sender: &V,
+    payloads: &[(MacroUserIdStr<'static>, VoipPushPayload)],
+) -> HashSet<MacroUserIdStr<'static>>
+where
+    V: VoipPushSender,
+{
+    let send_futures = payloads
+        .iter()
+        .map(|(id, payload)| sender.send_voip_push(id.clone(), payload));
+    futures::future::join_all(send_futures)
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct CallStartedNotification {
     sender_profile_picture_url: Option<String>,
@@ -459,20 +537,33 @@ impl<
 
                             // Send VoIP push for the native iOS incoming-call sheet first.
                             // Recipients with successful VoIP delivery do not need the regular
-                            // APNS alert banner as well.
-                            let recipient_vec: Vec<MacroUserIdStr<'_>> =
-                                recipient_ids.iter().cloned().collect();
-                            let voip_payload = VoipPushPayload {
-                                aps: Default::default(),
-                                call_id: call.id.to_string(),
-                                channel_id: channel_id_str.clone(),
-                                channel_name: channel_name.clone().unwrap_or_default(),
-                                caller_name,
-                            };
-                            let voip_recipient_ids = self
-                                .voip_push_sender
-                                .send_voip_push(&recipient_vec, &voip_payload)
-                                .await;
+                            // APNS alert banner as well. Each recipient gets a per-identity
+                            // LiveKit token embedded in the push so the iOS native client can
+                            // join the call directly — required for answering from the lock
+                            // screen, where the webview cannot run.
+                            let recipient_vec: Vec<MacroUserIdStr<'static>> = recipient_ids
+                                .iter()
+                                .cloned()
+                                .map(CowLike::into_owned)
+                                .collect();
+
+                            // Mint per-recipient tokens in parallel — one round trip per
+                            // recipient, all fired concurrently rather than sequentially.
+                            let payloads = build_voip_push_payloads(
+                                &self.rtc_client,
+                                &recipient_vec,
+                                &call.room_name,
+                                call.id,
+                                &channel_id_str,
+                                &channel_name.clone().unwrap_or_default(),
+                                &caller_name,
+                                &self.server_url,
+                            )
+                            .await;
+
+                            // Fan out the SNS pushes in parallel as well.
+                            let voip_recipient_ids =
+                                dispatch_voip_pushes(&self.voip_push_sender, &payloads).await;
 
                             let apns_recipient_ids =
                                 exclude_voip_recipients(recipient_ids, &voip_recipient_ids);

@@ -384,37 +384,42 @@ pub trait NotificationIngressQueue: Send + Sync + 'static {
 /// immediately without DB persistence and wake the app via PushKit so that
 /// CallKit can display the native incoming-call UI.
 pub trait VoipPushSender: Send + Sync + 'static {
-    /// Send a VoIP push to all registered VoIP device endpoints of the given users.
+    /// Send a VoIP push to the given user's registered VoIP device endpoints.
     ///
-    /// Errors are logged but do not propagate. The returned set contains users
-    /// that received at least one successful VoIP push delivery.
+    /// Per-recipient because each push carries a recipient-specific LiveKit
+    /// token; callers fan out concurrently (e.g. via `join_all`) to deliver
+    /// to multiple users.
+    ///
+    /// Errors are logged but do not propagate. Returns `Some(recipient_id)`
+    /// if at least one VoIP endpoint received the push successfully, else
+    /// `None`.
     fn send_voip_push(
         &self,
-        recipient_ids: &[MacroUserIdStr<'_>],
+        recipient_id: MacroUserIdStr<'_>,
         payload: &VoipPushPayload,
-    ) -> impl std::future::Future<Output = HashSet<MacroUserIdStr<'static>>> + Send;
+    ) -> impl std::future::Future<Output = Option<MacroUserIdStr<'static>>> + Send;
 }
 
 impl VoipPushSender for () {
     async fn send_voip_push(
         &self,
-        _: &[MacroUserIdStr<'_>],
+        _: MacroUserIdStr<'_>,
         _: &VoipPushPayload,
-    ) -> HashSet<MacroUserIdStr<'static>> {
-        HashSet::new()
+    ) -> Option<MacroUserIdStr<'static>> {
+        None
     }
 }
 
 impl<V: VoipPushSender> VoipPushSender for Option<V> {
     async fn send_voip_push(
         &self,
-        recipient_ids: &[MacroUserIdStr<'_>],
+        recipient_id: MacroUserIdStr<'_>,
         payload: &VoipPushPayload,
-    ) -> HashSet<MacroUserIdStr<'static>> {
+    ) -> Option<MacroUserIdStr<'static>> {
         if let Some(inner) = self {
-            inner.send_voip_push(recipient_ids, payload).await
+            inner.send_voip_push(recipient_id, payload).await
         } else {
-            HashSet::new()
+            None
         }
     }
 }

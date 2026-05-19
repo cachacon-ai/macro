@@ -15,8 +15,10 @@ import {
   RoomEvent,
   Track,
 } from 'livekit-client';
+import { isPlatform, isTauri } from '@core/util/platform';
 import {
   createContext,
+  createEffect,
   createSignal,
   onCleanup,
   type ParentProps,
@@ -24,6 +26,10 @@ import {
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { CallAudioSink } from './CallAudioSink';
+import {
+  nativeCallSnapshot,
+  type NativeCallConnectionState,
+} from './native-call-state';
 
 export type CallParticipantInfo = {
   identity: string;
@@ -102,6 +108,19 @@ async function applyNativeNoiseSuppressionToMicTrack(
     console.error('failed to update native mic noise suppression', e);
   }
 }
+
+// Swift's RoomDelegate emits five connection states; livekit-client's
+// ConnectionState enum models four (no 'disconnecting'), so we collapse that
+// transitional state to Disconnected. The `satisfies` clause makes TS verify
+// every NativeCallConnectionState variant has a mapping at compile time, so
+// adding a Swift-side state without updating this table is a type error.
+const NATIVE_TO_LIVEKIT_STATE = {
+  disconnected: ConnectionState.Disconnected,
+  connecting: ConnectionState.Connecting,
+  connected: ConnectionState.Connected,
+  reconnecting: ConnectionState.Reconnecting,
+  disconnecting: ConnectionState.Disconnected,
+} satisfies Record<NativeCallConnectionState, ConnectionState>;
 
 type CallStoreState = {
   connectionState: ConnectionState;
@@ -671,6 +690,39 @@ function createCallState() {
     enumerateDevices();
   };
   navigator.mediaDevices?.addEventListener('devicechange', handleDeviceChange);
+
+  // On iOS Tauri the native Swift plugin owns the LiveKit Room. Mirror its
+  // connection-state snapshot into the JS store so `isInCall()`, the call
+  // overlay, and the leave button work without a JS Room ever existing.
+  // We only clear store state on transitions from "native call active" to
+  // "no native call" so we don't clobber a JS-driven outbound call (the
+  // outbound path still goes through livekit-client — TODO(call-phase-2):
+  // move outbound calls onto the native LiveKit Room).
+  if (isTauri() && isPlatform('ios')) {
+    let syncedFromNative = false;
+    createEffect(() => {
+      const native = nativeCallSnapshot();
+      if (native) {
+        syncedFromNative = true;
+        setStore('activeChannelId', native.channelId);
+        setStore('activeCallId', native.callId);
+        // Intentionally do NOT mirror mute state — Phase 1 does not maintain
+        // it on the Swift side, so writing it here would silently revert any
+        // future JS-driven mute toggle. TODO(call-phase-2): a watch_audio_state
+        // channel will own this.
+        setStore(
+          'connectionState',
+          NATIVE_TO_LIVEKIT_STATE[native.connectionState]
+        );
+      } else if (syncedFromNative) {
+        syncedFromNative = false;
+        setStore('activeChannelId', null);
+        setStore('activeCallId', null);
+        setStore('connectionState', ConnectionState.Disconnected);
+        setStore('remoteParticipants', new Map());
+      }
+    });
+  }
 
   // --- mutations ---
 

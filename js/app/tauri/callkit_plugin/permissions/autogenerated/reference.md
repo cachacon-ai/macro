@@ -36,6 +36,32 @@ Denies the end_active_call command without any pre-configured scope.
 <tr>
 <td>
 
+`call-kit:allow-get-active-call-state`
+
+</td>
+<td>
+
+Enables the get_active_call_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`call-kit:deny-get-active-call-state`
+
+</td>
+<td>
+
+Denies the get_active_call_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `call-kit:allow-get-pending-answered-call`
 
 </td>

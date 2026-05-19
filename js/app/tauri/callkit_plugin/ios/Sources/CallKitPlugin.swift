@@ -1,5 +1,4 @@
-import CallKit
-import PushKit
+import Foundation
 import Tauri
 import WebKit
 
@@ -11,195 +10,143 @@ struct WatchCallEndedArgs: Decodable {
     let channel: Channel
 }
 
-class CallKitPlugin: Plugin, CXProviderDelegate, PKPushRegistryDelegate {
-    private var provider: CXProvider!
-    private let callController = CXCallController()
-    private var registry: PKPushRegistry!
+/// Tauri facade for the iOS native call integration.
+///
+/// The plugin keeps the public command/event surface stable and delegates the
+/// platform work to smaller collaborators:
+///   - IncomingCallCoordinator: PushKit + CallKit.
+///   - NativeLiveKitCallSession: native LiveKit Room + audio session.
+///
+/// Tauri invokes `@objc` commands from its own runtime queue. Each command body
+/// hops to main before touching collaborator state or resolving the invoke.
+class CallKitPlugin: Plugin, @unchecked Sendable {
+    private var mediaSession: NativeLiveKitCallSession!
+    private var callCoordinator: IncomingCallCoordinator!
 
-    // Keyed by call UUID — holds the channelId so it's available when CXAnswerCallAction fires.
-    private var pendingCalls: [UUID: String] = [:]
-
-    // The UUID of the most recently reported incoming call, used by endActiveCall.
-    private var activeCallUUID: UUID?
-
-    // Last VoIP token received from PushKit; may arrive before the JS listener is ready.
-    private var cachedVoipToken: String?
-
-    // channelId from the most recent answered call; may arrive before the JS listener is ready.
-    private var pendingAnsweredChannelId: String?
-
-    // Channels registered via watchCallAnswered — receives call-answered events directly.
-    private var callAnsweredChannels: [Channel] = []
-
-    // Channels registered via watchCallEnded — receives call-ended events directly.
-    private var callEndedChannels: [Channel] = []
+    // The latest JS-side Channel registered for call-answered / call-ended
+    // events. Singleton (replaced on every watch_* invocation) avoids unbounded
+    // growth across webview reloads and HMR cycles.
+    private var callAnsweredChannel: Channel?
+    private var callEndedChannel: Channel?
 
     override public func load(webview: WKWebView) {
-        let config = CXProviderConfiguration()
-        config.supportsVideo = false
-        config.maximumCallsPerCallGroup = 1
-        config.supportedHandleTypes = [.generic]
-        provider = CXProvider(configuration: config)
-        provider.setDelegate(self, queue: .main)
-
-        registry = PKPushRegistry(queue: .main)
-        registry.delegate = self
-        registry.desiredPushTypes = [.voIP]
-
-    }
-
-    // MARK: - PKPushRegistryDelegate
-
-    public func pushRegistry(
-        _ registry: PKPushRegistry,
-        didUpdate pushCredentials: PKPushCredentials,
-        for type: PKPushType
-    ) {
-        guard type == .voIP else { return }
-        let token = pushCredentials.token.map { String(format: "%02.2hhx", $0) }.joined()
-        cachedVoipToken = token
-        trigger("voip-token-updated", data: ["token": token])
-    }
-
-    public func pushRegistry(
-        _ registry: PKPushRegistry,
-        didReceiveIncomingPushWith payload: PKPushPayload,
-        for type: PKPushType,
-        completion: @escaping () -> Void
-    ) {
-        guard type == .voIP else { completion(); return }
-
-        let dict = payload.dictionaryPayload
-        let channelId = dict["channelId"] as? String ?? ""
-        let callerName = dict["callerName"] as? String ?? "Incoming Call"
-        let callIdString = dict["callId"] as? String ?? ""
-        guard let uuid = UUID(uuidString: callIdString) else {
-            // iOS terminates apps that skip reportNewIncomingCall inside this
-            // delegate. Report a ghost call and immediately end it as failed so
-            // the system requirement is satisfied while surfacing the server bug.
-            print("[CallKit] Invalid callId '\(callIdString)' in VoIP payload: \(dict)")
-            let fallbackUUID = UUID()
-            provider.reportNewIncomingCall(with: fallbackUUID, update: CXCallUpdate()) { [weak self] _ in
-                self?.provider.reportCall(with: fallbackUUID, endedAt: nil, reason: .failed)
-                completion()
+        mediaSession = NativeLiveKitCallSession(
+            onSnapshotChanged: { [weak self] snapshot in
+                self?.emitConnectionState(snapshot)
+            },
+            requestSystemEndCall: { [weak self] uuid in
+                self?.callCoordinator.requestEndCall(uuid: uuid)
             }
-            return
-        }
+        )
+        mediaSession.prepareForCallKitAudio()
 
-        // Enforce the single-call invariant: if a stale entry exists (duplicate
-        // delivery or network retry), evict it before reporting the new call.
-        for staleUUID in pendingCalls.keys where staleUUID != uuid {
-            provider.reportCall(with: staleUUID, endedAt: nil, reason: .failed)
-            pendingCalls.removeValue(forKey: staleUUID)
-        }
-
-        pendingCalls[uuid] = channelId
-        activeCallUUID = uuid
-
-        let update = CXCallUpdate()
-        update.remoteHandle = CXHandle(type: .generic, value: channelId)
-        update.localizedCallerName = callerName
-        update.hasVideo = false
-
-        // iOS 13+: must call reportNewIncomingCall synchronously within this delegate.
-        // If we don't, iOS will terminate the app.
-        provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
-            if error != nil {
-                // CallKit refused (e.g. Do Not Disturb, max calls reached).
-                // Still must complete the PushKit handler.
-                self?.pendingCalls.removeValue(forKey: uuid)
-                if self?.activeCallUUID == uuid { self?.activeCallUUID = nil }
-            }
-            completion()
-        }
-    }
-
-    // MARK: - CXProviderDelegate
-
-    public func providerDidReset(_ provider: CXProvider) {
-        pendingCalls.removeAll()
-        activeCallUUID = nil
-    }
-
-    public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        guard let channelId = pendingCalls[action.callUUID] else {
-            action.fail()
-            return
-        }
-        // Cache for the background/cold-start drain path (visibilitychange + initial drain).
-        pendingAnsweredChannelId = channelId
-        // Send directly to JS via Channel
-        let channels = callAnsweredChannels
-        DispatchQueue.main.async {
-            let payload: JsonObject = ["channelId": channelId]
-            channels.forEach { channel in
+        callCoordinator = IncomingCallCoordinator(
+            mediaSession: mediaSession,
+            onVoipTokenUpdated: { [weak self] token in
+                self?.trigger("voip-token-updated", data: ["token": token])
+            },
+            onCallAnswered: { [weak self] channelId in
+                guard let channel = self?.callAnsweredChannel else { return }
+                let payload: JsonObject = ["channelId": channelId]
+                channel.send(payload)
+            },
+            onCallEnded: { [weak self] callId in
+                guard let channel = self?.callEndedChannel else { return }
+                let payload: JsonObject = ["callId": callId]
                 channel.send(payload)
             }
-        }
-        action.fulfill()
-        pendingCalls.removeValue(forKey: action.callUUID)
-    }
-
-    public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-        let callId = action.callUUID.uuidString
-        let channels = callEndedChannels
-        DispatchQueue.main.async {
-            let payload: JsonObject = ["callId": callId]
-            channels.forEach { channel in channel.send(payload) }
-        }
-        action.fulfill()
-        pendingCalls.removeValue(forKey: action.callUUID)
-        if activeCallUUID == action.callUUID { activeCallUUID = nil }
+        )
+        callCoordinator.load()
     }
 
     // MARK: - Tauri commands
 
-    /// Registers a JS Channel to receive call-answered events.
     @objc public func watchCallAnswered(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(WatchCallAnsweredArgs.self)
-        callAnsweredChannels.append(args.channel)
-        invoke.resolve()
+        onMain { [weak self] in
+            self?.callAnsweredChannel = args.channel
+            invoke.resolve()
+        }
     }
 
-    /// Registers a JS Channel to receive call-ended events.
     @objc public func watchCallEnded(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(WatchCallEndedArgs.self)
-        callEndedChannels.append(args.channel)
-        invoke.resolve()
-    }
-
-    /// Returns the last VoIP token received from PushKit, or null if none has
-    /// arrived yet. JS calls this once at startup after registering the
-    /// voip-token-updated listener to drain any token that arrived before the
-    /// listener was ready.
-    @objc public func getVoipToken(_ invoke: Invoke) {
-        invoke.resolve(["token": cachedVoipToken as Any])
-    }
-
-    /// Returns the channelId from the most recent answered call, then clears it.
-    /// JS calls this once after registering the call-answered listener so it can
-    /// handle any answer that arrived before the listener was ready (e.g. fresh
-    /// app launch triggered by a VoIP push).
-    @objc public func getPendingAnsweredCall(_ invoke: Invoke) {
-        let channelId = pendingAnsweredChannelId
-        pendingAnsweredChannelId = nil
-        invoke.resolve(["channelId": channelId as Any])
-    }
-
-    /// Called by the JS layer when the user leaves a call from within the app,
-    /// so the system CallKit UI is dismissed.
-    @objc public func endActiveCall(_ invoke: Invoke) {
-        guard let uuid = activeCallUUID else {
+        onMain { [weak self] in
+            self?.callEndedChannel = args.channel
             invoke.resolve()
-            return
         }
-        let transaction = CXTransaction(action: CXEndCallAction(call: uuid))
-        callController.request(transaction) { [weak self] error in
-            if error == nil {
-                self?.pendingCalls.removeValue(forKey: uuid)
-                self?.activeCallUUID = nil
+    }
+
+    @objc public func getVoipToken(_ invoke: Invoke) {
+        onMain { [weak self] in
+            invoke.resolve(["token": self?.callCoordinator.getVoipToken() as Any])
+        }
+    }
+
+    @objc public func getPendingAnsweredCall(_ invoke: Invoke) {
+        onMain { [weak self] in
+            let channelId = self?.callCoordinator.drainPendingAnsweredChannelId()
+            invoke.resolve(["channelId": channelId as Any])
+        }
+    }
+
+    @objc public func getActiveCallState(_ invoke: Invoke) {
+        onMain { [weak self] in
+            guard let snapshot = self?.mediaSession.currentSnapshot() else {
+                invoke.resolve(["state": NSNull()])
+                return
             }
-            invoke.resolve()
+
+            invoke.resolve([
+                "state": [
+                    "channelId": snapshot.channelId,
+                    "callId": snapshot.callId,
+                    "connectionState": snapshot.connectionState,
+                    "isAudioMuted": snapshot.isAudioMuted,
+                ] as JsonObject
+            ])
+        }
+    }
+
+    @objc public func endActiveCall(_ invoke: Invoke) {
+        onMain { [weak self] in
+            guard let self else {
+                invoke.resolve()
+                return
+            }
+            self.callCoordinator.endActiveCall {
+                invoke.resolve()
+            }
+        }
+    }
+
+    // MARK: - Event helpers
+
+    private func emitConnectionState(_ snapshot: ActiveCallSnapshot?) {
+        let payload: JSObject
+        if let snapshot {
+            payload = [
+                "state": snapshot.connectionState,
+                "channelId": snapshot.channelId,
+                "callId": snapshot.callId,
+                "isAudioMuted": snapshot.isAudioMuted,
+            ]
+        } else {
+            payload = [
+                "state": "disconnected",
+                "channelId": NSNull(),
+                "callId": NSNull(),
+                "isAudioMuted": false,
+            ]
+        }
+        trigger("connection-state", data: payload)
+    }
+
+    private func onMain(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
         }
     }
 }

@@ -6,6 +6,7 @@ import { useMutation } from '@tanstack/solid-query';
 import { RoomEvent } from 'livekit-client';
 import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { useCallContext } from './CallContext';
+import { nativeCallSnapshot } from './native-call-state';
 import { endCallKitCall, registerCallKitCallEndedHandler } from './use-callkit';
 
 type UseCallOptions = {
@@ -88,6 +89,21 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
       };
 
       const doConnect = async () => {
+        // On iOS Tauri the native Swift plugin owns the LiveKit Room. If the
+        // user answered via the CallKit sheet, the native side has already
+        // connected and the snapshot mirrors into CallContext via the effect
+        // in CallContext. Skip the duplicate getOrCreateCall + JS connect so
+        // we don't mint a second token / register a duplicate participant.
+        const native = nativeCallSnapshot();
+        if (
+          native &&
+          native.channelId === id &&
+          native.connectionState !== 'disconnected' &&
+          native.connectionState !== 'disconnecting'
+        ) {
+          return;
+        }
+
         // Call the join API directly so a timed-out join attempt cannot leave
         // `useJoinCallMutation` stuck pending and block the next retry.
         const [tokenResponse] = await Promise.all([
