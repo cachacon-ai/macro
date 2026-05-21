@@ -21,10 +21,33 @@ export function createInlineInputKeyboardHandler(
   setIsChannelInputHidden: Setter<boolean>
 ) {
   let activeInputContainer: HTMLElement | undefined;
+  let removalObserver: MutationObserver | undefined;
+
+  const stopWatchingForRemoval = () => {
+    removalObserver?.disconnect();
+    removalObserver = undefined;
+  };
 
   const reset = () => {
     setIsChannelInputHidden(false);
     activeInputContainer = undefined;
+    stopWatchingForRemoval();
+  };
+
+  // The active input container can be unmounted (e.g. after a reply is sent
+  // and the thread reply UI closes) without firing a focusout that bubbles to
+  // our listener, and without the virtual keyboard changing visibility. Watch
+  // the message list for DOM mutations so we can reset in that case.
+  const watchForContainerRemoval = () => {
+    stopWatchingForRemoval();
+    const root = containerEl();
+    if (!root || !activeInputContainer) return;
+    removalObserver = new MutationObserver(() => {
+      if (activeInputContainer && !activeInputContainer.isConnected) {
+        reset();
+      }
+    });
+    removalObserver.observe(root, { childList: true, subtree: true });
   };
 
   const keyboardWillShowHandler = (event: Event) => {
@@ -41,6 +64,7 @@ export function createInlineInputKeyboardHandler(
     );
     if (!inputContainer) return;
     activeInputContainer = inputContainer;
+    watchForContainerRemoval();
 
     // HACK: on mobile safari, we need to ensure that the input container is scrolled into view BEFORE we hide the input, and then perform the subsequent scroll. Some sort of weird Safari focus behavior going on.
     if (!isPlatform('ios')) {
@@ -90,6 +114,7 @@ export function createInlineInputKeyboardHandler(
       onCleanup(() => {
         el.removeEventListener('focusin', handleFocusIn);
         el.removeEventListener('focusout', handleFocusOut);
+        stopWatchingForRemoval();
       });
     })
   );
