@@ -30,6 +30,11 @@ fn link_ios_swift_package() {
             .expect("missing DEP_TAURI_IOS_LIBRARY_PATH; make sure tauri is a plugin dependency"),
     );
 
+    // Tauri's Swift package is exposed to plugin build scripts as an unpacked
+    // dependency path, but SwiftPM needs it available from the plugin package's
+    // local `.tauri/tauri-api` path. Keep this as a copy so the plugin's
+    // Package.swift can use the same layout Tauri's generated Xcode project
+    // expects.
     let tauri_api_dir = ios_dir.join(".tauri").join("tauri-api");
     let _ = fs::remove_dir_all(&tauri_api_dir);
     copy_dir_filtered(
@@ -70,6 +75,9 @@ fn link_ios_swift_package() {
     } else {
         "release"
     };
+    // Build SwiftPM inside Cargo OUT_DIR. Building in ios/.build makes Cargo
+    // and SwiftPM observe each other's generated files and can cause pointless
+    // rebuild loops.
     let build_path = PathBuf::from(env::var("OUT_DIR").unwrap())
         .join("swift-rs")
         .join(PLUGIN_NAME);
@@ -78,6 +86,10 @@ fn link_ios_swift_package() {
 
     link_swift_runtime(sdk, clang_rt, &triple);
 
+    // Cargo is cross-compiling Rust for iOS, but SwiftPM defaults to the host
+    // macOS destination unless we give it the iOS triple and SDK explicitly.
+    // That destination is also how SwiftPM chooses the right XCFramework slice
+    // for LiveKitWebRTC/RustLiveKitUniFFI.
     let status = Command::new("swift")
         .current_dir(&ios_dir)
         .arg("build")
@@ -95,6 +107,9 @@ fn link_ios_swift_package() {
         .args(["-Xcxx", sdk_path.trim()])
         .env("CLANG_MODULE_CACHE_PATH", &module_cache_path)
         .env("SWIFTPM_MODULECACHE_OVERRIDE", &module_cache_path)
+        // Xcode exports SDKROOT for its own clang/swift invocations. Leaving it
+        // in the environment can make SwiftPM compile the package manifest for
+        // macOS while using the iPhoneOS sysroot.
         .env_remove("SDKROOT")
         .status()
         .expect("failed to run swift build for callkit plugin");
@@ -103,7 +118,10 @@ fn link_ios_swift_package() {
     let search_path = build_path.join(output_triple).join(configuration);
     stage_xcode_frameworks(&manifest_dir, &search_path, xcode_arch, configuration);
 
-    println!("cargo:rerun-if-changed={}", ios_dir.display());
+    // Watch only hand-written Swift package inputs. The copied Tauri API,
+    // SwiftPM build directory, and staged frameworks are generated during this
+    // build script and should not themselves retrigger Cargo.
+    emit_ios_source_rerun_inputs(&ios_dir);
     println!(
         "cargo:rustc-link-search=framework={}",
         search_path.display()
@@ -137,8 +155,38 @@ fn stage_xcode_frameworks(
 
         let target = externals_dir.join(framework);
         let _ = fs::remove_dir_all(&target);
-        copy_dir_filtered(&source, &target, &[]);
+        // Xcode links the final app, not Cargo. Stage SwiftPM's binary
+        // frameworks into the generated Xcode Externals directory so the app
+        // link step can find the symbols referenced by the Swift static lib.
+        copy_dir_filtered_without_rerun(&source, &target, &[]);
     }
+}
+
+fn emit_ios_source_rerun_inputs(ios_dir: &Path) {
+    emit_rerun_if_changed(&ios_dir.join("Package.swift"));
+    emit_dir_rerun_inputs(&ios_dir.join("Sources"));
+}
+
+fn emit_dir_rerun_inputs(dir: &Path) {
+    if !dir.exists() {
+        return;
+    }
+
+    for entry in fs::read_dir(dir).unwrap_or_else(|e| {
+        panic!("failed to read {}: {e}", dir.display());
+    }) {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            emit_dir_rerun_inputs(&path);
+        } else {
+            emit_rerun_if_changed(&path);
+        }
+    }
+}
+
+fn emit_rerun_if_changed(path: &Path) {
+    println!("cargo:rerun-if-changed={}", path.display());
 }
 
 fn ios_deployment_target() -> String {
@@ -157,6 +205,8 @@ fn link_swift_runtime(sdk: &str, clang_rt: &str, triple: &str) {
     println!("cargo:rustc-link-search=native={}", swift_lib_dir.display());
     println!("cargo:rustc-link-search=native=/usr/lib/swift");
     println!("cargo:rustc-link-lib=clang_rt.{clang_rt}");
+    // swift build produces a static archive, but the Rust crate still needs
+    // linker search paths for Swift runtime and compiler-rt support libraries.
     println!("cargo:rustc-link-search={}", clang_link_search_path(triple));
 }
 
@@ -193,6 +243,14 @@ fn command_output(command: &str, args: &[&str]) -> String {
 }
 
 fn copy_dir_filtered(source: &Path, target: &Path, ignore_paths: &[&str]) {
+    copy_dir_filtered_inner(source, target, ignore_paths, true);
+}
+
+fn copy_dir_filtered_without_rerun(source: &Path, target: &Path, ignore_paths: &[&str]) {
+    copy_dir_filtered_inner(source, target, ignore_paths, false);
+}
+
+fn copy_dir_filtered_inner(source: &Path, target: &Path, ignore_paths: &[&str], emit_rerun: bool) {
     fs::create_dir_all(target).unwrap_or_else(|e| {
         panic!("failed to create {}: {e}", target.display());
     });
@@ -213,7 +271,7 @@ fn copy_dir_filtered(source: &Path, target: &Path, ignore_paths: &[&str]) {
 
         let target_path = target.join(rel_path);
         if source_path.is_dir() {
-            copy_dir_filtered(&source_path, &target_path, ignore_paths);
+            copy_dir_filtered_inner(&source_path, &target_path, ignore_paths, emit_rerun);
         } else {
             if let Some(parent) = target_path.parent() {
                 fs::create_dir_all(parent).unwrap();
@@ -225,7 +283,23 @@ fn copy_dir_filtered(source: &Path, target: &Path, ignore_paths: &[&str]) {
                     target_path.display()
                 )
             });
-            println!("cargo:rerun-if-changed={}", source_path.display());
+            if emit_rerun && should_emit_rerun_for_source(&source_path) {
+                emit_rerun_if_changed(&source_path);
+            }
         }
     }
+}
+
+fn should_emit_rerun_for_source(source_path: &Path) -> bool {
+    if env::var_os("OUT_DIR")
+        .map(PathBuf::from)
+        .is_some_and(|out_dir| source_path.starts_with(out_dir))
+    {
+        return false;
+    }
+
+    !source_path.components().any(|component| {
+        let name = component.as_os_str();
+        name == ".build" || name == ".tauri"
+    })
 }

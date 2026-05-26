@@ -7,7 +7,6 @@ import { addPluginListener, Channel, invoke } from '@tauri-apps/api/core';
 import { onCleanup, onMount } from 'solid-js';
 import { joinChannelCall } from './join-channel-call';
 import {
-  type NativeCallConnectionState,
   type NativeCallSnapshot,
   nativeCallSnapshot,
   setNativeCallSnapshot,
@@ -23,9 +22,9 @@ type CallEndedPayload = { callId: string };
 type CallEndedHandler = (payload: CallEndedPayload) => void | Promise<void>;
 
 type ConnectionStatePayload = {
-  state: NativeCallConnectionState;
-  channelId: string | null;
-  callId: string | null;
+  state: NativeCallSnapshot['connectionState'];
+  channelId: NativeCallSnapshot['channelId'] | null;
+  callId: NativeCallSnapshot['callId'] | null;
 };
 
 type GetActiveCallStateResponse = {

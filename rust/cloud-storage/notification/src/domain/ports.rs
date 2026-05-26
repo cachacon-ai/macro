@@ -422,7 +422,7 @@ pub trait VoipPushSender: Send + Sync + 'static {
     fn get_voip_push_targets(
         &self,
         recipient_ids: &[MacroUserIdStr<'_>],
-    ) -> impl std::future::Future<Output = Vec<VoipPushTarget>> + Send;
+    ) -> impl Future<Output = Result<Vec<VoipPushTarget>, Report>> + Send;
 
     /// Send recipient-specific payloads to already-resolved VoIP endpoints.
     ///
@@ -435,8 +435,11 @@ pub trait VoipPushSender: Send + Sync + 'static {
 }
 
 impl VoipPushSender for () {
-    async fn get_voip_push_targets(&self, _: &[MacroUserIdStr<'_>]) -> Vec<VoipPushTarget> {
-        Vec::new()
+    async fn get_voip_push_targets(
+        &self,
+        _: &[MacroUserIdStr<'_>],
+    ) -> Result<Vec<VoipPushTarget>, Report> {
+        Ok(Vec::new())
     }
 
     async fn send_voip_pushes(
@@ -451,11 +454,11 @@ impl<V: VoipPushSender> VoipPushSender for Option<V> {
     async fn get_voip_push_targets(
         &self,
         recipient_ids: &[MacroUserIdStr<'_>],
-    ) -> Vec<VoipPushTarget> {
+    ) -> Result<Vec<VoipPushTarget>, Report> {
         if let Some(inner) = self {
             inner.get_voip_push_targets(recipient_ids).await
         } else {
-            Vec::new()
+            Ok(Vec::new())
         }
     }
 

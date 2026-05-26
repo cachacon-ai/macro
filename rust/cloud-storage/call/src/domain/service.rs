@@ -336,7 +336,6 @@ where
                     Err(e) => {
                         tracing::error!(
                             error=?e,
-                            recipient=?recipient_id,
                             "failed to mint LiveKit token for VoIP push"
                         );
                         None
@@ -543,10 +542,20 @@ impl<
                                 .collect();
 
                             // Batch first so users without VoIP endpoints do not get LiveKit tokens.
-                            let voip_targets = self
+                            let voip_targets = match self
                                 .voip_push_sender
                                 .get_voip_push_targets(&recipient_vec)
-                                .await;
+                                .await
+                            {
+                                Ok(targets) => targets,
+                                Err(e) => {
+                                    tracing::error!(
+                                        error=?e,
+                                        "failed to resolve VoIP push targets; falling back to APNS"
+                                    );
+                                    Vec::new()
+                                }
+                            };
                             let voip_target_recipient_ids: Vec<MacroUserIdStr<'static>> =
                                 voip_targets
                                     .iter()

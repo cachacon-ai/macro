@@ -134,7 +134,11 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
 
         guard let uuid = UUID(uuidString: callIdString) else {
             // PushKit requires every VoIP push to be reported to CallKit.
-            print("[CallKit] Invalid callId '\(callIdString)' in VoIP payload: \(dict)")
+            let safePayloadKeys = dict.keys
+                .compactMap { $0 as? String }
+                .filter { $0 != "livekitServerUrl" && $0 != "livekitToken" }
+                .sorted()
+            print("[CallKit] Invalid callId '\(callIdString)' in VoIP payload; keys=\(safePayloadKeys)")
             let fallbackUUID = UUID()
             provider.reportNewIncomingCall(with: fallbackUUID, update: CXCallUpdate()) { [weak self] _ in
                 self?.provider.reportCall(with: fallbackUUID, endedAt: nil, reason: .failed)
@@ -154,7 +158,7 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
         if let serverUrl = livekitServerUrl, let token = livekitToken {
             pendingCallTokens[uuid] = PendingCallToken(serverUrl: serverUrl, token: token)
         } else {
-            print("[CallKit] VoIP payload missing livekitServerUrl/livekitToken; lock-screen answer will not connect natively")
+            print("[CallKit] VoIP payload missing native connection credentials; lock-screen answer will not connect natively")
         }
         activeCallUUID = uuid
 

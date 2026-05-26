@@ -19,6 +19,7 @@ final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendabl
     ) {
         self.onSnapshotChanged = onSnapshotChanged
         self.requestSystemEndCall = requestSystemEndCall
+        super.init()
     }
 
     func prepareForCallKitAudio() {
@@ -71,12 +72,12 @@ final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendabl
 
         connectTask?.cancel()
         let oldRoom = room
-        if let oldRoom {
-            Task { await oldRoom.disconnect() }
-        }
         room = newRoom
 
-        connectTask = Task { [weak self, weak newRoom] in
+        connectTask = Task { [weak self, oldRoom, weak newRoom] in
+            if let oldRoom {
+                await oldRoom.disconnect()
+            }
             guard let newRoom else { return }
             do {
                 try await newRoom.connect(url: serverUrl, token: token)

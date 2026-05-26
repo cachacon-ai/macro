@@ -162,6 +162,7 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
           native.connectionState !== 'disconnected' &&
           native.connectionState !== 'disconnecting'
         ) {
+          callCtx.rollbackOptimisticJoin();
           return;
         }
 

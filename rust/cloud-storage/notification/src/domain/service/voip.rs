@@ -8,6 +8,7 @@ mod test;
 
 use futures::future;
 use macro_user_id::user_id::MacroUserIdStr;
+use rootcause::Report;
 use std::collections::HashSet;
 
 use crate::domain::models::apple::VoipPushPayload;
@@ -39,16 +40,10 @@ where
     async fn get_voip_push_targets(
         &self,
         recipient_ids: &[MacroUserIdStr<'_>],
-    ) -> Vec<VoipPushTarget> {
-        let device_map = match self.repository.get_device_endpoints(recipient_ids).await {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::error!(error=?e, "voip push: failed to fetch device endpoints");
-                return Vec::new();
-            }
-        };
+    ) -> Result<Vec<VoipPushTarget>, Report> {
+        let device_map = self.repository.get_device_endpoints(recipient_ids).await?;
 
-        device_map
+        Ok(device_map
             .into_iter()
             .filter_map(|(recipient_id, endpoints)| {
                 let endpoint_arns: Vec<String> = endpoints
@@ -64,7 +59,7 @@ where
                     endpoint_arns,
                 })
             })
-            .collect()
+            .collect())
     }
 
     async fn send_voip_pushes(
@@ -93,7 +88,6 @@ where
                         Err(e) => {
                             tracing::error!(
                                 error=?e,
-                                user_id=%user_id,
                                 "voip push: SNS delivery failed"
                             );
                             None
