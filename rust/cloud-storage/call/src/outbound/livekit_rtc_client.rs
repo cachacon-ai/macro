@@ -96,17 +96,8 @@ impl CallRtcClient for LivekitRtcClient {
         room_name: &str,
         participant_identity: MacroUserIdStr<'_>,
     ) -> anyhow::Result<String> {
-        // Explicit 6-hour TTL — same as the `livekit-api` default, but pinned
-        // so a future crate upgrade can't silently shorten it. The token is
-        // embedded in VoIP push payloads, so TTL must cover push delivery
-        // (typically <1s but minutes under low-power mode) plus the
-        // lock-screen ringing window (up to ~30s) with comfortable margin.
-        //
-        // UPPER BOUND: a single call lasting >6h will fail to (re)authenticate
-        // when the SDK refreshes its session — the LiveKit Room will drop and
-        // not recover. TODO(call-phase-2): plumb a token-refresh hook (mint a
-        // new token mid-call via a service endpoint and feed it to the SDK) so
-        // long calls are not bounded by this TTL.
+        // Pinned so VoIP-delivered tokens survive push delay and lock-screen ringing.
+        // TODO(call-phase-2): add token refresh before supporting calls over 6h.
         let token = AccessToken::with_api_key(&self.api_key, &self.api_secret)
             .with_identity(participant_identity.as_ref())
             .with_ttl(std::time::Duration::from_secs(6 * 3600))

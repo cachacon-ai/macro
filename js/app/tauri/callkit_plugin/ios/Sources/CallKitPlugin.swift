@@ -10,38 +10,26 @@ struct WatchCallEndedArgs: Decodable {
     let channel: Channel
 }
 
-/// Tauri facade for the iOS native call integration.
-///
-/// The plugin keeps the public command/event surface stable and delegates the
-/// platform work to smaller collaborators:
-///   - IncomingCallCoordinator: PushKit + CallKit.
-///   - NativeLiveKitCallSession: native LiveKit Room + audio session.
-///
-/// Tauri invokes `@objc` commands from its own runtime queue. Each command body
-/// hops to main before touching collaborator state or resolving the invoke.
+/// Tauri command/event facade; platform work lives in the coordinator/session.
 class CallKitPlugin: Plugin, @unchecked Sendable {
-    private var mediaSession: NativeLiveKitCallSession!
+    private var mediaSession: NativeLiveKitCallSession?
     private var callCoordinator: IncomingCallCoordinator!
 
-    // The latest JS-side Channel registered for call-answered / call-ended
-    // events. Singleton (replaced on every watch_* invocation) avoids unbounded
-    // growth across webview reloads and HMR cycles.
+    // Singleton channels avoid leaking listeners across webview reloads/HMR.
     private var callAnsweredChannel: Channel?
     private var callEndedChannel: Channel?
 
     override public func load(webview: WKWebView) {
-        mediaSession = NativeLiveKitCallSession(
-            onSnapshotChanged: { [weak self] snapshot in
-                self?.emitConnectionState(snapshot)
-            },
-            requestSystemEndCall: { [weak self] uuid in
-                self?.callCoordinator.requestEndCall(uuid: uuid)
-            }
-        )
-        mediaSession.prepareForCallKitAudio()
-
         callCoordinator = IncomingCallCoordinator(
-            mediaSession: mediaSession,
+            mediaSession: { [weak self] in
+                guard let self else {
+                    return NativeLiveKitCallSession(
+                        onSnapshotChanged: { _ in },
+                        requestSystemEndCall: { _ in }
+                    )
+                }
+                return self.getMediaSession()
+            },
             onVoipTokenUpdated: { [weak self] token in
                 self?.trigger("voip-token-updated", data: ["token": token])
             },
@@ -58,8 +46,6 @@ class CallKitPlugin: Plugin, @unchecked Sendable {
         )
         callCoordinator.load()
     }
-
-    // MARK: - Tauri commands
 
     @objc public func watchCallAnswered(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(WatchCallAnsweredArgs.self)
@@ -92,7 +78,7 @@ class CallKitPlugin: Plugin, @unchecked Sendable {
 
     @objc public func getActiveCallState(_ invoke: Invoke) {
         onMain { [weak self] in
-            guard let snapshot = self?.mediaSession.currentSnapshot() else {
+            guard let snapshot = self?.mediaSession?.currentSnapshot() else {
                 invoke.resolve(["state": NSNull()])
                 return
             }
@@ -120,8 +106,6 @@ class CallKitPlugin: Plugin, @unchecked Sendable {
         }
     }
 
-    // MARK: - Event helpers
-
     private func emitConnectionState(_ snapshot: ActiveCallSnapshot?) {
         let payload: JSObject
         if let snapshot {
@@ -140,6 +124,23 @@ class CallKitPlugin: Plugin, @unchecked Sendable {
             ]
         }
         trigger("connection-state", data: payload)
+    }
+
+    private func getMediaSession() -> NativeLiveKitCallSession {
+        if let mediaSession {
+            return mediaSession
+        }
+
+        let mediaSession = NativeLiveKitCallSession(
+            onSnapshotChanged: { [weak self] snapshot in
+                self?.emitConnectionState(snapshot)
+            },
+            requestSystemEndCall: { [weak self] uuid in
+                self?.callCoordinator.requestEndCall(uuid: uuid)
+            }
+        )
+        self.mediaSession = mediaSession
+        return mediaSession
     }
 
     private func onMain(_ block: @escaping () -> Void) {

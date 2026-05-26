@@ -6,6 +6,7 @@ import { Channel, addPluginListener, invoke } from '@tauri-apps/api/core';
 import { onCleanup, onMount } from 'solid-js';
 import { joinChannelCall } from './join-channel-call';
 import {
+  nativeCallSnapshot,
   setNativeCallSnapshot,
   type NativeCallConnectionState,
   type NativeCallSnapshot,
@@ -24,25 +25,13 @@ type ConnectionStatePayload = {
   state: NativeCallConnectionState;
   channelId: string | null;
   callId: string | null;
-  // Swift currently emits `isAudioMuted` but Phase 1 does not consume it —
-  // ignore here to avoid clobbering JS-side mute state in CallContext.
-  // TODO(call-phase-2): plumb mute state via a watch_audio_state channel.
-  isAudioMuted?: boolean;
 };
 
 type GetActiveCallStateResponse = {
-  state: {
-    channelId: string;
-    callId: string;
-    connectionState: NativeCallConnectionState;
-    isAudioMuted?: boolean;
-  } | null;
+  state: NativeCallSnapshot | null;
 };
 
 function applyConnectionState(payload: ConnectionStatePayload) {
-  // Treat `disconnected` as call ended — clear the snapshot so the JS UI
-  // reverts to a "no active call" state. Swift emits `disconnected` once
-  // before clearing its `activeCall`, so we don't keep a stale snapshot.
   if (
     !payload.channelId ||
     !payload.callId ||
@@ -83,19 +72,20 @@ function getActiveCallEndedHandler(): CallEndedHandler | undefined {
   return callEndedHandlers[callEndedHandlers.length - 1];
 }
 
-// globalSplitManager is set deep in the router tree and may not be ready
-// when a call-answered event arrives on fresh app launch. Cold-start usually
-// mounts the router within a few seconds; if it stalls past the CallKit ring
-// window we'd silently leave the user staring at a "connected" system UI with
-// no JS-side call attached — bail out via endCallKitCall instead.
+// Fresh CallKit launches can receive answer events before the router tree mounts.
 const SPLIT_MANAGER_READY_TIMEOUT_MS = 15_000;
 
 async function joinChannelCallWhenReady(channelId: string): Promise<void> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const ready = whenSplitManagerReady().then(() => 'ready' as const);
   const timeout = new Promise<'timeout'>((resolve) => {
-    setTimeout(() => resolve('timeout'), SPLIT_MANAGER_READY_TIMEOUT_MS);
+    timeoutHandle = setTimeout(
+      () => resolve('timeout'),
+      SPLIT_MANAGER_READY_TIMEOUT_MS
+    );
   });
   const outcome = await Promise.race([ready, timeout]);
+  clearTimeout(timeoutHandle);
   if (outcome === 'timeout') {
     console.error(
       `[callkit] split manager not ready within ${SPLIT_MANAGER_READY_TIMEOUT_MS}ms; ending CallKit call`
@@ -189,7 +179,6 @@ export function useCallKitSetup() {
     })
       .then(() => {
         if (cleaned) return;
-        // Initial drain for the fresh-launch case (answer arrived before command completed).
         return invoke<{ channelId: string | null }>(
           'plugin:call-kit|get_pending_answered_call'
         ).then(({ channelId }) => {
@@ -216,13 +205,8 @@ export function useCallKitSetup() {
     };
     invoke<void>('plugin:call-kit|watch_call_ended', {
       channel: callEndedChannel,
-    }).catch((err) =>
-      console.error('[callkit] watch_call_ended failed', err)
-    );
+    }).catch((err) => console.error('[callkit] watch_call_ended failed', err));
 
-    // Track the native LiveKit Room state so the JS side can attach to a call
-    // that was answered before the webview was running (e.g. lock-screen
-    // answer that cold-started the app), without minting a duplicate token.
     trackListener(
       addPluginListener<ConnectionStatePayload>(
         'call-kit',
@@ -232,14 +216,11 @@ export function useCallKitSetup() {
       'connection-state'
     );
 
-    // Drain the current snapshot in case the connection-state events fired
-    // before this listener was registered (cold-start path).
+    // Do not let a stale startup drain overwrite live listener state.
     invoke<GetActiveCallStateResponse>('plugin:call-kit|get_active_call_state')
       .then(({ state }) => {
-        if (!state) {
-          setNativeCallSnapshot(null);
-          return;
-        }
+        if (nativeCallSnapshot() !== null) return;
+        if (!state) return;
         setNativeCallSnapshot({
           channelId: state.channelId,
           callId: state.callId,

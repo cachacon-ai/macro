@@ -2,20 +2,16 @@ import AVFAudio
 import Foundation
 import LiveKit
 
-/// Owns the native LiveKit Room and its audio-session integration.
-///
-/// All mutable state is main-queue only. RoomDelegate callbacks arrive from a
-/// LiveKit-internal queue and hop back to main before touching state.
+/// Native LiveKit Room plus CallKit-owned audio-session integration.
 final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendable {
     private let onSnapshotChanged: (ActiveCallSnapshot?) -> Void
     private let requestSystemEndCall: (UUID) -> Void
-
-    // MARK: - State (main-queue only)
 
     private var room: Room?
     private var connectTask: Task<Void, Never>?
     private var activeCallUUID: UUID?
     private var activeCall: ActiveCallSnapshot?
+    private var didPrepareAudio = false
 
     init(
         onSnapshotChanged: @escaping (ActiveCallSnapshot?) -> Void,
@@ -26,8 +22,10 @@ final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendabl
     }
 
     func prepareForCallKitAudio() {
-        // CallKit owns AVAudioSession activation/deactivation. LiveKit should
-        // configure tracks, but it must not activate the session independently.
+        guard !didPrepareAudio else { return }
+        didPrepareAudio = true
+
+        // CallKit activates AVAudioSession; LiveKit must not race it.
         AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
         try? AudioManager.shared.setEngineAvailability(.none)
     }
@@ -58,7 +56,8 @@ final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendabl
     }
 
     func connect(uuid: UUID, channelId: String, serverUrl: String, token: String) {
-        // Must be called on main.
+        prepareForCallKitAudio()
+
         let newRoom = Room(delegate: self)
 
         activeCallUUID = uuid
@@ -70,9 +69,6 @@ final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendabl
         )
         emitSnapshot()
 
-        // Replace any prior Room atomically on the main queue. If a previous
-        // disconnect task is still queued, do not overwrite the reference and
-        // leave that Room without an owner.
         connectTask?.cancel()
         let oldRoom = room
         if let oldRoom {
@@ -114,8 +110,6 @@ final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendabl
         }
     }
 
-    // MARK: - RoomDelegate
-
     func room(
         _ room: Room,
         didUpdateConnectionState connectionState: ConnectionState,
@@ -152,7 +146,6 @@ final class NativeLiveKitCallSession: NSObject, RoomDelegate, @unchecked Sendabl
     }
 
     private func emitSnapshot() {
-        // Must be called on main.
         onSnapshotChanged(activeCall)
     }
 }

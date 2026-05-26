@@ -89,11 +89,7 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
       };
 
       const doConnect = async () => {
-        // On iOS Tauri the native Swift plugin owns the LiveKit Room. If the
-        // user answered via the CallKit sheet, the native side has already
-        // connected and the snapshot mirrors into CallContext via the effect
-        // in CallContext. Skip the duplicate getOrCreateCall + JS connect so
-        // we don't mint a second token / register a duplicate participant.
+        // CallKit answers already joined natively; avoid a duplicate JS participant.
         const native = nativeCallSnapshot();
         if (
           native &&

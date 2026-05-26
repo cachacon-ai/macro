@@ -268,12 +268,20 @@ async fn dispatches_to_ios_voip_endpoint() {
         push,
     );
 
+    let targets = svc
+        .get_voip_push_targets(&[user("alice@example.com")])
+        .await;
+    assert_eq!(targets.len(), 1);
+
     let result = svc
-        .send_voip_push(user("alice@example.com"), &payload())
+        .send_voip_pushes(vec![(targets[0].clone(), payload())])
         .await;
 
     assert_eq!(*calls.lock().unwrap(), vec!["arn:voip-alice"]);
-    assert_eq!(result, Some(user("alice@example.com")));
+    assert_eq!(
+        result,
+        std::collections::HashSet::from([user("alice@example.com")])
+    );
 }
 
 #[tokio::test]
@@ -290,10 +298,10 @@ async fn skips_non_voip_endpoints() {
         push,
     );
 
-    let result = svc.send_voip_push(user("bob@example.com"), &payload()).await;
+    let targets = svc.get_voip_push_targets(&[user("bob@example.com")]).await;
 
+    assert!(targets.is_empty());
     assert!(calls.lock().unwrap().is_empty());
-    assert!(result.is_none());
 }
 
 #[tokio::test]
@@ -301,12 +309,12 @@ async fn repo_error_does_not_panic() {
     let (push, calls) = tracked_push();
     let svc = make_service(MockRepo::failing(), push);
 
-    let result = svc
-        .send_voip_push(user("alice@example.com"), &payload())
+    let targets = svc
+        .get_voip_push_targets(&[user("alice@example.com")])
         .await;
 
+    assert!(targets.is_empty());
     assert!(calls.lock().unwrap().is_empty());
-    assert!(result.is_none());
 }
 
 #[tokio::test]
@@ -319,9 +327,12 @@ async fn sns_failure_does_not_panic() {
         MockPush::failing(),
     );
 
+    let targets = svc
+        .get_voip_push_targets(&[user("alice@example.com")])
+        .await;
     let result = svc
-        .send_voip_push(user("alice@example.com"), &payload())
+        .send_voip_pushes(vec![(targets[0].clone(), payload())])
         .await;
 
-    assert!(result.is_none());
+    assert!(result.is_empty());
 }

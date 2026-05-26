@@ -3,33 +3,19 @@ use std::sync::Mutex;
 
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
-use notification::domain::models::apple::VoipPushPayload;
-use notification::domain::ports::VoipPushSender;
 use uuid::Uuid;
 
 use crate::domain::models::{CallError, CallWebhookEvent, EgressS3Config};
 use crate::domain::ports::CallRtcClient;
 
-use super::{
-    build_voip_push_payloads, dispatch_voip_pushes, exclude_voip_recipients, extract_recording_key,
-};
+use super::{build_voip_push_payloads, exclude_voip_recipients, extract_recording_key};
 
 fn user(email: &'static str) -> MacroUserIdStr<'static> {
     MacroUserIdStr::try_from_email(email).unwrap()
 }
 
-// ─── Mock CallRtcClient ──────────────────────────────────────────────────────
-//
-// Hand-rolled because the `CallRtcClient` trait uses RPIT (`-> impl Future`)
-// which `mockall::automock` cannot synthesise cleanly. Only `generate_token`
-// is exercised by these tests; the other methods unreachable!() so a future
-// caller that drifts into them will fail loudly.
-
 struct MockRtcClient {
-    // Map participant identity → token result. Each call consumes one entry;
-    // missing entries fall back to a deterministic synthesized token.
     tokens: Mutex<HashMap<String, anyhow::Result<String>>>,
-    // Counter to verify how many mints actually happened.
     generate_calls: Mutex<Vec<(String, String)>>,
 }
 
@@ -189,7 +175,6 @@ async fn build_voip_push_payloads_mints_a_distinct_token_per_recipient() {
         .collect();
     assert_eq!(by_id.get(alice.as_ref()).unwrap(), "token-alice");
     assert_eq!(by_id.get(bob.as_ref()).unwrap(), "token-bob");
-    // Sanity check on the rest of the payload shape.
     assert_eq!(mock.calls().len(), 2);
     for (room, _) in mock.calls() {
         assert_eq!(room, "room-1");
@@ -225,78 +210,6 @@ async fn build_voip_push_payloads_drops_recipients_whose_token_mint_fails() {
     let (id, payload) = &payloads[0];
     assert_eq!(id.as_ref(), alice.as_ref());
     assert_eq!(payload.livekit_token.as_deref(), Some("token-alice"));
-}
-
-// ─── Mock VoipPushSender ─────────────────────────────────────────────────────
-//
-// Keyed by recipient identity → whether delivery succeeds. Missing entries
-// behave like a delivery failure (None). Hand-rolled because the trait uses
-// RPIT (`-> impl Future`) which `mockall::automock` can't synthesise.
-
-struct MockVoipPushSender {
-    deliveries: HashMap<String, bool>,
-}
-
-impl MockVoipPushSender {
-    fn with_outcomes(outcomes: &[(&str, bool)]) -> Self {
-        Self {
-            deliveries: outcomes
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), *v))
-                .collect(),
-        }
-    }
-}
-
-impl VoipPushSender for MockVoipPushSender {
-    async fn send_voip_push(
-        &self,
-        recipient_id: MacroUserIdStr<'_>,
-        _payload: &VoipPushPayload,
-    ) -> Option<MacroUserIdStr<'static>> {
-        let key = recipient_id.as_ref().to_string();
-        let owned = recipient_id.into_owned();
-        self.deliveries
-            .get(&key)
-            .copied()
-            .unwrap_or(false)
-            .then_some(owned)
-    }
-}
-
-fn voip_payload() -> VoipPushPayload {
-    VoipPushPayload {
-        aps: Default::default(),
-        call_id: Uuid::nil().to_string(),
-        channel_id: "ch-1".to_string(),
-        channel_name: "general".to_string(),
-        caller_name: "Carla".to_string(),
-        livekit_server_url: Some("wss://lk.example".to_string()),
-        livekit_token: Some("token-test".to_string()),
-    }
-}
-
-#[tokio::test]
-async fn dispatch_voip_pushes_returns_only_successfully_delivered_recipients() {
-    let alice = user("alice@example.com").into_owned();
-    let bob = user("bob@example.com").into_owned();
-    let sender = MockVoipPushSender::with_outcomes(&[
-        (alice.as_ref(), true),
-        (bob.as_ref(), false),
-    ]);
-
-    let payloads = vec![
-        (alice.clone(), voip_payload()),
-        (bob.clone(), voip_payload()),
-    ];
-
-    let delivered = dispatch_voip_pushes(&sender, &payloads).await;
-
-    assert_eq!(
-        delivered,
-        HashSet::from([alice]),
-        "only the recipient with successful delivery should appear in the set"
-    );
 }
 
 #[tokio::test]

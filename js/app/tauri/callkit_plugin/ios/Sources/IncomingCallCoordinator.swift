@@ -3,13 +3,9 @@ import CallKit
 import Foundation
 import PushKit
 
-/// Owns the iOS system-call surface: PushKit registration, incoming VoIP push
-/// handling, CallKit reporting, and CallKit answer/end actions.
-///
-/// All mutable state is main-queue only. CXProvider and PKPushRegistry are
-/// configured with `queue: .main`, so their delegate callbacks arrive there.
+/// PushKit + CallKit coordinator. Mutable state is main-queue only.
 final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistryDelegate, @unchecked Sendable {
-    private let mediaSession: NativeLiveKitCallSession
+    private let mediaSessionProvider: () -> NativeLiveKitCallSession
     private let onVoipTokenUpdated: (String) -> Void
     private let onCallAnswered: (String) -> Void
     private let onCallEnded: (String) -> Void
@@ -18,34 +14,19 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
     private let callController = CXCallController()
     private var registry: PKPushRegistry!
 
-    // MARK: - State (main-queue only)
-
-    // Keyed by call UUID. Holds the channelId so it is available when
-    // CXAnswerCallAction fires.
     private var pendingCalls: [UUID: String] = [:]
-
-    // Keyed by call UUID. Holds LiveKit credentials from the VoIP push payload
-    // so a lock-screen answer can connect native audio without a webview trip.
     private var pendingCallTokens: [UUID: PendingCallToken] = [:]
-
-    // The UUID of the most recently reported incoming call, used by
-    // endActiveCall.
     private var activeCallUUID: UUID?
-
-    // Last VoIP token received from PushKit; may arrive before JS is ready.
     private var cachedVoipToken: String?
-
-    // channelId from the most recent answered call; may arrive before JS is
-    // ready.
     private var pendingAnsweredChannelId: String?
 
     init(
-        mediaSession: NativeLiveKitCallSession,
+        mediaSession: @escaping () -> NativeLiveKitCallSession,
         onVoipTokenUpdated: @escaping (String) -> Void,
         onCallAnswered: @escaping (String) -> Void,
         onCallEnded: @escaping (String) -> Void
     ) {
-        self.mediaSession = mediaSession
+        self.mediaSessionProvider = mediaSession
         self.onVoipTokenUpdated = onVoipTokenUpdated
         self.onCallAnswered = onCallAnswered
         self.onCallEnded = onCallEnded
@@ -89,8 +70,9 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
             self.onMain {
                 if error != nil {
                     self.clearCallState(uuid: uuid)
-                    Task { [weak self] in
-                        await self?.mediaSession.disconnect()
+                    let mediaSession = self.mediaSessionProvider()
+                    Task {
+                        await mediaSession.disconnect()
                     }
                 }
                 completion()
@@ -103,8 +85,9 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
             guard let self, error != nil else { return }
             self.onMain {
                 self.clearCallState(uuid: uuid)
-                Task { [weak self] in
-                    await self?.mediaSession.disconnect()
+                let mediaSession = self.mediaSessionProvider()
+                Task {
+                    await mediaSession.disconnect()
                 }
             }
         }
@@ -119,8 +102,6 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
             completion(error)
         }
     }
-
-    // MARK: - PKPushRegistryDelegate
 
     func pushRegistry(
         _ registry: PKPushRegistry,
@@ -152,9 +133,7 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
         let livekitToken = dict["livekitToken"] as? String
 
         guard let uuid = UUID(uuidString: callIdString) else {
-            // iOS terminates apps that skip reportNewIncomingCall inside this
-            // delegate. Report a ghost call and immediately end it as failed so
-            // the system requirement is satisfied while surfacing the server bug.
+            // PushKit requires every VoIP push to be reported to CallKit.
             print("[CallKit] Invalid callId '\(callIdString)' in VoIP payload: \(dict)")
             let fallbackUUID = UUID()
             provider.reportNewIncomingCall(with: fallbackUUID, update: CXCallUpdate()) { [weak self] _ in
@@ -164,8 +143,7 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
             return
         }
 
-        // Enforce the single-call invariant. Snapshot the keys before mutation
-        // so we do not mutate the dictionary while iterating its live key view.
+        // Copy keys before mutating; Dictionary.Keys is a live view.
         for staleUUID in Array(pendingCalls.keys) where staleUUID != uuid {
             provider.reportCall(with: staleUUID, endedAt: nil, reason: .failed)
             pendingCalls.removeValue(forKey: staleUUID)
@@ -185,8 +163,7 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
         update.localizedCallerName = callerName
         update.hasVideo = false
 
-        // iOS 13+: must call reportNewIncomingCall synchronously within this
-        // delegate. If we do not, iOS will terminate the app.
+        // Must happen from the PushKit delegate; otherwise iOS can terminate us.
         provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
             if error != nil {
                 self?.pendingCalls.removeValue(forKey: uuid)
@@ -197,15 +174,14 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
         }
     }
 
-    // MARK: - CXProviderDelegate
-
     func providerDidReset(_ provider: CXProvider) {
         pendingCalls.removeAll()
         pendingCallTokens.removeAll()
         activeCallUUID = nil
         pendingAnsweredChannelId = nil
-        Task { [weak self] in
-            await self?.mediaSession.disconnect()
+        let mediaSession = mediaSessionProvider()
+        Task {
+            await mediaSession.disconnect()
         }
     }
 
@@ -215,6 +191,7 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
             return
         }
 
+        let mediaSession = mediaSessionProvider()
         mediaSession.configureAudioSessionCategory()
 
         pendingAnsweredChannelId = channelId
@@ -232,6 +209,10 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
             print("[CallKit] No cached LiveKit token for answered call \(answeredUUID.uuidString); JS-driven join required")
         }
 
+        // Keep activeCallUUID so JS can still request CXEndCallAction.
+        pendingCalls.removeValue(forKey: answeredUUID)
+        pendingCallTokens.removeValue(forKey: answeredUUID)
+
         action.fulfill()
     }
 
@@ -239,8 +220,9 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
         let callId = action.callUUID.uuidString
         onCallEnded(callId)
 
-        Task { [weak self] in
-            await self?.mediaSession.disconnect()
+        let mediaSession = mediaSessionProvider()
+        Task {
+            await mediaSession.disconnect()
         }
 
         action.fulfill()
@@ -248,14 +230,12 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        mediaSession.activateAudioEngine()
+        mediaSessionProvider().activateAudioEngine()
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-        mediaSession.deactivateAudioEngine()
+        mediaSessionProvider().deactivateAudioEngine()
     }
-
-    // MARK: - Helpers
 
     private func clearCallState(uuid: UUID) {
         pendingCalls.removeValue(forKey: uuid)

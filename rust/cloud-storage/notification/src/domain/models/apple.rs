@@ -181,17 +181,10 @@ pub struct VoipPushPayload {
     pub channel_name: String,
     /// Display name of the caller shown in the CallKit incoming-call UI.
     pub caller_name: String,
-    /// LiveKit websocket URL the iOS native client connects to. Embedded so the
-    /// client can join the call without a webview round-trip — required for
-    /// answering from the lock screen. Optional + skip-if-none for forward
-    /// compatibility: an older client receiving a payload without this field
-    /// (or a payload replayed from before the field existed) falls back to the
-    /// JS-driven join path rather than failing to deserialize.
+    /// LiveKit websocket URL for native lock-screen answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub livekit_server_url: Option<String>,
-    /// LiveKit JWT minted for the recipient's user identity. TTL must be long
-    /// enough to cover push delivery + ringing time. Optional for the same
-    /// forward-compat reason as `livekit_server_url`.
+    /// Recipient-specific LiveKit JWT for native lock-screen answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub livekit_token: Option<String>,
 }
