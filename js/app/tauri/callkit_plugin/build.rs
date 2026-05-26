@@ -164,7 +164,9 @@ fn stage_xcode_frameworks(
 
 fn emit_ios_source_rerun_inputs(ios_dir: &Path) {
     emit_rerun_if_changed(&ios_dir.join("Package.swift"));
-    emit_dir_rerun_inputs(&ios_dir.join("Sources"));
+    let sources_dir = ios_dir.join("Sources");
+    emit_rerun_if_changed(&sources_dir);
+    emit_dir_rerun_inputs(&sources_dir);
 }
 
 fn emit_dir_rerun_inputs(dir: &Path) {

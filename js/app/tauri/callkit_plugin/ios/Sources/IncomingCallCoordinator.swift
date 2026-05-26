@@ -158,6 +158,7 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
         if let serverUrl = livekitServerUrl, let token = livekitToken {
             pendingCallTokens[uuid] = PendingCallToken(serverUrl: serverUrl, token: token)
         } else {
+            pendingCallTokens.removeValue(forKey: uuid)
             print("[CallKit] VoIP payload missing native connection credentials; lock-screen answer will not connect natively")
         }
         activeCallUUID = uuid
