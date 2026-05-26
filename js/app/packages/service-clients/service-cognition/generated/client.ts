@@ -5,13 +5,16 @@
  * OpenAPI spec version: 1.0.0
  */
 import type {
+  AddServerRequest,
   CallToolRequest,
   CallToolResponse,
   ChatHistory,
   ChatHistoryBatchMessagesRequest,
   ChatMessageError,
   CreateChatRequest,
+  DeleteMcpServerParams,
   DocumentTextPart,
+  ErrorResponse,
   GetBatchPreviewRequest,
   GetBatchPreviewResponse,
   GetChatPermissionsResponse,
@@ -19,15 +22,23 @@ import type {
   GetChatsForAttachmentResponse,
   GetModelsResponse,
   HttpSendChatMessageRequest,
+  McpAuthCallbackParams,
   MemoryErrorBody,
   MemoryResponse,
   PatchChatRequest,
   RejectToolCallRequest,
   SendChatMessageResponse,
+  ServerResponse,
+  StartAuthRequest,
+  StartAuthResponse,
   StopChatStreamError,
   StopChatStreamRequest,
   StopChatStreamResponse,
   StringIDResponse,
+  StructuredCompletionError,
+  StructuredCompletionRequest,
+  StructuredCompletionResponse,
+  UpdateServerRequest,
   UpdateToolCallRequest,
   UpdateToolResponseRequest,
 } from './schemas';
@@ -995,6 +1006,363 @@ export const healthHandler = async (
 };
 
 /**
+ * @summary List all MCP servers configured for the authenticated user.
+ */
+export type listMcpServersResponse200 = {
+  data: ServerResponse[];
+  status: 200;
+};
+
+export type listMcpServersResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type listMcpServersResponse500 = {
+  data: ErrorResponse;
+  status: 500;
+};
+
+export type listMcpServersResponseSuccess = listMcpServersResponse200 & {
+  headers: Headers;
+};
+export type listMcpServersResponseError = (
+  | listMcpServersResponse401
+  | listMcpServersResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMcpServersResponse =
+  | listMcpServersResponseSuccess
+  | listMcpServersResponseError;
+
+export const getListMcpServersUrl = () => {
+  return `/mcp/servers`;
+};
+
+export const listMcpServers = async (
+  options?: RequestInit
+): Promise<listMcpServersResponse> => {
+  const res = await fetch(getListMcpServersUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listMcpServersResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as listMcpServersResponse;
+};
+
+/**
+ * @summary Update an existing MCP server's name or enabled status.
+ */
+export type updateMcpServerResponse200 = {
+  data: ServerResponse;
+  status: 200;
+};
+
+export type updateMcpServerResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type updateMcpServerResponse404 = {
+  data: ErrorResponse;
+  status: 404;
+};
+
+export type updateMcpServerResponse500 = {
+  data: ErrorResponse;
+  status: 500;
+};
+
+export type updateMcpServerResponseSuccess = updateMcpServerResponse200 & {
+  headers: Headers;
+};
+export type updateMcpServerResponseError = (
+  | updateMcpServerResponse401
+  | updateMcpServerResponse404
+  | updateMcpServerResponse500
+) & {
+  headers: Headers;
+};
+
+export type updateMcpServerResponse =
+  | updateMcpServerResponseSuccess
+  | updateMcpServerResponseError;
+
+export const getUpdateMcpServerUrl = () => {
+  return `/mcp/servers`;
+};
+
+export const updateMcpServer = async (
+  updateServerRequest: UpdateServerRequest,
+  options?: RequestInit
+): Promise<updateMcpServerResponse> => {
+  const res = await fetch(getUpdateMcpServerUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateServerRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateMcpServerResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as updateMcpServerResponse;
+};
+
+/**
+ * @summary Add a new MCP server for the authenticated user.
+ */
+export type addMcpServerResponse201 = {
+  data: ServerResponse;
+  status: 201;
+};
+
+export type addMcpServerResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type addMcpServerResponse500 = {
+  data: ErrorResponse;
+  status: 500;
+};
+
+export type addMcpServerResponseSuccess = addMcpServerResponse201 & {
+  headers: Headers;
+};
+export type addMcpServerResponseError = (
+  | addMcpServerResponse401
+  | addMcpServerResponse500
+) & {
+  headers: Headers;
+};
+
+export type addMcpServerResponse =
+  | addMcpServerResponseSuccess
+  | addMcpServerResponseError;
+
+export const getAddMcpServerUrl = () => {
+  return `/mcp/servers`;
+};
+
+export const addMcpServer = async (
+  addServerRequest: AddServerRequest,
+  options?: RequestInit
+): Promise<addMcpServerResponse> => {
+  const res = await fetch(getAddMcpServerUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(addServerRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: addMcpServerResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as addMcpServerResponse;
+};
+
+/**
+ * @summary Delete an MCP server by URL.
+ */
+export type deleteMcpServerResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type deleteMcpServerResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type deleteMcpServerResponse500 = {
+  data: ErrorResponse;
+  status: 500;
+};
+
+export type deleteMcpServerResponseSuccess = deleteMcpServerResponse204 & {
+  headers: Headers;
+};
+export type deleteMcpServerResponseError = (
+  | deleteMcpServerResponse401
+  | deleteMcpServerResponse500
+) & {
+  headers: Headers;
+};
+
+export type deleteMcpServerResponse =
+  | deleteMcpServerResponseSuccess
+  | deleteMcpServerResponseError;
+
+export const getDeleteMcpServerUrl = (params: DeleteMcpServerParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/mcp/servers?${stringifiedParams}`
+    : `/mcp/servers`;
+};
+
+export const deleteMcpServer = async (
+  params: DeleteMcpServerParams,
+  options?: RequestInit
+): Promise<deleteMcpServerResponse> => {
+  const res = await fetch(getDeleteMcpServerUrl(params), {
+    ...options,
+    method: 'DELETE',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteMcpServerResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as deleteMcpServerResponse;
+};
+
+/**
+ * @summary OAuth callback endpoint — receives code and state from the authorization server.
+ */
+export type mcpAuthCallbackResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type mcpAuthCallbackResponse500 = {
+  data: ErrorResponse;
+  status: 500;
+};
+
+export type mcpAuthCallbackResponseSuccess = mcpAuthCallbackResponse200 & {
+  headers: Headers;
+};
+export type mcpAuthCallbackResponseError = mcpAuthCallbackResponse500 & {
+  headers: Headers;
+};
+
+export type mcpAuthCallbackResponse =
+  | mcpAuthCallbackResponseSuccess
+  | mcpAuthCallbackResponseError;
+
+export const getMcpAuthCallbackUrl = (params: McpAuthCallbackParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/mcp/servers/auth/callback?${stringifiedParams}`
+    : `/mcp/servers/auth/callback`;
+};
+
+export const mcpAuthCallback = async (
+  params: McpAuthCallbackParams,
+  options?: RequestInit
+): Promise<mcpAuthCallbackResponse> => {
+  const res = await fetch(getMcpAuthCallbackUrl(params), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpAuthCallbackResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as mcpAuthCallbackResponse;
+};
+
+/**
+ * @summary Start the OAuth authorization flow for an MCP server.
+ */
+export type startMcpAuthResponse200 = {
+  data: StartAuthResponse;
+  status: 200;
+};
+
+export type startMcpAuthResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type startMcpAuthResponse500 = {
+  data: ErrorResponse;
+  status: 500;
+};
+
+export type startMcpAuthResponseSuccess = startMcpAuthResponse200 & {
+  headers: Headers;
+};
+export type startMcpAuthResponseError = (
+  | startMcpAuthResponse401
+  | startMcpAuthResponse500
+) & {
+  headers: Headers;
+};
+
+export type startMcpAuthResponse =
+  | startMcpAuthResponseSuccess
+  | startMcpAuthResponseError;
+
+export const getStartMcpAuthUrl = () => {
+  return `/mcp/servers/auth/start`;
+};
+
+export const startMcpAuth = async (
+  startAuthRequest: StartAuthRequest,
+  options?: RequestInit
+): Promise<startMcpAuthResponse> => {
+  const res = await fetch(getStartMcpAuthUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(startAuthRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: startMcpAuthResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as startMcpAuthResponse;
+};
+
+/**
  * Returns the current memory if one exists. If the memory is stale or missing,
 a background generation is triggered and the endpoint returns the stale
 memory (200) or 404 if none exists yet.
@@ -1262,4 +1630,73 @@ export const stopChatStream = async (
     status: res.status,
     headers: res.headers,
   } as stopChatStreamResponse;
+};
+
+export type structuredCompletionResponse200 = {
+  data: StructuredCompletionResponse;
+  status: 200;
+};
+
+export type structuredCompletionResponse400 = {
+  data: StructuredCompletionError;
+  status: 400;
+};
+
+export type structuredCompletionResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type structuredCompletionResponse402 = {
+  data: void;
+  status: 402;
+};
+
+export type structuredCompletionResponse500 = {
+  data: StructuredCompletionError;
+  status: 500;
+};
+
+export type structuredCompletionResponseSuccess =
+  structuredCompletionResponse200 & {
+    headers: Headers;
+  };
+export type structuredCompletionResponseError = (
+  | structuredCompletionResponse400
+  | structuredCompletionResponse401
+  | structuredCompletionResponse402
+  | structuredCompletionResponse500
+) & {
+  headers: Headers;
+};
+
+export type structuredCompletionResponse =
+  | structuredCompletionResponseSuccess
+  | structuredCompletionResponseError;
+
+export const getStructuredCompletionUrl = () => {
+  return `/structured-completion`;
+};
+
+export const structuredCompletion = async (
+  structuredCompletionRequest: StructuredCompletionRequest,
+  options?: RequestInit
+): Promise<structuredCompletionResponse> => {
+  const res = await fetch(getStructuredCompletionUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(structuredCompletionRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: structuredCompletionResponse['data'] = body
+    ? JSON.parse(body)
+    : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as structuredCompletionResponse;
 };

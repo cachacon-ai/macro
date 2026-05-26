@@ -3,7 +3,7 @@ import { LoadingBlock } from '@core/component/LoadingBlock';
 import { PcNoiseGrid } from '@core/component/PcNoiseGrid';
 import { toast } from '@core/component/Toast/Toast';
 import { useEmailLinks } from '@core/email-link';
-import LogoIcon from '@macro-icons/macro-logo.svg';
+import LogoIcon from '@icon/macro-logo.svg';
 import { useUserInfo } from '@queries/auth';
 import { useNavigate } from '@solidjs/router';
 import { Surface } from '@ui';
@@ -20,10 +20,9 @@ function PostSignupRedirect() {
       () => {},
       (err) => {
         if (err.tag !== 'AlreadyInitialized') {
-          toast.alert(
-            'Failed to connect email',
-            'Select email permissions on sign-in to enable'
-          );
+          toast.alert('Failed to connect email', {
+            subtext: 'Select email permissions on sign-in to enable',
+          });
         }
       }
     );
@@ -66,7 +65,7 @@ export function Signup() {
           `
           }
         </style>
-        <div class="inset-0 absolute text-edge bg-panel opacity-10 -z-1">
+        <div class="inset-0 absolute text-edge bg-surface opacity-10 -z-1">
           <PcNoiseGrid
             cellSize={30}
             warp={0}

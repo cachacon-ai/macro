@@ -1,4 +1,3 @@
-import EditableField from '@core/component/EditableField';
 import { capitalize } from '@block-pdf/util/StringUtils';
 import { useHasPaidAccess } from '@core/auth/license';
 import { UserIcon } from '@core/component/UserIcon';
@@ -12,26 +11,40 @@ import {
   blockNameToFileExtensions,
   blockNameToMimeTypes,
 } from '@core/constant/allBlocks';
+import { ShowFeatureFlag } from '@app/lib/analytics/posthog';
 import {
   DEV_MODE_ENV,
   ENABLE_AUTO_UPDATE_UI,
   ENABLE_EMAIL,
   ENABLE_PROFILE_PICTURES,
+  ENABLE_NEW_PRICING_OVERRIDE,
 } from '@core/constant/featureFlags';
+import { useUserTeamsQuery } from '@queries/team';
 import { usePaywallState } from '@core/constant/PaywallState';
 import { fileSelector } from '@core/directive/fileSelector';
 import {
   type ProfilePictureItem,
   useProfilePictureUrl,
 } from '@core/signal/profilePicture';
-import IconUpload from '@macro-icons/macro-upload.svg';
+import IconUpload from '@phosphor-icons/core/regular/upload-simple.svg?component-solid';
 import SignOutIcon from '@phosphor-icons/core/regular/sign-out.svg?component-solid';
 import { authServiceClient } from '@service-auth/client';
 import { useEmail, useLicenseStatus, useUserId } from '@core/context/user';
-import { createMemo, createResource, createSignal, Show } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  type JSX,
+  Match,
+  Show,
+  Switch,
+} from 'solid-js';
 import { usePermissions } from '@core/context/user';
 import { useSettingsState } from '@core/constant/SettingsState';
 import PaywallComponent from '../paywall/PaywallComponent';
+import PaywallTeamMemberView from '../paywall/PaywallTeamMemberView';
+import PaywallTeamOwnerView from '../paywall/PaywallTeamOwnerView';
 import {
     useEmailLinks,
   useEmailLinksStatus,
@@ -83,12 +96,8 @@ function formatBundleUpdateStatus(status: BundleUpdateStatus): string {
 
 function useUserName() {
   const fetchUserName = async () => {
-    const [_, response] = await authServiceClient.getUserName();
-    if (response) {
-      return response;
-    }
-
-    return null;
+    const response = await authServiceClient.getUserName();
+    return response.isOk() ? response.value : null;
   };
 
   const [userNameResource] = createResource(fetchUserName);
@@ -118,6 +127,20 @@ export function Account() {
 
   const { disconnect: disconnectEmail } = useEmailLinks();
 
+  const userTeamsQuery = useUserTeamsQuery();
+  const ownedTeam = createMemo(() => {
+    const teams = userTeamsQuery.data;
+    const uid = userId();
+    if (!teams || !uid) return undefined;
+    return teams.find((t) => t.owner_id === uid);
+  });
+  const isNonOwnerTeamMember = createMemo(() => {
+    const teams = userTeamsQuery.data;
+    const uid = userId();
+    if (!teams || !uid) return false;
+    return teams.some((t) => t.owner_id !== uid);
+  });
+
   const userName = useUserName();
   const [updatedFirstName, setUpdatedFirstName] = createSignal<
     string | undefined
@@ -129,14 +152,14 @@ export function Account() {
   const emailActive = useEmailLinksStatus();
 
   const [githubLinkExists, { refetch: refetchGithubLink }] = createResource(async () => {
-    const [_, response] = await authServiceClient.checkLinkExists({ idp_name: 'github' });
-    return response?.link_exists ?? false;
+    const response = await authServiceClient.checkLinkExists({ idp_name: 'github' });
+    return response.isOk() ? response.value.link_exists : false;
   });
 
   const handleGithubEnable = async () => {
-    const [_, url] = await authServiceClient.initGithubLink(window.location.href);
-    if (url) {
-      window.location.href = url;
+    const url = await authServiceClient.initGithubLink(window.location.href);
+    if (url.isOk()) {
+      window.location.href = url.value;
     }
   };
 
@@ -175,27 +198,50 @@ export function Account() {
   };
 
   return (
-    <div
-      class="h-full overflow-y-auto p-2"
-      style="scrollbar-width: none;"
-    >
-      <div class="max-w-200 w-full mx-auto">
-        <Panel depth={2}>
+      <div class="h-full overflow-hidden flex justify-center p-2">
+        <div class="max-w-200 size-full">
+          <Panel depth={2} class="h-full overflow-hidden text-ink">
           <Panel.Header class="px-6">
             <div class="text-sm font-semibold">Account</div>
           </Panel.Header>
-          <Panel.Body class="text-ink">
-            <div class="grid gap-px bg-edge-muted border-b border-edge-muted">
-              <Show when={permissions()?.includes('write:stripe_subscription') && !isNativeMobilePlatform()}>
-                <div class="bg-panel px-6 py-2">
-                  <PaywallComponent
-                    hideCloseButton
-                    cb={() => {}}
-                    handleGuest={() => toggleSettings()}
-                  />
-                </div>
-              </Show>
 
+          <Panel.Toolbar class="h-full w-full">
+            <Show when={permissions()?.includes('write:stripe_subscription') && !isNativeMobilePlatform()}>
+              <div class="px-4 py-2 w-full">
+                <ShowFeatureFlag
+                  key="enable-new-pricing"
+                  enabledOverride={ENABLE_NEW_PRICING_OVERRIDE}
+                  fallback={
+                    <PaywallComponent
+                      hideCloseButton
+                      cb={() => {}}
+                      handleGuest={() => toggleSettings()}
+                    />
+                  }
+                >
+                  <Switch
+                    fallback={
+                      <PaywallComponent
+                        hideCloseButton
+                        cb={() => {}}
+                        handleGuest={() => toggleSettings()}
+                      />
+                    }
+                  >
+                    <Match when={ownedTeam()}>
+                      {(team) => <PaywallTeamOwnerView team={team()} />}
+                    </Match>
+                    <Match when={isNonOwnerTeamMember()}>
+                      <PaywallTeamMemberView />
+                    </Match>
+                  </Switch>
+                </ShowFeatureFlag>
+              </div>
+            </Show>
+          </Panel.Toolbar>
+
+          <Panel.Body scroll class="text-ink">
+            <div class="grid gap-px bg-edge-muted border-b border-edge-muted">
               <Show when={ENABLE_PROFILE_PICTURES && userId()}>
                 <Row label="Profile Picture">
                   <div
@@ -239,28 +285,24 @@ export function Account() {
               </Row>
 
               <Row label="First Name">
-                <EditableField
-                  class="ph-no-capture [&_span]:text-sm/normal [&_span]:text-ink-muted"
+                <NameInput
                   value={firstName()}
-                  onSave={(newValue: string) => {
+                  onSave={(newValue) => {
                     setUpdatedFirstName(newValue);
                     authServiceClient.putUserName({ first_name: newValue });
                   }}
                   placeholder="Enter First Name"
-                  allowEmpty={true}
                 />
               </Row>
 
               <Row label="Last Name">
-                <EditableField
-                  class="ph-no-capture [&_span]:text-sm/normal [&_span]:text-ink-muted"
+                <NameInput
                   value={lastName()}
-                  onSave={(newValue: string) => {
+                  onSave={(newValue) => {
                     setUpdatedLastName(newValue);
                     authServiceClient.putUserName({ last_name: newValue });
                   }}
                   placeholder="Enter Last Name"
-                  allowEmpty={true}
                 />
               </Row>
 
@@ -438,30 +480,30 @@ export function Account() {
                   position="center"
                   class="w-120"
                 >
-                  <Panel active depth={2}>
-                                      <Panel.Header class="px-6">
-                                        <Dialog.Title class="text-ink text-sm font-semibold">
-                                          Delete Account
-                                        </Dialog.Title>
-                                      </Panel.Header>
-                                      <Panel.Body class="p-6 font-sans flex flex-col gap-3">
-                                        <Dialog.Description class="text-ink-muted text-sm/tight font-normal">
-                                          Are you sure you want to delete your account? This action is
-                                          permanent and cannot be undone.
-                                        </Dialog.Description>
-                                        <div class="pt-3 justify-end items-center gap-3 inline-flex">
-                                          <Button variant="base" depth={3} onClick={() => setShowDeleteModal(false)}>
-                                            Cancel
-                                          </Button>
-                                          <Button variant="danger" depth={3} onClick={() => {
-                                            setShowDeleteModal(false);
-                                            setShowDeleteConfirmModal(true);
-                                          }}>
-                                            Delete
-                                          </Button>
-                                        </div>
-                                      </Panel.Body>
-                                    </Panel>
+                  <Panel active depth={2} class="rounded-xl">
+                    <Panel.Header class="px-6">
+                      <Dialog.Title class="text-ink text-sm font-semibold">
+                        Delete Account
+                      </Dialog.Title>
+                    </Panel.Header>
+                    <Panel.Body class="p-6 font-sans flex flex-col gap-3">
+                      <Dialog.Description class="text-ink-muted text-sm/tight font-normal">
+                        Are you sure you want to delete your account? This action is
+                        permanent and cannot be undone.
+                      </Dialog.Description>
+                      <div class="pt-3 justify-end items-center gap-3 inline-flex">
+                        <Button variant="base" depth={3} onClick={() => setShowDeleteModal(false)}>
+                          Cancel
+                        </Button>
+                        <Button variant="danger" depth={3} onClick={() => {
+                          setShowDeleteModal(false);
+                          setShowDeleteConfirmModal(true);
+                        }}>
+                          Delete
+                        </Button>
+                      </div>
+                    </Panel.Body>
+                  </Panel>
                 </Dialog>
                 <Dialog
                   open={showDeleteConfirmModal()}
@@ -469,27 +511,27 @@ export function Account() {
                   position="center"
                   class="w-120"
                 >
-                  <Panel active depth={2}>
-                                      <Panel.Header class="px-6">
-                                        <Dialog.Title class="text-ink text-sm font-semibold">
-                                          Are you absolutely sure?
-                                        </Dialog.Title>
-                                      </Panel.Header>
-                                      <Panel.Body class="p-6 font-sans flex flex-col gap-3">
-                                        <Dialog.Description class="text-ink-muted text-sm/tight font-normal">
-                                          This will permanently delete your account and all associated
-                                          data. This cannot be undone.
-                                        </Dialog.Description>
-                                        <div class="pt-3 justify-end items-center gap-3 inline-flex">
-                                          <Button variant="base" depth={3} onClick={() => setShowDeleteConfirmModal(false)}>
-                                            Cancel
-                                          </Button>
-                                          <Button variant="danger" depth={3} onClick={deleteAccountHandler}>
-                                            Delete My Account
-                                          </Button>
-                                        </div>
-                                      </Panel.Body>
-                                    </Panel>
+                  <Panel active depth={2} class="rounded-xl">
+                    <Panel.Header class="px-6">
+                      <Dialog.Title class="text-ink text-sm font-semibold">
+                        Are you absolutely sure?
+                      </Dialog.Title>
+                    </Panel.Header>
+                    <Panel.Body class="p-6 font-sans flex flex-col gap-3">
+                      <Dialog.Description class="text-ink-muted text-sm/tight font-normal">
+                        This will permanently delete your account and all associated
+                        data. This cannot be undone.
+                      </Dialog.Description>
+                      <div class="pt-3 justify-end items-center gap-3 inline-flex">
+                        <Button variant="base" depth={3} onClick={() => setShowDeleteConfirmModal(false)}>
+                          Cancel
+                        </Button>
+                        <Button variant="danger" depth={3} onClick={deleteAccountHandler}>
+                          Delete My Account
+                        </Button>
+                      </div>
+                    </Panel.Body>
+                  </Panel>
                 </Dialog>
               </div>
             </Show>
@@ -502,9 +544,65 @@ export function Account() {
 
 function Row(props: { label: string; children?: any }) {
   return (
-    <div class="bg-panel flex items-center justify-between h-15.25 px-6">
+    <div class="bg-surface flex items-center justify-between h-15.25 px-6">
       <div class="text-sm">{props.label}</div>
       <div class="text-right">{props.children}</div>
+    </div>
+  );
+}
+
+function NameInput(props: {
+  value?: string;
+  placeholder?: string;
+  onSave: (value: string) => void;
+}) {
+  const [inputValue, setInputValue] = createSignal(props.value ?? '');
+  const [isFocused, setIsFocused] = createSignal(false);
+
+  // Keep local input synced with external value, but don't clobber while typing.
+  createEffect(() => {
+    if (!isFocused()) {
+      setInputValue(props.value ?? '');
+    }
+  });
+
+  const commit = () => {
+    const next = inputValue();
+    if (next === (props.value ?? '')) return;
+    props.onSave(next);
+  };
+
+  const handleKeyDown: JSX.EventHandler<HTMLInputElement, KeyboardEvent> = (
+    e
+  ) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.currentTarget.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setInputValue(props.value ?? '');
+      e.currentTarget.blur();
+    }
+  };
+
+  return (
+    <div class="ph-no-capture group relative flex items-center gap-1 rounded-lg h-7 mobile:h-9 px-2 border text-xs bg-transparent text-ink-muted border-edge-muted hover:text-ink focus-within:text-ink focus-within:border-accent">
+      <input
+        type="text"
+        class="flex-1 min-w-0 bg-transparent outline-none border-0 p-0 text-xs placeholder:text-ink-extra-muted"
+        value={inputValue()}
+        onInput={(e) => setInputValue(e.currentTarget.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => {
+          setIsFocused(false);
+          commit();
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={props.placeholder}
+        autocomplete="off"
+        spellcheck={false}
+        data-1p-ignore
+      />
     </div>
   );
 }

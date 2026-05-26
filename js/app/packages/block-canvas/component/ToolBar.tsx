@@ -5,29 +5,26 @@ import {
 import { useCachedStyle } from '@block-canvas/signal/cachedStyle';
 import { useToolManager } from '@block-canvas/signal/toolManager';
 import { useIsNestedBlock } from '@core/block';
-import { DropdownMenuContent, MenuItem } from '@core/component/Menu';
 import { ScopedPortal } from '@core/component/ScopedPortal';
-import { LabelAndHotKey } from '@core/component/Tooltip';
 import {
   ENABLE_CANVAS_FILES,
   ENABLE_CANVAS_IMAGES,
   ENABLE_CANVAS_TEXT,
 } from '@core/constant/featureFlags';
-import { IS_MAC } from '@core/constant/isMac';
+
 import { TOKENS } from '@core/hotkey/tokens';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { useCanEdit } from '@core/signal/permissions';
-import CaretDown from '@icon/bold/caret-down-bold.svg';
-import Cursor from '@icon/regular/cursor.svg';
-import Hand from '@icon/regular/hand.svg';
-import ZoomOut from '@icon/regular/magnifying-glass-minus.svg';
-import ZoomIn from '@icon/regular/magnifying-glass-plus.svg';
-import PencilSimple from '@icon/regular/pencil-simple.svg';
-import Rectangle from '@icon/regular/rectangle.svg';
-import Text from '@icon/regular/text-t.svg';
-import { DropdownMenu } from '@kobalte/core/dropdown-menu';
-import { Button, cn } from '@ui';
+import CaretDown from '@phosphor/caret-down.svg';
+import Cursor from '@phosphor/cursor.svg';
+import Hand from '@phosphor/hand.svg';
+import ZoomOut from '@phosphor/magnifying-glass-minus.svg';
+import ZoomIn from '@phosphor/magnifying-glass-plus.svg';
+import PencilSimple from '@phosphor/pencil-simple.svg';
+import Rectangle from '@phosphor/rectangle.svg';
+import Text from '@phosphor/text-t.svg';
+import { Button, cn, Dropdown, Hotkey } from '@ui';
 import { registerHotkey } from 'core/hotkey/hotkeys';
 import { createSignal, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
@@ -51,48 +48,63 @@ const ConnectorTypeSubMenu = (props: {
     connectorTypeMenuTriggerSignal;
 
   return (
-    <DropdownMenu
+    <Dropdown
       placement="bottom"
       open={connectorTypeMenuTrigger()}
       onOpenChange={setConnectorTypeMenuTrigger}
     >
-      <DropdownMenu.Trigger>
-        <Button
-          variant="ghost"
-          size="icon-md"
-          style={{ width: '12px', margin: '0 -2px 0 -4px' }}
-          tabIndex={-1}
-        >
-          <SmallCaretDown />
-        </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenuContent>
-        <MenuItem
-          text="Connector"
-          icon={ConnectorStraightArrows}
-          onClick={() => {
-            props.onSelect('straight');
-          }}
-          hotkeyToken={TOKENS.canvas.line.straight}
-        />
-        <MenuItem
-          text="Flow Connector"
-          icon={ConnectorBezierArrows}
-          onClick={() => {
-            props.onSelect('smooth');
-          }}
-          hotkeyToken={TOKENS.canvas.line.flow}
-        />
-        <MenuItem
-          text="Bent Connector"
-          icon={ConnectorSteppedArrows}
-          onClick={() => {
-            props.onSelect('stepped');
-          }}
-          hotkeyToken={TOKENS.canvas.line.bent}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
+      <Dropdown.Trigger
+        variant="ghost"
+        size="icon-md"
+        style={{ width: '12px', margin: '0 -2px 0 -4px' }}
+        tabIndex={-1}
+      >
+        <SmallCaretDown />
+      </Dropdown.Trigger>
+      <Dropdown.Content>
+        <Dropdown.Group>
+          <Dropdown.Item
+            onSelect={() => {
+              props.onSelect('straight');
+            }}
+          >
+            <ConnectorStraightArrows class="size-4 shrink-0" />
+            <span class="flex-1 truncate">Connector</span>
+            <Hotkey
+              token={TOKENS.canvas.line.straight}
+              class="text-ink-muted"
+              showPlus
+            />
+          </Dropdown.Item>
+          <Dropdown.Item
+            onSelect={() => {
+              props.onSelect('smooth');
+            }}
+          >
+            <ConnectorBezierArrows class="size-4 shrink-0" />
+            <span class="flex-1 truncate">Flow Connector</span>
+            <Hotkey
+              token={TOKENS.canvas.line.flow}
+              class="text-ink-muted"
+              showPlus
+            />
+          </Dropdown.Item>
+          <Dropdown.Item
+            onSelect={() => {
+              props.onSelect('stepped');
+            }}
+          >
+            <ConnectorSteppedArrows class="size-4 shrink-0" />
+            <span class="flex-1 truncate">Bent Connector</span>
+            <Hotkey
+              token={TOKENS.canvas.line.bent}
+              class="text-ink-muted"
+              showPlus
+            />
+          </Dropdown.Item>
+        </Dropdown.Group>
+      </Dropdown.Content>
+    </Dropdown>
   );
 };
 
@@ -169,7 +181,7 @@ export function ToolBar() {
 
   return (
     <ScopedPortal scope="block">
-      <div class="absolute left-1/2 bottom-2 flex flex-row p-1 bg-menu border border-edge -translate-x-1/2">
+      <div class="absolute left-1/2 bottom-2 flex flex-row p-1 bg-surface border border-edge -translate-x-1/2">
         <div
           class={cn(
             'flex flex-row items-center space-x-2',
@@ -179,12 +191,8 @@ export function ToolBar() {
           <Button
             variant={activeTool() === Tools.Grab ? 'active' : 'ghost'}
             size="icon-md"
-            tooltip={
-              <LabelAndHotKey
-                label="Hand tool"
-                hotkeyToken={TOKENS.canvas.handTool}
-              />
-            }
+            label="Hand tool"
+            hotkey={TOKENS.canvas.handTool}
             onClick={() => {
               toolManager.setSelectedTool(Tools.Grab);
             }}
@@ -200,18 +208,11 @@ export function ToolBar() {
                   : 'ghost'
               }
               size="icon-md"
-              tooltip={
-                <>
-                  <LabelAndHotKey
-                    label="Zoom"
-                    hotkeyToken={TOKENS.canvas.zoomInTool}
-                  />
-                  <LabelAndHotKey
-                    label="Zoom out"
-                    shortcut={`hold ${IS_MAC ? 'option' : 'alt'}`}
-                  />
-                </>
-              }
+              label="Zoom"
+              hotkey={TOKENS.canvas.zoomInTool}
+              /* scuffed: previously also showed a second row
+                 "Zoom out — hold ${IS_MAC ? 'option' : 'alt'}"
+                 but multi-row tooltips were dropped. */
               onClick={() => {
                 toolManager.setSelectedTool(Tools.ZoomIn);
               }}
@@ -230,12 +231,8 @@ export function ToolBar() {
                   : 'ghost'
               }
               size="icon-md"
-              tooltip={
-                <LabelAndHotKey
-                  label="Move"
-                  hotkeyToken={TOKENS.canvas.selectTool}
-                />
-              }
+              label="Move"
+              hotkey={TOKENS.canvas.selectTool}
               onClick={() => {
                 toolManager.setSelectedTool(Tools.Select);
               }}
@@ -249,12 +246,8 @@ export function ToolBar() {
             <Button
               variant={activeTool() === Tools.Shape ? 'active' : 'ghost'}
               size="icon-md"
-              tooltip={
-                <LabelAndHotKey
-                  label="Rectangle"
-                  hotkeyToken={TOKENS.canvas.shapeTool}
-                />
-              }
+              label="Rectangle"
+              hotkey={TOKENS.canvas.shapeTool}
               onClick={() => {
                 toolManager.setSelectedTool(Tools.Shape);
               }}
@@ -265,12 +258,8 @@ export function ToolBar() {
             <Button
               variant={activeTool() === Tools.Pencil ? 'active' : 'ghost'}
               size="icon-md"
-              tooltip={
-                <LabelAndHotKey
-                  label="Pencil"
-                  hotkeyToken={TOKENS.canvas.pencilTool}
-                />
-              }
+              label="Pencil"
+              hotkey={TOKENS.canvas.pencilTool}
               onClick={() => {
                 toolManager.setSelectedTool(Tools.Pencil);
               }}
@@ -281,12 +270,8 @@ export function ToolBar() {
             <Button
               variant={activeTool() === Tools.Line ? 'active' : 'ghost'}
               size="icon-md"
-              tooltip={
-                <LabelAndHotKey
-                  label="Connector"
-                  hotkeyToken={TOKENS.canvas.lineTool}
-                />
-              }
+              label="Connector"
+              hotkey={TOKENS.canvas.lineTool}
               onClick={() => {
                 toolManager.setSelectedTool(Tools.Line);
               }}
@@ -303,12 +288,8 @@ export function ToolBar() {
                     : 'ghost'
                 }
                 size="icon-md"
-                tooltip={
-                  <LabelAndHotKey
-                    label="Text"
-                    hotkeyToken={TOKENS.canvas.textTool}
-                  />
-                }
+                label="Text"
+                hotkey={TOKENS.canvas.textTool}
                 onClick={() => {
                   toolManager.setSelectedTool(Tools.Text);
                 }}

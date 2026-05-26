@@ -11,7 +11,7 @@ export function exportTheme(themeId?: string){
   navigator.clipboard.writeText(theme);
 }
 
-export async function importTheme(): Promise<void>{
+async function _importTheme(): Promise<void>{
   try {
     const text = await navigator.clipboard.readText();
     const parsed: unknown = JSON.parse(text);
@@ -139,12 +139,14 @@ export function saveTheme(name: string): void{
 
 export function deleteTheme(id: string): void{
   setUserThemes(userThemes().filter((theme) => theme.id !== id));
-  setIsThemeSaved(false);
-  setCurrentThemeId('');
+  if(currentThemeId() === id){
+    setIsThemeSaved(false);
+    setCurrentThemeId('');
+  }
 }
 
 /** Returns true when the current theme has a dark background (ink lightness > panel lightness). */
-export function isThemeDark(): boolean {
+function _isThemeDark(): boolean {
   return themeReactive.c0.l[0]() > themeReactive.b0.l[0]();
 }
 

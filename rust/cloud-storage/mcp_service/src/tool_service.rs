@@ -1,4 +1,4 @@
-use ai_toolset::{AsyncToolSet, RequestContext};
+use ai_toolset::{AsyncToolCollection, RequestContext, ToolSet};
 use macro_user_id::user_id::MacroUserIdStr;
 use rmcp::{
     handler::server::ServerHandler,
@@ -11,16 +11,44 @@ use std::sync::Arc;
 /// MCP server handler that extracts authenticated user identity from HTTP
 /// request parts injected by rmcp's `StreamableHttpService`.
 pub struct AuthenticatedToolService<Context> {
-    toolset: Arc<AsyncToolSet<Context>>,
+    toolset: Arc<AsyncToolCollection<Context>>,
     context: Context,
 }
 
 impl<Context> AuthenticatedToolService<Context> {
     /// Creates a new authenticated tool service.
-    pub fn new(toolset: Arc<AsyncToolSet<Context>>, context: Context) -> Self {
+    pub fn new(toolset: Arc<AsyncToolCollection<Context>>, context: Context) -> Self {
         Self { toolset, context }
     }
+
+    fn tool_definitions(&self) -> Vec<Tool> {
+        self.toolset
+            .tools
+            .iter()
+            .map(|(key, value)| {
+                Tool::new(
+                    key.to_owned(),
+                    value.description.to_owned(),
+                    Arc::new(value.input_schema.clone()),
+                )
+            })
+            .collect()
+    }
+
+    fn authenticated_user_id(
+        extensions: &rmcp::model::Extensions,
+    ) -> Result<MacroUserIdStr<'static>, rmcp::ErrorData> {
+        extensions
+            .get::<http::request::Parts>()
+            .and_then(|parts| parts.extensions.get::<MacroUserIdStr<'static>>().cloned())
+            .ok_or_else(|| {
+                rmcp::ErrorData::internal_error("missing user identity — is auth configured?", None)
+            })
+    }
 }
+
+#[cfg(test)]
+mod test;
 
 impl<Context> ServerHandler for AuthenticatedToolService<Context>
 where
@@ -52,21 +80,8 @@ where
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListToolsResult, rmcp::ErrorData> {
-        let tools = self
-            .toolset
-            .tools
-            .iter()
-            .map(|(key, value)| {
-                Tool::new(
-                    key.to_owned(),
-                    value.description.to_owned(),
-                    Arc::new(value.input_schema.clone()),
-                )
-            })
-            .collect::<Vec<_>>();
-
         Ok(ListToolsResult {
-            tools,
+            tools: self.tool_definitions(),
             ..Default::default()
         })
     }
@@ -76,13 +91,7 @@ where
         request: rmcp::model::CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
-        let user_id = context
-            .extensions
-            .get::<http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<MacroUserIdStr<'static>>().cloned())
-            .ok_or_else(|| {
-                rmcp::ErrorData::internal_error("missing user identity — is auth configured?", None)
-            })?;
+        let user_id = Self::authenticated_user_id(&context.extensions)?;
 
         let request_context = RequestContext { user_id };
 

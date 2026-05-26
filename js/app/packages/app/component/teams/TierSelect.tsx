@@ -1,8 +1,8 @@
 import { type PaidPlanTier, PLAN_FEATURES } from '@app/component/paywall/plans';
-import CaretDownIcon from '@icon/regular/caret-down.svg';
-import CheckIcon from '@icon/regular/check.svg';
 import type { CollectionNode } from '@kobalte/core';
 import { Select } from '@kobalte/core/select';
+import CaretDownIcon from '@phosphor/caret-down.svg';
+import CheckIcon from '@phosphor/check.svg';
 import type { ValidComponent } from 'solid-js';
 
 type TierOption = { value: PaidPlanTier; label: string; description: string };
@@ -83,7 +83,7 @@ export function TierSelect(props: {
         <CaretDownIcon class="size-3 text-ink-muted shrink-0" />
       </Select.Trigger>
       <Select.Portal>
-        <Select.Content class="flex flex-col justify-start items-start bg-menu shadow-lg ring-1 ring-edge-muted rounded-sm p-1 cursor-default select-none max-w-full max-h-[calc(100dvh-10rem)] overflow-y-auto z-modal">
+        <Select.Content class="flex flex-col justify-start items-start bg-surface shadow-lg ring-1 ring-edge-muted rounded-sm p-1 cursor-default select-none max-w-full max-h-[calc(100dvh-10rem)] overflow-y-auto z-modal">
           <Select.Listbox />
         </Select.Content>
       </Select.Portal>

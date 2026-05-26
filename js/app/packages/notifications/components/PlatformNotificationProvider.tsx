@@ -80,6 +80,9 @@ function createBrowserNotication(
     onClick: (cb) => {
       notif.addEventListener('click', cb);
     },
+    onDismiss: (cb) => {
+      notif.addEventListener('close', cb);
+    },
     close: () => {
       notif.close();
     },
@@ -92,7 +95,7 @@ const NotificationInterfaceContext = createContext<
 
 /// this hook gives you access to the raw notification inteferface which is probably not what you want
 // you are probably looking for useNotificationState which handles UI disabled notifications
-export function usePlatformNotifications():
+function usePlatformNotifications():
   | PlatformNotificationInterface
   | NotificationUnsupported {
   const platformNotif = useContext(NotificationInterfaceContext);
@@ -107,7 +110,7 @@ export function usePlatformNotifications():
 }
 
 type UiDisabled = 'disabled-in-ui';
-export type UserSetting = 'allowed' | UiDisabled;
+type UserSetting = 'allowed' | UiDisabled;
 
 export interface PlatformNotificationState {
   permission: Accessor<NotificationPermission | UiDisabled>;
@@ -118,7 +121,7 @@ export interface PlatformNotificationState {
   ) => Promise<PlatformNotificationHandle | NotGranted | UiDisabled>;
 }
 
-export const NotificationStateContext = createContext<
+const NotificationStateContext = createContext<
   PlatformNotificationState | NotificationUnsupported | undefined
 >(undefined);
 

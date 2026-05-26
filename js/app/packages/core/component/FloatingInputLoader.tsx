@@ -1,5 +1,5 @@
-import CheckCircle from '@icon/regular/check-circle.svg';
-import Spinner from '@icon/regular/spinner.svg';
+import CheckCircle from '@phosphor/check-circle.svg';
+import Spinner from '@phosphor/spinner.svg';
 import { cn } from '@ui';
 import {
   type Accessor,
@@ -89,7 +89,7 @@ export function FloatingInputLoader(props: FloatingInputLoaderProps) {
         props.class
       )}
     >
-      <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-panel border border-edge-muted shadow-sm">
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-surface border border-edge-muted shadow-sm">
         <Show
           when={showSuccess()}
           fallback={

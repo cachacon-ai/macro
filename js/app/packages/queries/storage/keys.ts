@@ -7,8 +7,22 @@ export const projectsKeys = createQueryKeys('projects', {
   }),
 });
 
-export const deletedKeys = createQueryKeys('deleted', {
+const deletedKeys = createQueryKeys('deleted', {
   list: null,
+});
+
+export const documentLocationKeys = createQueryKeys('documentLocation', {
+  location: (documentId: string, versionId?: number) => ({
+    queryKey: [documentId, versionId],
+  }),
+  wait: (
+    documentId: string,
+    versionId: number | undefined,
+    target: string,
+    timeoutMs: number
+  ) => ({
+    queryKey: ['wait', target, documentId, versionId, timeoutMs],
+  }),
 });
 
 export const binaryDocumentKeys = createQueryKeys('binaryDocument', {
@@ -16,6 +30,15 @@ export const binaryDocumentKeys = createQueryKeys('binaryDocument', {
     queryKey: [documentId],
   }),
 });
+
+export const documentGithubPullRequestsKeys = createQueryKeys(
+  'documentGithubPullRequests',
+  {
+    list: (documentId: string) => ({
+      queryKey: [documentId],
+    }),
+  }
+);
 
 // Scoped under `entity` so `invalidateQueries({ queryKey: ['entity'] })`
 // (fired from the move/rename mutations) refreshes every key below.
@@ -36,9 +59,10 @@ export const instructionsMdKeys = createQueryKeys('instructionsMd', {
 });
 
 /**
- * @deprecated Use `projectsKeys` or `deletedKeys` directly
+ * @deprecated Use the specific key exports directly.
  */
 export const storageKeys = {
   projects: projectsKeys,
   deleted: deletedKeys,
+  documentGithubPullRequests: documentGithubPullRequestsKeys,
 };

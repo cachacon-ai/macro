@@ -1,13 +1,8 @@
 import { DEFAULT_CHAT_NAME } from '@block-chat/definition';
 import type { CodeFileExtension } from '@block-code/util/languageSupport';
-import { createMarkdownStateFromContent } from '@core/component/LexicalMarkdown/collaboration/utils';
-import {
-  PROPERTY_OPTION_IDS,
-  SYSTEM_PROPERTY_IDS,
-} from '@core/component/Properties/constants';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
-import { rawMarkdownStateToLoroSnapshot } from '@lexical-core/markdown-loro-snapshot';
+import { PROPERTY_OPTION_IDS, SYSTEM_PROPERTY_IDS } from '@property/constants';
 import {
   authKeys,
   invalidateUserQuota,
@@ -23,7 +18,7 @@ import { staticFileClient } from '@service-static-files/client';
 import { storageServiceClient } from '@service-storage/client';
 import type { PropertyInput } from '@service-storage/generated/schemas/propertyInput';
 import { uploadToPresignedUrl } from '@service-storage/util/uploadToPresignedUrl';
-import { syncServiceClient } from '@service-sync/client';
+import { err, ok } from 'neverthrow';
 import { isPaymentError } from './handlePaymentError';
 import { contentHash } from './hash';
 import {
@@ -31,19 +26,6 @@ import {
   isCodeEditorExtensionSupported,
   isCodeEditorLanguageSupported,
 } from './languageQuery';
-import { err, isErr, ok } from './maybeResult';
-
-/**
- * Generate a fake sha256 hash
- *
- * HACK: Since we don't actually store markdown files in dss, we need to provide a fake sha256 hash
- * to dss.
- */
-function fakeSha256() {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes); // secure RNG
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 type CreateMarkdownFileArgs = {
   title?: string;
@@ -52,44 +34,24 @@ type CreateMarkdownFileArgs = {
 };
 
 /**
- * Initializes a new markdown file in dss & sync_service given a content string.
+ * Creates a new markdown file and initializes sync-service on the backend.
  * Use createTask for the task subtype.
  */
 export async function createMarkdownFile(
   args?: CreateMarkdownFileArgs
 ): Promise<string | undefined> {
-  const emptyMarkdownState = await createMarkdownStateFromContent(
-    args?.content
-  );
-  const snapshot = await rawMarkdownStateToLoroSnapshot(
-    emptyMarkdownState as any
-  );
-  const fakeSha = fakeSha256();
-  const result = await storageServiceClient.createDocument({
+  const result = await storageServiceClient.createMarkdownDocument({
     documentName: args?.title ?? '',
-    fileType: 'md',
-    sha: fakeSha,
+    markdown: args?.content ?? '',
     projectId: args?.projectId,
-    isTask: false,
   });
 
   invalidateUserQuota();
 
-  if (isErr(result) || !snapshot) return;
-  let [
-    ,
-    {
-      metadata: { documentId },
-    },
-  ] = result;
+  if (result.isErr()) return;
 
-  let res = await syncServiceClient.initializeFromSnapshot({
-    snapshot,
-    documentId: documentId,
-  });
-  if (isErr(res)) {
-    return;
-  }
+  const { documentId } = result.value;
+
   setPreviewOnCreate({
     itemId: documentId,
     itemType: 'document',
@@ -114,12 +76,6 @@ type CreateTaskArgs = {
 export async function createTask(
   args?: CreateTaskArgs
 ): Promise<string | undefined> {
-  // Convert content to loro snapshot for sync service
-  const markdownState = await createMarkdownStateFromContent(args?.content);
-  const snapshot = await rawMarkdownStateToLoroSnapshot(markdownState as any);
-
-  if (!snapshot) return;
-
   // Ensure status is always set, defaulting to NOT_STARTED
   const existingPropertyValues = args?.propertyValues ?? [];
   const hasStatus = existingPropertyValues.some(
@@ -138,29 +94,19 @@ export async function createTask(
         },
       ];
 
-  // Create task with properties in one call
+  // Create task, properties, and sync-service content in one backend-owned lifecycle.
   const result = await storageServiceClient.createTask({
     taskName: args?.title ?? '',
+    markdown: args?.content ?? '',
     projectId: args?.projectId,
     propertyValues,
   });
 
   invalidateUserQuota();
 
-  if (isErr(result)) return;
+  if (result.isErr()) return;
 
-  const { documentId } = result[1];
-
-  // Initialize sync service with content
-  const syncRes = await syncServiceClient.initializeFromSnapshot({
-    snapshot,
-    documentId,
-  });
-
-  if (isErr(syncRes)) {
-    console.error('Failed to initialize task content in sync service');
-    // Task was created, just without content - still return the id
-  }
+  const { documentId } = result.value;
 
   setPreviewOnCreate({
     itemId: documentId,
@@ -192,25 +138,31 @@ export async function createCodeFileFromText({
 
   if (language && !extension) {
     if (!isCodeEditorLanguageSupported(language))
-      return err(
-        'UNSUPPORTED_LANGUAGE',
-        `${language} is not supported by the code block`
-      );
+      return err([
+        {
+          code: 'UNSUPPORTED_LANGUAGE',
+          message: `${language} is not supported by the code block`,
+        },
+      ]);
 
     finalExtension = getExtensionForLanguage(language) ?? undefined;
     if (!finalExtension) {
-      return err(
-        'UNSUPPORTED_LANGUAGE',
-        `Could not find file extension for language: ${language}`
-      );
+      return err([
+        {
+          code: 'UNSUPPORTED_LANGUAGE',
+          message: `Could not find file extension for language: ${language}`,
+        },
+      ]);
     }
   }
 
   if (!finalExtension || !isCodeEditorExtensionSupported(finalExtension))
-    return err(
-      'UNSUPPORTED_EXTENSION',
-      `${finalExtension ?? 'undefined'} is not supported by the code block`
-    );
+    return err([
+      {
+        code: 'UNSUPPORTED_EXTENSION',
+        message: `${finalExtension ?? 'undefined'} is not supported by the code block`,
+      },
+    ]);
 
   const mimeType = 'text/plain';
 
@@ -223,18 +175,20 @@ export async function createCodeFileFromText({
   invalidateUserQuota();
 
   // TODO: this is kind of odd, since there's an actual code we could use for the paywall, 402 Payment Required
-  if (isErr(maybeCode) && maybeCode[0][0].message.includes('403')) {
-    return err('UNAUTHORIZED', maybeCode[0][0].message);
+  if (maybeCode.isErr() && maybeCode.error[0].message.includes('403')) {
+    return err([{ code: 'UNAUTHORIZED', message: maybeCode.error[0].message }]);
   }
-  if (isErr(maybeCode)) return err('SERVER_ERROR', maybeCode[0][0].message);
-  const [, document] = maybeCode;
+  if (maybeCode.isErr())
+    return err([{ code: 'SERVER_ERROR', message: maybeCode.error[0].message }]);
+  const document = maybeCode.value;
   const uploadResult = await uploadToPresignedUrl({
     presignedUrl: document.presignedUrl,
     buffer,
     sha,
     type: mimeType,
   });
-  if (isErr(uploadResult)) return err('SERVER_ERROR', 'Failed to upload file');
+  if (uploadResult.isErr())
+    return err([{ code: 'SERVER_ERROR', message: 'Failed to upload file' }]);
   postNewHistoryItem('document', document.metadata.documentId);
   setPreviewOnCreate({
     itemId: document.metadata.documentId,
@@ -263,8 +217,8 @@ export async function createCanvasFileFromJsonString(args: {
     projectId,
   });
   invalidateUserQuota();
-  if (isErr(maybeCanvas)) return { error: 'Document creation failed.' };
-  const [, canvas] = maybeCanvas;
+  if (maybeCanvas.isErr()) return { error: 'Document creation failed.' };
+  const canvas = maybeCanvas.value;
 
   const uploadResult = await uploadToPresignedUrl({
     presignedUrl: canvas.presignedUrl,
@@ -273,7 +227,7 @@ export async function createCanvasFileFromJsonString(args: {
     type: 'application/x-macro-canvas',
   });
 
-  if (isErr(uploadResult)) return { error: 'Failed to upload file.' };
+  if (uploadResult.isErr()) return { error: 'Failed to upload file.' };
 
   postNewHistoryItem('document', canvas.metadata.documentId);
   setPreviewOnCreate({
@@ -303,13 +257,13 @@ export async function createChat(args?: CreateChatRequest) {
   const maybeChat = await cognitionApiServiceClient.createChat(args ?? {});
 
   invalidateUserQuota();
-  if (isErr(maybeChat)) {
+  if (maybeChat.isErr()) {
     if (isPaymentError(maybeChat)) {
       showPaywall(PaywallKey.CHAT_LIMIT);
     }
     return { error: 'Failed to create chat.' };
   }
-  const [, chat] = maybeChat;
+  const chat = maybeChat.value;
   postNewHistoryItem('chat', chat.id);
   setPreviewOnCreate({
     itemId: chat.id,
@@ -327,9 +281,9 @@ export async function createStaticFile(file: File): Promise<string> {
     content_type: file.type,
   });
   invalidateUserQuota();
-  if (isErr(result)) throw new Error('Failed to upload file');
+  if (result.isErr()) throw new Error('Failed to upload file');
 
-  const { upload_url, id } = result[1];
+  const { upload_url, id } = result.value;
   const uploadResult = await staticFileClient.uploadToPresignedUrl({
     url: upload_url,
     blob: file,

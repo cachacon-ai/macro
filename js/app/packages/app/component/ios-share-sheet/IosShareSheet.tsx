@@ -27,7 +27,7 @@ import { useCombinedRecipients } from '@core/signal/useCombinedRecipient';
 import type { WithCustomUserInput } from '@core/user';
 import { invalidateContacts } from '@core/user/contactService';
 import { getDestinationFromOptions } from '@core/util/destination';
-import { isErr, throwOnErr } from '@core/util/maybeResult';
+import { throwOnErr } from '@core/util/result';
 import {
   chatRuleset,
   handleFileFolderDrop,
@@ -56,6 +56,19 @@ import {
 // Use the current staged file tokens as the share-session identity.
 function pendingShareBatchKey(files: readonly PendingShareFile[]): string {
   return files.map((file) => file.token).join('|');
+}
+
+function normalizedSharedText(
+  file: Pick<PendingShareFile, 'sharedText'>
+): string {
+  return file.sharedText?.trim() ?? '';
+}
+
+function pendingShareInitialText(files: readonly PendingShareFile[]): string {
+  return files
+    .map(normalizedSharedText)
+    .filter((text) => text.length > 0)
+    .join('\n');
 }
 
 function getPendingShareAttachmentKind(
@@ -187,7 +200,7 @@ function ShareSheetHeaderActions(props: {
 
 function ShareSheetComposerError(_props: { error: unknown }) {
   return (
-    <div class="macro-message-width flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-[5px] border border-edge-muted bg-input px-4 py-6 text-center">
+    <div class="macro-message-width flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-[5px] border border-edge-muted bg-surface px-4 py-6 text-center">
       <p class="text-sm text-ink">Couldn&apos;t load the composer.</p>
       <p class="text-xs text-ink-muted">
         Close the sheet and try sharing again.
@@ -227,14 +240,19 @@ function IosShareSheetComposer(props: {
 
         void (async () => {
           await Promise.allSettled(
-            files.map((file) =>
-              uploadPendingShareAttachment({
-                file,
-                tracker: attachmentTracker,
-                uploadPendingShareFile: shareTarget?.uploadPendingShareFile,
-                isActive: () => active,
-              })
-            )
+            files
+              .filter(
+                (file) =>
+                  !file.isSharedText && normalizedSharedText(file).length === 0
+              )
+              .map((file) =>
+                uploadPendingShareAttachment({
+                  file,
+                  tracker: attachmentTracker,
+                  uploadPendingShareFile: shareTarget?.uploadPendingShareFile,
+                  isActive: () => active,
+                })
+              )
           );
         })();
       }
@@ -269,12 +287,12 @@ function IosShareSheetComposer(props: {
             recipients: destination.users,
           });
 
-    if (isErr(result)) {
+    if (result.isErr()) {
       toast.failure('Failed to open channel');
       throw new Error('Failed to resolve share destination channel');
     }
 
-    return result[1].channel_id;
+    return result.value.channel_id;
   };
 
   const handleSend = async (snapshot: InputSnapshot) => {
@@ -292,7 +310,7 @@ function IosShareSheetComposer(props: {
       message,
     });
 
-    if (isErr(result)) {
+    if (result.isErr()) {
       toast.failure('Failed to send message');
       throw new Error('Failed to post shared message');
     }
@@ -308,6 +326,7 @@ function IosShareSheetComposer(props: {
       mode: 'channel',
       id: `ios-share-input-${composerId}`,
       placeholder: 'Add a message',
+      value: pendingShareInitialText(shareTarget?.pendingShareFiles() ?? []),
     },
     mentions: mentionsTracker.mentions,
     attachmentTracker,

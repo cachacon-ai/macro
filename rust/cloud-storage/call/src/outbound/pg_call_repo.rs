@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::domain::models::{
     AddParticipantError, Call, CallParticipant, CallRecord, CallRecordParticipant,
     CallRecordPreview, CallRecordPreviewData, CallRecordTranscriptSegment, CustomSpeakerAssignment,
-    EditCallRecordRequest, TranscriptSegmentRequest, WithCallId,
+    EditCallRecordRequest, EnrichedCallTranscript, TranscriptSegmentRequest, WithCallId,
 };
 use crate::domain::ports::CallRepository;
 
@@ -413,6 +413,46 @@ impl CallRepository for PgCallRepo {
     }
 
     #[tracing::instrument(err, skip(self))]
+    async fn get_call_participants_with_team_members(
+        &self,
+        call_record_id: &Uuid,
+    ) -> Result<Vec<MacroUserIdStr<'static>>, Self::Err> {
+        let rows = sqlx::query!(
+            r#"
+            WITH participant_ids AS (
+                SELECT user_id
+                FROM call_record_participants
+                WHERE call_record_id = $1
+            ),
+            participant_team_ids AS (
+                SELECT DISTINCT tu.team_id
+                FROM team_user tu
+                JOIN participant_ids p ON p.user_id = tu.user_id
+            ),
+            candidate_user_ids AS (
+                SELECT user_id FROM participant_ids
+                UNION
+                SELECT tu.user_id
+                FROM team_user tu
+                JOIN participant_team_ids t ON t.team_id = tu.team_id
+            )
+            SELECT DISTINCT user_id AS "user_id!"
+            FROM candidate_user_ids
+            ORDER BY user_id ASC
+            "#,
+            call_record_id,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                MacroUserIdStr::try_from(row.user_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))
+            })
+            .collect()
+    }
+
+    #[tracing::instrument(err, skip(self))]
     async fn is_participant(&self, call_id: &Uuid, user_id: &str) -> Result<bool, Self::Err> {
         sqlx::query_scalar!(
             r#"
@@ -537,8 +577,8 @@ impl CallRepository for PgCallRepo {
         // The record keeps the same id as the original call.
         sqlx::query!(
             r#"
-            INSERT INTO call_records (id, channel_id, room_name, created_by, started_at, ended_at, duration_ms, egress_id, recording_key, recording_started_at, share_permission_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO call_records (id, channel_id, room_name, created_by, started_at, ended_at, duration_ms, egress_id, recording_key, recording_started_at, share_permission_id, share_with_team)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
             call_id,
             call.channel_id,
@@ -551,6 +591,7 @@ impl CallRepository for PgCallRepo {
             call.recording_key,
             call.recording_started_at,
             &call.share_permission_id,
+            call.share_with_team,
         )
         .execute(tx.as_mut())
         .await?;
@@ -569,13 +610,79 @@ impl CallRepository for PgCallRepo {
         .execute(tx.as_mut())
         .await?;
 
-        // Copy transcripts to call_record_transcripts.
+        // Copy transcripts to call_record_transcripts, rolling up consecutive
+        // segments that share both speaker_id and diarized_speaker_id when the
+        // gap between them (next.started_at - prev.ended_at) is <= 5 seconds.
+        // voice_id must also match so the propagated value is unambiguous.
         sqlx::query!(
             r#"
-            INSERT INTO call_record_transcripts (call_record_id, segment_id, speaker_id, diarized_speaker_id, content, started_at, ended_at, sequence_num)
-            SELECT $1, segment_id, speaker_id, diarized_speaker_id, content, started_at, ended_at, sequence_num
-            FROM call_transcripts
-            WHERE call_id = $2
+            WITH ordered AS (
+                SELECT
+                    segment_id,
+                    speaker_id,
+                    diarized_speaker_id,
+                    voice_id,
+                    content,
+                    started_at,
+                    ended_at,
+                    sequence_num,
+                    LAG(speaker_id) OVER w AS prev_speaker_id,
+                    LAG(diarized_speaker_id) OVER w AS prev_diarized_speaker_id,
+                    LAG(voice_id) OVER w AS prev_voice_id,
+                    LAG(ended_at) OVER w AS prev_ended_at
+                FROM call_transcripts
+                WHERE call_id = $2
+                WINDOW w AS (ORDER BY sequence_num)
+            ),
+            marked AS (
+                SELECT
+                    segment_id,
+                    speaker_id,
+                    diarized_speaker_id,
+                    voice_id,
+                    content,
+                    started_at,
+                    ended_at,
+                    sequence_num,
+                    CASE
+                        WHEN prev_speaker_id IS NOT NULL
+                            AND speaker_id = prev_speaker_id
+                            AND diarized_speaker_id IS NOT DISTINCT FROM prev_diarized_speaker_id
+                            AND voice_id IS NOT DISTINCT FROM prev_voice_id
+                            AND prev_ended_at IS NOT NULL
+                            AND started_at - prev_ended_at <= INTERVAL '5 seconds'
+                        THEN 0
+                        ELSE 1
+                    END AS is_new_group
+                FROM ordered
+            ),
+            grouped AS (
+                SELECT
+                    segment_id,
+                    speaker_id,
+                    diarized_speaker_id,
+                    voice_id,
+                    content,
+                    started_at,
+                    ended_at,
+                    sequence_num,
+                    SUM(is_new_group) OVER (ORDER BY sequence_num) AS group_id
+                FROM marked
+            )
+            INSERT INTO call_record_transcripts (call_record_id, segment_id, speaker_id, diarized_speaker_id, voice_id, content, started_at, ended_at, sequence_num)
+            SELECT
+                $1,
+                MIN(segment_id),
+                MIN(speaker_id),
+                MIN(diarized_speaker_id),
+                -- voice_id is UUID (no MIN); all rows in a group share the same value via IS NOT DISTINCT FROM.
+                (array_agg(voice_id ORDER BY sequence_num))[1],
+                STRING_AGG(content, ' ' ORDER BY sequence_num),
+                MIN(started_at),
+                MAX(ended_at),
+                MIN(sequence_num)
+            FROM grouped
+            GROUP BY group_id
             "#,
             call_id,
             call_id,
@@ -692,11 +799,12 @@ impl CallRepository for PgCallRepo {
         &self,
         call_id: &Uuid,
         segment: &TranscriptSegmentRequest,
+        voice_id: Option<Uuid>,
     ) -> Result<(), Self::Err> {
         sqlx::query!(
             r#"
-            INSERT INTO call_transcripts (call_id, segment_id, speaker_id, diarized_speaker_id, content, started_at, ended_at, sequence_num)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, (
+            INSERT INTO call_transcripts (call_id, segment_id, speaker_id, diarized_speaker_id, content, started_at, ended_at, voice_id, sequence_num)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (
                 SELECT COALESCE(MAX(sequence_num), 0) + 1
                 FROM call_transcripts
                 WHERE call_id = $1
@@ -710,6 +818,7 @@ impl CallRepository for PgCallRepo {
             segment.content,
             segment.started_at,
             segment.ended_at,
+            voice_id,
         )
         .execute(&self.pool)
         .await?;
@@ -770,6 +879,34 @@ impl CallRepository for PgCallRepo {
     }
 
     #[tracing::instrument(err, skip(self))]
+    async fn get_transcript_voice_id_for_speaker(
+        &self,
+        call_id: &Uuid,
+        speaker_id: &str,
+        diarized_speaker_id: Option<&str>,
+    ) -> Result<Option<Uuid>, Self::Err> {
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT voice_id
+            FROM call_transcripts
+            WHERE call_id = $1
+              AND voice_id IS NOT NULL
+              AND (
+                  ($3::text IS NOT NULL AND diarized_speaker_id = $3)
+                  OR ($3::text IS NULL AND diarized_speaker_id IS NULL AND speaker_id = $2)
+              )
+            ORDER BY sequence_num ASC
+            LIMIT 1
+            "#,
+        )
+        .bind(call_id)
+        .bind(speaker_id)
+        .bind(diarized_speaker_id)
+        .fetch_optional(&self.pool)
+        .await
+    }
+
+    #[tracing::instrument(err, skip(self))]
     async fn get_call_record_by_call_id(
         &self,
         call_id: &Uuid,
@@ -788,7 +925,7 @@ impl CallRepository for PgCallRepo {
         // Try active `calls` first.
         if let Some(active) = sqlx::query!(
             r#"
-            SELECT id, channel_id, room_name, created_by, created_at, egress_id, recording_key, recording_started_at
+            SELECT id, channel_id, room_name, created_by, created_at, egress_id, recording_key, recording_started_at, share_with_team
             FROM calls
             WHERE id = $1
             "#,
@@ -856,6 +993,7 @@ impl CallRepository for PgCallRepo {
                 channel_name: None,
                 custom_name: None,
                 summary: None,
+                share_with_team: active.share_with_team,
                 is_active: true,
                 participants,
                 transcript,
@@ -865,7 +1003,7 @@ impl CallRepository for PgCallRepo {
         // Fall back to archived `call_records`.
         let Some(archived) = sqlx::query!(
             r#"
-            SELECT id, channel_id, room_name, created_by, started_at, ended_at, duration_ms, egress_id, recording_key, recording_started_at, custom_name, summary
+            SELECT id, channel_id, room_name, created_by, started_at, ended_at, duration_ms, egress_id, recording_key, recording_started_at, custom_name, summary, share_with_team
             FROM call_records
             WHERE id = $1
             "#,
@@ -937,6 +1075,7 @@ impl CallRepository for PgCallRepo {
             channel_name: None,
             custom_name: archived.custom_name,
             summary: archived.summary,
+            share_with_team: archived.share_with_team,
             is_active: false,
             participants,
             transcript,
@@ -970,7 +1109,8 @@ impl CallRepository for PgCallRepo {
                 id as "call_id!",
                 channel_id as "channel_id!",
                 created_at as "started_at!",
-                NULL::timestamptz as "ended_at"
+                NULL::timestamptz as "ended_at",
+                NULL::text as "custom_name"
             FROM calls
             WHERE id = ANY($1)
             UNION ALL
@@ -978,7 +1118,8 @@ impl CallRepository for PgCallRepo {
                 id as "call_id!",
                 channel_id as "channel_id!",
                 started_at as "started_at!",
-                ended_at as "ended_at"
+                ended_at as "ended_at",
+                custom_name as "custom_name"
             FROM call_records
             WHERE id = ANY($1)
             "#,
@@ -991,6 +1132,7 @@ impl CallRepository for PgCallRepo {
             channel_id: Uuid,
             started_at: chrono::DateTime<Utc>,
             ended_at: Option<chrono::DateTime<Utc>>,
+            custom_name: Option<String>,
         }
 
         let mut found: HashMap<Uuid, Found> = HashMap::with_capacity(rows.len());
@@ -1000,6 +1142,7 @@ impl CallRepository for PgCallRepo {
                 channel_id: row.channel_id,
                 started_at: row.started_at,
                 ended_at: row.ended_at,
+                custom_name: row.custom_name,
             });
         }
 
@@ -1021,6 +1164,7 @@ impl CallRepository for PgCallRepo {
                     call_id,
                     channel_id: f.channel_id,
                     channel_name: channel_names.get(&f.channel_id).cloned(),
+                    custom_name: f.custom_name,
                     started_at: f.started_at,
                     ended_at: f.ended_at,
                 }),
@@ -1079,6 +1223,7 @@ impl CallRepository for PgCallRepo {
                 recording_started_at,
                 NULL::text as "custom_name",
                 NULL::text as "summary",
+                share_with_team as "share_with_team!",
                 true as "is_active!"
             FROM calls c
             WHERE EXISTS (
@@ -1107,6 +1252,7 @@ impl CallRepository for PgCallRepo {
                 recording_started_at,
                 custom_name,
                 summary,
+                share_with_team as "share_with_team!",
                 false as "is_active!"
             FROM call_records cr
             WHERE EXISTS (
@@ -1193,6 +1339,7 @@ impl CallRepository for PgCallRepo {
                 channel_name: None,
                 custom_name: row.custom_name,
                 summary: row.summary,
+                share_with_team: row.share_with_team,
                 is_active: row.is_active,
                 participants,
                 transcript: Vec::new(),
@@ -1342,6 +1489,128 @@ impl CallRepository for PgCallRepo {
         edit::set_custom_speakers(&mut tx, call_record_id, assignments).await?;
         tx.commit().await?;
         Ok(())
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn get_enhanced_call_record_transcripts(
+        &self,
+        call_record_id: &Uuid,
+    ) -> Result<Vec<EnrichedCallTranscript>, Self::Err> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                id,
+                call_record_id,
+                segment_id,
+                speaker_id,
+                diarized_speaker_id,
+                custom_speaker,
+                voice_id,
+                content,
+                started_at,
+                ended_at,
+                sequence_num
+            FROM call_record_transcripts
+            WHERE call_record_id = $1
+            ORDER BY sequence_num ASC
+            "#,
+            call_record_id,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| EnrichedCallTranscript {
+                id: row.id,
+                call_record_id: row.call_record_id,
+                segment_id: row.segment_id,
+                speaker_id: row.speaker_id,
+                diarized_speaker_id: row.diarized_speaker_id,
+                custom_speaker: row.custom_speaker,
+                voice_id: row.voice_id,
+                content: row.content,
+                started_at: row.started_at,
+                ended_at: row.ended_at,
+                sequence_num: row.sequence_num,
+            })
+            .collect())
+    }
+
+    #[tracing::instrument(skip(self, assignments), fields(num_assignments = assignments.len()), err)]
+    async fn overwrite_custom_speakers(
+        &self,
+        assignments: Vec<(Uuid, String)>,
+    ) -> Result<(), Self::Err> {
+        if assignments.is_empty() {
+            return Ok(());
+        }
+
+        let (transcript_ids, custom_speakers): (Vec<Uuid>, Vec<String>) =
+            assignments.into_iter().unzip();
+
+        sqlx::query!(
+            r#"
+            UPDATE call_record_transcripts AS t
+            SET custom_speaker = u.custom_speaker
+            FROM UNNEST($1::uuid[], $2::text[]) AS u(transcript_id, custom_speaker)
+            WHERE t.id = u.transcript_id
+            "#,
+            &transcript_ids,
+            &custom_speakers,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Return stable `(macro_user_id, voice_id)` pairs for one archived call.
+    ///
+    /// `call_record_id` scopes the scan to a single call's archived transcript rows.
+    /// A speaker is returned only when every row for that `speaker_id` has the
+    /// same non-NULL `diarized_speaker_id`; all distinct non-NULL `voice_id`s
+    /// on those rows are returned. Ambiguous, missing, or unresolved speakers
+    /// are skipped. The returned `macro_user_id` is the user's canonical
+    /// `macro_user.id`, suitable for linking to `voice_id` in `macro_user_voice`.
+    #[tracing::instrument(err, skip(self))]
+    async fn get_stable_speaker_voices_for_call_record(
+        &self,
+        call_record_id: &Uuid,
+    ) -> Result<Vec<(Uuid, Uuid)>, Self::Err> {
+        let rows = sqlx::query!(
+            r#"
+            WITH per_speaker AS (
+                SELECT
+                    u.macro_user_id,
+                    COUNT(*) AS total_segments,
+                    COUNT(t.diarized_speaker_id) AS diarized_segments,
+                    COUNT(DISTINCT t.diarized_speaker_id) AS distinct_diarized_speaker_ids,
+                    ARRAY_AGG(DISTINCT t.voice_id) FILTER (WHERE t.voice_id IS NOT NULL) AS voice_ids,
+                    MIN(t.sequence_num) AS first_sequence_num
+                FROM call_record_transcripts t
+                JOIN "User" u
+                  ON u.id = t.speaker_id
+                 AND u.macro_user_id IS NOT NULL
+                WHERE t.call_record_id = $1
+                GROUP BY t.speaker_id, u.macro_user_id
+            )
+            SELECT macro_user_id AS "macro_user_id!", voices.voice_id AS "voice_id!"
+            FROM per_speaker
+            CROSS JOIN LATERAL UNNEST(voice_ids) AS voices(voice_id)
+            WHERE total_segments = diarized_segments
+              AND distinct_diarized_speaker_ids = 1
+            ORDER BY first_sequence_num ASC, voices.voice_id ASC
+            "#,
+            call_record_id,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.macro_user_id, row.voice_id))
+            .collect())
     }
 
     #[tracing::instrument(skip(self, summary), err)]

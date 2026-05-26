@@ -5,40 +5,39 @@ import { useLogout } from '@core/auth/logout';
 import { useOpenInstructionsMd } from '@core/component/AI/util/instructions';
 import { toast } from '@core/component/Toast/Toast';
 import { LOCAL_ONLY } from '@core/constant/featureFlags';
-import { useSettingsState } from '@core/constant/SettingsState';
+import {
+  type SettingsTab,
+  useSettingsState,
+} from '@core/constant/SettingsState';
 import { TOKENS } from '@core/hotkey/tokens';
-import type { ValidHotkey } from '@core/hotkey/types';
 import {
   handleFolderSelect,
   openFilePicker,
   openFolderPicker,
 } from '@core/util/upload';
-import LogoutIcon from '@icon/regular/sign-out.svg';
-import Upload from '@icon/regular/upload.svg';
-import UserIcon from '@icon/regular/user.svg';
-import IconGear from '@macro-icons/macro-gear.svg';
+import IconGear from '@icon/macro-gear.svg';
+import LogoutIcon from '@phosphor/sign-out.svg';
+import Upload from '@phosphor/upload.svg';
+import UserIcon from '@phosphor/user.svg';
 import { AiInstructionsIcon } from '@queries/storage/instructions-md';
 import { useMutationUndoContext } from '@queries/undo';
 import { debounce } from '@solid-primitives/scheduled';
+import { ThemeChips } from '@theme/components/ThemeChips';
+import type { ThemeV2 } from '@theme/types/themeTypes';
 import { registerHotkey } from 'core/hotkey/hotkeys';
-import { createMemo, onCleanup } from 'solid-js';
+import { type Component, createMemo, onCleanup } from 'solid-js';
 import {
-  monochromeIcons,
   setDarkModeTheme,
   setLightModeTheme,
-  setMonochromeIcons,
   setThemeShouldMatchSystem,
   themeShouldMatchSystem,
   themes,
 } from '../../theme/signals/themeSignals';
+
 import { applyTheme } from '../../theme/utils/themeUtils';
 import { globalSplitManager } from '../signal/splitLayout';
 import { CommandState } from './command';
-import {
-  CREATABLE_BLOCKS,
-  createMenuOpen,
-  setCreateMenuOpen,
-} from './Launcher';
+import { createMenuOpen, setCreateMenuOpen } from './Launcher';
 import { openMacroMcpSetupModal } from './macro-mcp-setup-modal/MacroMcpSetupModal';
 import { useSplitLayout } from './split-layout/layout';
 
@@ -99,7 +98,8 @@ export default function GlobalShortcuts() {
 
   useHotkeyAnalytics();
 
-  const { toggleSettings, openSettings } = useSettingsState();
+  const { openSettings, closeSettings, settingsOpen, setActiveTabId } =
+    useSettingsState();
   const logout = useLogout();
 
   const handleFileUpload = useHandleFileUpload();
@@ -111,7 +111,7 @@ export default function GlobalShortcuts() {
     CommandState.toggle();
   };
 
-  const createCommandScope = registerHotkey({
+  registerHotkey({
     hotkeyToken: TOKENS.global.createCommand,
     hotkey: 'c',
     scopeId: 'global',
@@ -129,34 +129,6 @@ export default function GlobalShortcuts() {
     displayPriority: 10,
     activateCommandScope: true,
   });
-
-  for (const block of CREATABLE_BLOCKS) {
-    registerHotkey({
-      hotkeyToken: block.hotkeyToken,
-      hotkey: block.hotkey,
-      scopeId: createCommandScope.commandScopeId,
-      description: block.description,
-      runWithInputFocused: true,
-      keyDownHandler: () => {
-        block.keyDownHandler();
-        return true;
-      },
-    });
-
-    if (block.altHotkeyToken) {
-      registerHotkey({
-        hotkeyToken: block.altHotkeyToken,
-        hotkey: `opt+${block.hotkey}` as ValidHotkey,
-        scopeId: createCommandScope.commandScopeId,
-        description: `${block.description} in new split`,
-        runWithInputFocused: true,
-        keyDownHandler: () => {
-          block.keyDownHandler();
-          return true;
-        },
-      });
-    }
-  }
 
   registerHotkey({
     hotkeyToken: TOKENS.global.commandMenu,
@@ -208,13 +180,36 @@ export default function GlobalShortcuts() {
     keyDownHandler: createNewSplit,
   });
 
+  const openSettingsInNewSplit = (tab?: SettingsTab) => {
+    if (settingsOpen()) {
+      if (tab) setActiveTabId(tab);
+      return;
+    }
+    if (canFit()) {
+      if (tab) setActiveTabId(tab);
+      analytics.track('split_created', { from: 'global_hotkey' });
+      openWithSplit(
+        { type: 'component', id: 'settings' },
+        {
+          referredFrom: 'hotkey',
+          allowDuplicate: true,
+          preferNewSplit: true,
+          mergeHistory: false,
+        }
+      );
+      return;
+    }
+    openSettings(tab);
+  };
+
   registerHotkey({
     hotkeyToken: TOKENS.global.toggleSettings,
     hotkey: 'cmd+;',
     scopeId: 'global',
     description: 'Toggle settings',
     keyDownHandler: () => {
-      toggleSettings();
+      if (settingsOpen()) closeSettings();
+      else openSettingsInNewSplit();
       return true;
     },
     runWithInputFocused: true,
@@ -225,7 +220,7 @@ export default function GlobalShortcuts() {
     description: 'Account',
     icon: UserIcon,
     keyDownHandler: () => {
-      openSettings('Account');
+      openSettingsInNewSplit('Account');
       return true;
     },
     runWithInputFocused: true,
@@ -279,6 +274,15 @@ export default function GlobalShortcuts() {
     displayPriority: 10,
   });
 
+  const ThemeDisplay: Component<{ theme: ThemeV2 }> = (props) => (
+    <div class="flex items-center gap-2">
+      {props.theme.name}
+      <div class="px-1 ring ring-edge-muted rounded-xs">
+        <ThemeChips theme={props.theme} />
+      </div>
+    </div>
+  );
+
   themes().forEach((theme) => {
     registerHotkey({
       scopeId: setThemeScope.commandScopeId,
@@ -289,6 +293,7 @@ export default function GlobalShortcuts() {
         return true;
       },
       runWithInputFocused: true,
+      displayComponent: () => <ThemeDisplay theme={theme} />,
     });
   });
 
@@ -312,6 +317,7 @@ export default function GlobalShortcuts() {
         return true;
       },
       runWithInputFocused: true,
+      displayComponent: () => <ThemeDisplay theme={theme} />,
     });
   });
 
@@ -335,6 +341,7 @@ export default function GlobalShortcuts() {
         return true;
       },
       runWithInputFocused: true,
+      displayComponent: () => <ThemeDisplay theme={theme} />,
     });
   });
 
@@ -346,16 +353,6 @@ export default function GlobalShortcuts() {
     ),
     keyDownHandler: () => {
       setThemeShouldMatchSystem((prev) => !prev);
-      return true;
-    },
-    runWithInputFocused: true,
-  });
-
-  registerHotkey({
-    scopeId: 'global',
-    description: 'Toggle monochrome icons',
-    keyDownHandler: () => {
-      setMonochromeIcons(!monochromeIcons());
       return true;
     },
     runWithInputFocused: true,

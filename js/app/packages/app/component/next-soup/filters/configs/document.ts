@@ -1,14 +1,19 @@
 import { codeFileExtensions } from '@block-code/util/languageSupport';
 import { isDocumentEntity } from '@entity';
-import { config, IMAGE_EXTENSIONS, isEmailAttachment } from './base';
+import {
+  config,
+  IMAGE_EXTENSIONS,
+  isEmailAttachment,
+  VIDEO_EXTENSIONS,
+} from './base';
 
-export const docMarkdownFilter = config({
+const docMarkdownFilter = config({
   id: 'doc-markdown',
   predicate: (e) => isDocumentEntity(e) && e.fileType === 'md',
   query: { include: { fileAssoc: ['assoc:md'] } },
 });
 
-export const docCanvasFilter = config({
+const docCanvasFilter = config({
   id: 'doc-canvas',
   predicate: (e) => isDocumentEntity(e) && e.fileType === 'canvas',
   query: { include: { fileAssoc: ['assoc:canvas'] } },
@@ -30,7 +35,7 @@ export const DOCUMENT_CONTEXTUAL_FILTERS = [
   emailAttachmentsFilter,
 ] as const;
 
-export const fileCodeFilter = config({
+const fileCodeFilter = config({
   id: 'file-code',
   predicate: (e) => {
     if (e.type !== 'document') return false;
@@ -39,7 +44,7 @@ export const fileCodeFilter = config({
   query: { include: { fileAssoc: ['assoc:code'] } },
 });
 
-export const fileImageFilter = config({
+const fileImageFilter = config({
   id: 'file-image',
   predicate: (e) => {
     if (e.type !== 'document') return false;
@@ -48,19 +53,28 @@ export const fileImageFilter = config({
   query: { include: { fileAssoc: ['assoc:image'] } },
 });
 
-export const filePdfFilter = config({
+const filePdfFilter = config({
   id: 'file-pdf',
   predicate: (e) => e.type === 'document' && e.fileType === 'pdf',
   query: { include: { fileAssoc: ['assoc:pdf'] } },
 });
 
-export const fileDocxFilter = config({
+const fileDocxFilter = config({
   id: 'file-docx',
   predicate: (e) => e.type === 'document' && e.fileType === 'docx',
   query: { include: { fileAssoc: ['assoc:document'] } },
 });
 
-export const fileOtherFilter = config({
+const fileVideoFilter = config({
+  id: 'file-video',
+  predicate: (e) => {
+    if (e.type !== 'document') return false;
+    return (VIDEO_EXTENSIONS as readonly string[]).includes(e.fileType ?? '');
+  },
+  query: { include: { fileAssoc: ['assoc:video'] } },
+});
+
+const fileOtherFilter = config({
   id: 'file-other',
   predicate: (e) => {
     if (e.type !== 'document') return false;
@@ -68,11 +82,12 @@ export const fileOtherFilter = config({
     if (['md', 'canvas', 'pdf', 'docx'].includes(ft)) return false;
     if ((codeFileExtensions as readonly string[]).includes(ft)) return false;
     if ((IMAGE_EXTENSIONS as readonly string[]).includes(ft)) return false;
+    if ((VIDEO_EXTENSIONS as readonly string[]).includes(ft)) return false;
     return true;
   },
   query: {
     include: { fileAssoc: ['assoc:other'] },
-    exclude: { fileAssoc: ['assoc:document', 'assoc:image'] },
+    exclude: { fileAssoc: ['assoc:document', 'assoc:image', 'assoc:video'] },
   },
 });
 
@@ -81,5 +96,6 @@ export const FILE_TYPE_FILTERS = [
   fileImageFilter,
   filePdfFilter,
   fileDocxFilter,
+  fileVideoFilter,
   fileOtherFilter,
 ] as const;

@@ -1,26 +1,25 @@
 //! ReadMetadata tool for reading document metadata.
 
-use crate::domain::ports::DocumentService;
+use crate::domain::ports::{DocumentService, create::DocumentCreationService};
+use crate::domain::response::DocumentMetadataWithContent;
 use ai::tool::{AsyncTool, RequestContext, ServiceContext, ToolCallError, ToolResult};
 use async_trait::async_trait;
 use entity_access::domain::{
     models::{AccessLevel, EntityType},
     ports::EntityAccessService,
 };
-use model::document::DocumentMetadata;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::DocumentToolContext;
-use crate::domain::branch_name::build_task_branch_name;
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadDocumentMetadata {
     /// The document metadata
     #[serde(flatten)]
-    document: DocumentMetadata,
+    document: DocumentMetadataWithContent,
     /// If the document is a "task" the branch name of the document will be provided.
     #[serde(skip_serializing_if = "Option::is_none")]
     branch_name: Option<String>,
@@ -46,7 +45,7 @@ pub struct ReadMetadata {
 #[async_trait]
 impl<DSvc, ESvc> AsyncTool<DocumentToolContext<DSvc, ESvc>> for ReadMetadata
 where
-    DSvc: DocumentService,
+    DSvc: DocumentService + DocumentCreationService,
     ESvc: EntityAccessService,
 {
     type Output = ReadMetadataResponse;
@@ -83,22 +82,22 @@ where
                 internal_error: e.into(),
             })?;
 
-        let branch_name = if let Some(sub_type) = result.document_metadata.sub_type {
+        let branch_name = if let Some(sub_type) = result.document_metadata.metadata.sub_type {
             match sub_type {
                 document_sub_type::DocumentSubType::Task => {
-                    let short_id = service_context
+                    let task_branch_name = service_context
                         .service
-                        .get_short_id(entity_access_receipt)
+                        .get_task_branch_name(
+                            entity_access_receipt,
+                            result.document_metadata.metadata.document_name.clone(),
+                        )
                         .await
                         .map_err(|e| ToolCallError {
-                            description: "unable to get the short id".to_string(),
+                            description: "unable to get the branch name".to_string(),
                             internal_error: e.into(),
                         })?;
 
-                    Some(build_task_branch_name(
-                        &short_id,
-                        &result.document_metadata.document_name,
-                    ))
+                    Some(task_branch_name.branch_name)
                 }
             }
         } else {

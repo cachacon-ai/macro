@@ -182,16 +182,17 @@ async fn main() -> anyhow::Result<()> {
         aws_sdk_sqs::Client::new(&aws_config),
         config.notification_queue.clone(),
     );
-    let notification_reader_service = NotificationReaderService::new(
-        DbNotificationRepository::new(db.clone()),
-        ai_tools::ToolNotificationQueue::Sqs(notification_reader_queue),
-        ai_tools::NoOpSnsEndpointManager,
-        PlatformArnConfig {
+    let notification_reader_service = NotificationReaderService {
+        repository: DbNotificationRepository::new(db.clone()),
+        queue: ai_tools::ToolNotificationQueue::Sqs(notification_reader_queue),
+        sns_endpoint: ai_tools::NoOpSnsEndpointManager,
+        platform_config: PlatformArnConfig {
             apns_platform_arn: String::new(),
             fcm_platform_arn: String::new(),
             apns_voip_platform_arn: String::new(),
         },
-    );
+        realtime: notification::domain::ports::NoopNotificationRealtimePublisher,
+    };
     let notification_tool_context =
         notification::inbound::ai_tool::NotificationToolContext::new(notification_reader_service);
 
@@ -202,10 +203,15 @@ async fn main() -> anyhow::Result<()> {
 
     let frecency_storage = FrecencyPgStorage::new(db.clone());
     let frecency_service = FrecencyQueryServiceImpl::new(frecency_storage.clone());
+    let crm_service = crm::domain::service::CrmServiceImpl::new(
+        crm::outbound::companies_repo::CompaniesRepositoryImpl::new(db.clone()),
+        crm::outbound::no_op_resolver::NoOpCompanyMetadataResolver,
+    );
     let email_service = EmailServiceImpl::new(
         EmailPgRepo::new(db.clone()),
         frecency_service.clone(),
         email::domain::ports::NoOpEnqueuer,
+        crm_service.clone(),
         0,
     );
     let channels_service = ChannelServiceImpl::new(
@@ -262,6 +268,7 @@ async fn main() -> anyhow::Result<()> {
         document_service,
         (*entity_access_service).clone(),
         lexical_client_for_tools,
+        sync_service_client.clone(),
     );
 
     tracing::info!("initialized document tool context");
@@ -319,6 +326,7 @@ async fn main() -> anyhow::Result<()> {
             EmailPgRepo::new(db.clone()),
             FrecencyQueryServiceImpl::new(FrecencyPgStorage::new(db.clone())),
             sqs_client.clone(),
+            crm_service.clone(),
             0,
         )),
         Arc::new(email::domain::ports::NoOpGmailTokenProvider),
@@ -350,7 +358,7 @@ async fn main() -> anyhow::Result<()> {
     let chat_tool_context = chat::inbound::toolset::ChatToolContext::new(
         chat::domain::service::ChatServiceImpl::new(
             chat::outbound::postgres::PgChatRepo::new(db.clone()),
-            Arc::new(ai_toolset::AsyncToolSet::new()),
+            Arc::new(ai_toolset::AsyncToolCollection::new()),
             (),
             entity_access_management::domain::service::EntityAccessManagementServiceImpl::new(
                 entity_access_management::outbound::PgRepository::new(db.clone()),
@@ -373,6 +381,7 @@ async fn main() -> anyhow::Result<()> {
         notification_tool_context: notification_tool_context.clone(),
         chat_tool_context,
         channel_tool_context: ai_tools::build_channel_tool_context(db.clone()),
+        team_tool_context: ai_tools::build_team_tool_context(db.clone()),
         schedule_tool_context: ai_tools::NoOpScheduleContext,
     };
     let all_tools = ai_tools::all_tools();
@@ -389,6 +398,35 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     tracing::info!("initialized memory service");
+
+    let mcp_credentials_key_b64 = match config.environment {
+        Environment::Local => config.mcp_credentials_key_secret_name.clone(),
+        _ => secretsmanager_client
+            .get_secret_value(&config.mcp_credentials_key_secret_name)
+            .await
+            .context("failed to get MCP credentials key from secrets manager")?
+            .to_string(),
+    };
+    let mcp_encryption_key =
+        mcp_client::domain::models::AesKey::try_from(mcp_credentials_key_b64.as_str())
+            .context("invalid MCP credentials encryption key")?;
+    let mcp_server_repo =
+        mcp_client::outbound::pg_server_repo::PgServerRepo::new(db.clone(), mcp_encryption_key);
+    let mcp_redirect_uri = format!(
+        "{}/mcp/servers/auth/callback",
+        config.document_cognition_service_url
+    );
+    let mcp_oauth_state_store =
+        mcp_client::outbound::redis_state_store::RedisOAuthStateStore::new(redis_client.clone());
+    let mcp_pre_registered =
+        mcp_client::domain::provider_registry::PreRegisteredProviders::from_env();
+    let mcp_oauth = mcp_client::domain::service::OAuthService::new(
+        mcp_server_repo.clone(),
+        mcp_oauth_state_store,
+        mcp_redirect_uri,
+        mcp_pre_registered,
+    );
+    let mcp_state = mcp_client::inbound::McpRouterState::new(mcp_server_repo, mcp_oauth);
 
     api::setup_and_serve(ApiContext {
         db: db.clone(),
@@ -418,6 +456,7 @@ async fn main() -> anyhow::Result<()> {
         ai_stream_registry: service::ai_stream_registry::AiStreamRegistry::new(
             redis_client.clone(),
         ),
+        mcp_state,
     })
     .await
     .context("failed to setup and serve api")?;

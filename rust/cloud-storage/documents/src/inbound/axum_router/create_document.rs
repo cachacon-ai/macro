@@ -5,7 +5,7 @@ use std::str::FromStr;
 use axum::{Extension, Json, extract::State};
 use entity_access::domain::ports::EntityAccessService;
 use entity_access::inbound::axum_extractors::{InternalUser, ProjectBodyAccessLevelExtractor};
-use model::document::response::{CreateDocumentRequest, CreateDocumentResponse};
+use model::document::response::CreateDocumentRequest;
 use model::document::{FileType, FileTypeExt};
 use model_user::axum_extractor::MacroUserExtractor;
 use models_permissions::share_permission::access_level::EditAccessLevel;
@@ -13,6 +13,7 @@ use models_permissions::share_permission::access_level::EditAccessLevel;
 use super::DocumentRouterState;
 use crate::domain::models::{CreateDocumentRepoArgs, DocumentError};
 use crate::domain::ports::DocumentService;
+use crate::domain::response::CreateDocumentResponse;
 
 /// Handler for `POST /documents`.
 ///
@@ -77,6 +78,8 @@ pub async fn create_document_handler<T: DocumentService, Svc: EntityAccessServic
         );
     }
 
+    let team_id = req.team_id;
+
     let args = CreateDocumentRepoArgs {
         id: req.id,
         sha: req.sha,
@@ -84,6 +87,7 @@ pub async fn create_document_handler<T: DocumentService, Svc: EntityAccessServic
         user_id: user_context.macro_user_id.clone(),
         file_type,
         project_id: req.project_id,
+        team_id,
         email_attachment_id: req.email_attachment_id,
         created_at: req.created_at,
         is_task: req.is_task,

@@ -1,8 +1,9 @@
+import { isReplyAllEligible } from '@block-email/util/recipientConversion';
 import type { ReplyType } from '@block-email/util/replyType';
 import { useEmail } from '@core/context/user';
-import ArrowBendDoubleUpLeft from '@icon/regular/arrow-bend-double-up-left.svg';
-import ArrowBendUpLeft from '@icon/regular/arrow-bend-up-left.svg';
-import ArrowBendUpRight from '@icon/regular/arrow-bend-up-right.svg';
+import ArrowBendDoubleUpLeft from '@phosphor/arrow-bend-double-up-left.svg';
+import ArrowBendUpLeft from '@phosphor/arrow-bend-up-left.svg';
+import ArrowBendUpRight from '@phosphor/arrow-bend-up-right.svg';
 import type { ApiMessage } from '@service-email/generated/schemas';
 import { createCallback } from '@solid-primitives/rootless';
 import { Button } from '@ui';
@@ -21,15 +22,8 @@ export function MessageActions(props: {
 }) {
   const formRegistry = getEmailFormRegistry();
   const userEmail = useEmail();
-  const filteredTo = () => {
-    return props.message.to.filter((to) => to.email !== userEmail());
-  };
-  const filteredCc = () => {
-    return props.message.cc.filter((cc) => cc.email !== userEmail());
-  };
-  const shouldShowReplyAll = () => {
-    return filteredTo().length + filteredCc().length > 1;
-  };
+  const shouldShowReplyAll = () =>
+    isReplyAllEligible(props.message, userEmail() ?? '');
 
   const canShowActions = () => {
     if (!props.showActions) return false;
@@ -55,43 +49,41 @@ export function MessageActions(props: {
 
   return (
     <div
-      class="flex flex-row items-center gap-4 transition-opacity"
+      class="flex flex-row items-center gap-0.5"
       classList={{
         'opacity-0 pointer-events-none': !canShowActions(),
         'opacity-100': canShowActions(),
       }}
     >
+      <Show when={!props.hiddenActions?.includes('reply')}>
+        <Button
+          class="size-6 p-0 border-0 bg-transparent rounded text-ink-muted hover:text-ink hover:bg-ink-muted/8"
+          onClick={onChangeReplyType('reply')}
+          tooltip="Reply"
+        >
+          <ArrowBendUpLeft class="size-3.5" />
+        </Button>
+      </Show>
       <Show
         when={
           shouldShowReplyAll() && !props.hiddenActions?.includes('reply-all')
         }
-        fallback={
-          <Show when={!props.hiddenActions?.includes('reply')}>
-            <Button
-              class="size-8 p-0 border-0 bg-transparent hover:bg-hover hover-transition-bg text-ink gap-0.5 active:bg-hover active:text-ink active:border-transparent"
-              onClick={onChangeReplyType('reply')}
-              tooltip={<span>Reply</span>}
-            >
-              <ArrowBendUpLeft class="size-5" />
-            </Button>
-          </Show>
-        }
       >
         <Button
-          class="size-8 p-0 border-0 bg-transparent hover:bg-hover hover-transition-bg text-ink gap-0.5 active:bg-hover active:text-ink active:border-transparent"
+          class="size-6 p-0 border-0 bg-transparent rounded text-ink-muted hover:text-ink hover:bg-ink-muted/8"
           onClick={onChangeReplyType('reply-all')}
-          tooltip={<span>Reply all</span>}
+          tooltip="Reply all"
         >
-          <ArrowBendDoubleUpLeft class="size-5" />
+          <ArrowBendDoubleUpLeft class="size-3.5" />
         </Button>
       </Show>
       <Show when={!props.hiddenActions?.includes('forward')}>
         <Button
-          class="size-8 p-0 border-0 bg-transparent hover:bg-hover hover-transition-bg text-ink gap-0.5 active:bg-hover active:text-ink active:border-transparent"
+          class="size-6 p-0 border-0 bg-transparent rounded text-ink-muted hover:text-ink hover:bg-ink-muted/8"
           onClick={onChangeReplyType('forward')}
-          tooltip={<span>Forward</span>}
+          tooltip="Forward"
         >
-          <ArrowBendUpRight class="size-5" />
+          <ArrowBendUpRight class="size-3.5" />
         </Button>
       </Show>
     </div>

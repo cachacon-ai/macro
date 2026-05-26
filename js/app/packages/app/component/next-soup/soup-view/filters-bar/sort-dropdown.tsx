@@ -2,15 +2,13 @@ import type {
   SortOption,
   SystemSortOption,
 } from '@app/component/next-soup/soup-view/sort-options';
-import { LabelAndHotKey, Tooltip } from '@core/component/Tooltip';
-import ChevronDownIcon from '@icon/regular/caret-down.svg';
-import CheckIcon from '@icon/regular/check.svg';
-import { DropdownMenu } from '@kobalte/core/dropdown-menu';
-import SortIcon from '@macro-icons/wide/sort.svg';
-import { Button, Layer } from '@ui';
+import { TOKENS } from '@core/hotkey/tokens';
+import CheckIcon from '@phosphor/check.svg';
+import SortIcon from '@phosphor-icons/core/regular/funnel-simple.svg?component-solid';
+import { Dropdown, Tooltip } from '@ui';
 import { type Component, For, Show } from 'solid-js';
 
-export interface SortDropdownProps {
+interface SortDropdownProps {
   /** Current sort value */
   value: () => SystemSortOption;
   /** Handler for sort change */
@@ -27,59 +25,48 @@ export const SortDropdown: Component<SortDropdownProps> = (props) => {
   const options = () => props.options ?? [];
 
   return (
-    <DropdownMenu
+    <Dropdown
       open={props.open}
       onOpenChange={props.onOpenChange}
       placement="bottom-start"
-      gutter={4}
     >
-      <Tooltip tooltip={<LabelAndHotKey label="Sort" shortcut="S" />}>
-        <DropdownMenu.Trigger
-          as={Button}
-          variant="base"
-          size="sm"
-          class="whitespace-nowrap rounded-xs [&_svg]:size-4"
-        >
+      <Tooltip label="Sort" hotkey={TOKENS.soup.sort}>
+        <Dropdown.Trigger depth={2} class="bg-surface">
           <SortIcon />
-          <ChevronDownIcon class="size-4" />
-        </DropdownMenu.Trigger>
+          <span>Sort</span>
+        </Dropdown.Trigger>
       </Tooltip>
-      <DropdownMenu.Portal>
-        <Layer depth={2}>
-          <DropdownMenu.Content class="z-action-menu bg-menu border border-edge-muted rounded-sm shadow-sm min-w-35 p-1">
-            <For each={options()}>
-              {(option) => (
-                <DropdownMenu.Item
-                  class="w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-ink/5 focus:bg-ink/5 outline-none cursor-default rounded-md"
-                  onSelect={() => props.onChange(option.value)}
+      <Dropdown.Content>
+        <Dropdown.Group>
+          <For each={options()}>
+            {(option) => (
+              <Dropdown.Item onSelect={() => props.onChange(option.value)}>
+                <Show when={option.icon}>
+                  {(icon) => (
+                    <span class="size-3.5 flex items-center justify-center shrink-0 text-ink-muted">
+                      {icon()()}
+                    </span>
+                  )}
+                </Show>
+                <span
+                  class="flex-1 truncate"
+                  classList={{
+                    'text-ink font-medium': props.value() === option.value,
+                    'text-ink-muted': props.value() !== option.value,
+                  }}
                 >
-                  <Show when={option.icon}>
-                    {(icon) => (
-                      <span class="size-3.5 flex items-center justify-center shrink-0 text-ink-muted">
-                        {icon()()}
-                      </span>
-                    )}
+                  {option.label}
+                </span>
+                <span class="size-3.5 flex items-center justify-center shrink-0">
+                  <Show when={props.value() === option.value}>
+                    <CheckIcon class="size-3 text-accent" />
                   </Show>
-                  <span
-                    class="flex-1 truncate"
-                    classList={{
-                      'text-ink font-medium': props.value() === option.value,
-                      'text-ink-muted': props.value() !== option.value,
-                    }}
-                  >
-                    {option.label}
-                  </span>
-                  <span class="size-3.5 flex items-center justify-center shrink-0">
-                    <Show when={props.value() === option.value}>
-                      <CheckIcon class="size-3 text-accent" />
-                    </Show>
-                  </span>
-                </DropdownMenu.Item>
-              )}
-            </For>
-          </DropdownMenu.Content>
-        </Layer>
-      </DropdownMenu.Portal>
-    </DropdownMenu>
+                </span>
+              </Dropdown.Item>
+            )}
+          </For>
+        </Dropdown.Group>
+      </Dropdown.Content>
+    </Dropdown>
   );
 };

@@ -1,10 +1,9 @@
 import { toast } from '@core/component/Toast/Toast';
-import { throwOnErr } from '@core/util/maybeResult';
+import { throwOnErr } from '@core/util/result';
 import { authServiceClient } from '@service-auth/client';
 import type { CreateTeamRequest } from '@service-auth/generated/schemas/createTeamRequest';
 import type { PatchTeamRequest } from '@service-auth/generated/schemas/patchTeamRequest';
 import type { Team } from '@service-auth/generated/schemas/team';
-import type { TeamUserTier } from '@service-auth/generated/schemas/teamUserTier';
 import { useMutation, useQuery } from '@tanstack/solid-query';
 import type { Accessor } from 'solid-js';
 
@@ -25,8 +24,7 @@ export function useUserTeamsQuery() {
 export function useTeamQuery(teamId: Accessor<string>) {
   return useQuery(() => ({
     queryKey: teamKeys.detail(teamId()).queryKey,
-    queryFn: async () =>
-      await throwOnErr(() => authServiceClient.getTeam(teamId())),
+    queryFn: async () => await throwOnErr(() => authServiceClient.getTeam()),
     enabled: !!teamId(),
   }));
 }
@@ -46,7 +44,7 @@ export function invalidateTeam(teamId: string) {
 type CreateTeamArgs = CreateTeamRequest;
 type CreateTeamCallbacks = MutationCallbacks<Team, Error, CreateTeamArgs>;
 
-export function useCreateTeamMutation(callbacks?: CreateTeamCallbacks) {
+function _useCreateTeamMutation(callbacks?: CreateTeamCallbacks) {
   return useMutation(() => ({
     mutationFn: async (args: CreateTeamArgs) =>
       await throwOnErr(() => authServiceClient.createTeam(args)),
@@ -73,8 +71,8 @@ type PatchTeamCallbacks = MutationCallbacks<void, Error, PatchTeamArgs>;
 
 export function usePatchTeamMutation(callbacks?: PatchTeamCallbacks) {
   return useMutation(() => ({
-    mutationFn: async ({ teamId, request }: PatchTeamArgs) => {
-      await throwOnErr(() => authServiceClient.patchTeam(teamId, request));
+    mutationFn: async ({ request }: PatchTeamArgs) => {
+      await throwOnErr(() => authServiceClient.patchTeam(request));
     },
 
     ...withCallbacks<void, Error, PatchTeamArgs>(
@@ -106,8 +104,8 @@ type DeleteTeamCallbacks = MutationCallbacks<
 
 export function useDeleteTeamMutation(callbacks?: DeleteTeamCallbacks) {
   return useMutation(() => ({
-    mutationFn: async ({ teamId }: DeleteTeamArgs) => {
-      await throwOnErr(() => authServiceClient.deleteTeam(teamId));
+    mutationFn: async (_args: DeleteTeamArgs) => {
+      await throwOnErr(() => authServiceClient.deleteTeam());
     },
 
     ...withCallbacks<void, Error, DeleteTeamArgs, DeleteTeamContext>(
@@ -152,7 +150,7 @@ export function useDeleteTeamMutation(callbacks?: DeleteTeamCallbacks) {
 
 type CreateTeamWithInvitesArgs = {
   name: string;
-  invites?: { email: string; tier: TeamUserTier }[];
+  invites?: { email: string }[];
 };
 type CreateTeamWithInvitesContext = { previousTeams: Team[] | undefined };
 type CreateTeamWithInvitesCallbacks = MutationCallbacks<
@@ -172,9 +170,7 @@ export function useCreateTeamWithInvitesMutation(
       );
 
       if (invites && invites.length > 0) {
-        await throwOnErr(() =>
-          authServiceClient.inviteToTeam(team.id, { invites })
-        );
+        await throwOnErr(() => authServiceClient.inviteToTeam({ invites }));
       }
 
       return team;
@@ -204,6 +200,7 @@ export function useCreateTeamWithInvitesMutation(
             const optimisticTeam: Team = {
               id: `optimistic-${Date.now()}`,
               name,
+              slug: 'MACRO', // optimisitc slug
               owner_id: userInfo.userId,
             };
 

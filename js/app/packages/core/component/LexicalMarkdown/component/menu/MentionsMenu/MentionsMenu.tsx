@@ -9,7 +9,6 @@ import { isMobile } from '@core/mobile/isMobile';
 import type { ChannelWithParticipants, IUser } from '@core/user';
 import { useDateSearch } from '@core/util/dateSearch/useDateSearch';
 import { debouncedDependent } from '@core/util/debounce';
-import { createFreshSearch } from '@core/util/freshSort';
 import { useIsKeyPressActive } from '@core/util/useIsKeyPressActive';
 import type { EmailEntity } from '@entity';
 import type { HistoryItem as Item } from '@queries/history/history';
@@ -50,31 +49,14 @@ import { useUsersMention } from './hooks/useUsersMention';
 import type { BucketConfig, MentionBucketId } from './MentionsMenuController';
 import { useMentionsMenuController } from './MentionsMenuController';
 import { createItemHandler } from './utils/mentionHandlers';
-
-const mobileAllSearch = createFreshSearch<MentionItem>({
-  config: {
-    useViewedAt: true,
-    fuzzyWeight: 0.4,
-    timeWeight: 0.6,
-    brevityWeight: 0,
-  },
-  getName: (item) => {
-    if (item.kind === 'date') return item.data.displayText;
-    if (item.kind === 'group') return item.data.groupAlias;
-    return item.searchText;
-  },
-  getTimestamp: (item) => {
-    if (item.kind === 'date' || item.kind === 'group') return {};
-    return item.timestamps;
-  },
-});
+import { sortMobileMentions } from './utils/mobileSort';
 
 const MAX_ITEMS = 8;
 const VIRTUAL_ITEM_HEIGHT = 36;
 // Height consumed by Surface's p-px border (2px) + py-2 padding (16px)
 const PANEL_DECORATION_HEIGHT = 18;
 
-export type MentionsMenuProps = {
+type MentionsMenuProps = {
   editor: LexicalEditor;
   menu: MenuOperations;
   /** pass in a custom users list if necessary */
@@ -227,17 +209,16 @@ function MentionsMenuInner(props: MentionsMenuProps) {
 
   const [mountSelection, setMountSelection] = createSignal<Selection | null>();
 
-  // On mobile, combine all sources into a single list interleaved by
-  // freshness instead of grouped by category.
   const mobileAllItems = createLazyMemo((): MentionItem[] => {
+    const users = usersAndGroups() ?? [];
     const combined: MentionItem[] = [
-      ...(usersAndGroups() ?? []),
+      ...users,
       ...(docs() ?? []),
       ...(channels() ?? []),
       ...(emails() ?? []),
       ...(dates() ?? []),
     ];
-    return mobileAllSearch(combined, searchTerm()).map(({ item }) => item);
+    return sortMobileMentions(combined, searchTerm(), users);
   });
 
   const bucketConfigs = createLazyMemo((): BucketConfig[] => {
@@ -527,14 +508,19 @@ function MentionsMenuInner(props: MentionsMenuProps) {
             clickOutside(el, () => clickOutsideHandler);
           }}
         >
-          <Surface depth={2} active class="py-2">
+          <Surface
+            depth={2}
+            class="pt-2 pb-1.5 shadow-lg shadow-drop-shadow rounded-xl"
+          >
             <Show
-              when={controller.combinedItems().length > 0}
-              fallback={<div class="px-2 text-ink-extra-muted">No results</div>}
-            >
-              <Show
-                when={controller.viewAllMode()}
-                fallback={
+              when={controller.viewAllMode()}
+              fallback={
+                <Show
+                  when={controller.combinedItems().length > 0}
+                  fallback={
+                    <div class="px-2 text-ink-extra-muted">No results</div>
+                  }
+                >
                   <div>
                     <For each={visibleBuckets()}>
                       {(bucket, idx) => (
@@ -572,44 +558,47 @@ function MentionsMenuInner(props: MentionsMenuProps) {
                       )}
                     </For>
                   </div>
-                }
-              >
-                <Show when={!isMobile()}>
-                  <div class="px-2 pb-2">
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-medium text-ink-muted">
-                        {viewAllCategoryLabel()}
-                      </span>
-                      <button
-                        type="button"
-                        class="text-xs font-medium text-ink-muted hover:text-ink hover:underline flex items-center gap-1"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleBackToAll();
-                        }}
-                      >
-                        <div class="p-0.5 px-1 -my-2 bg-panel text-ink border border-edge-muted rounded-xs text-xs">
-                          ←
-                        </div>
-                        Back to everything
-                      </button>
-                    </div>
-                  </div>
                 </Show>
-                <VirtualizedItemList
-                  items={controller.combinedItems()}
-                  selectedIndex={controller.selectedIndex()}
-                  itemAction={itemAction}
-                  setIndex={setSelectedIndexFromMouse}
-                  setOpen={setMenuOpen}
-                  maxHeight={contentMaxHeight()}
-                />
+              }
+            >
+              <Show when={!isMobile()}>
+                <div class="px-2 pb-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium text-ink-muted">
+                      {viewAllCategoryLabel()}
+                    </span>
+                    <button
+                      type="button"
+                      class="text-xs font-medium text-ink-muted hover:text-ink hover:underline flex items-center gap-1"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleBackToAll();
+                      }}
+                    >
+                      <div class="p-0.5 px-1 -my-2 bg-surface text-ink border border-edge-muted rounded-xs text-xs">
+                        ←
+                      </div>
+                      Back to everything
+                    </button>
+                  </div>
+                </div>
               </Show>
+              <Show when={controller.combinedItems().length === 0}>
+                <div class="px-2 text-ink-extra-muted">No results</div>
+              </Show>
+              <VirtualizedItemList
+                items={controller.combinedItems()}
+                selectedIndex={controller.selectedIndex()}
+                itemAction={itemAction}
+                setIndex={setSelectedIndexFromMouse}
+                setOpen={setMenuOpen}
+                maxHeight={contentMaxHeight()}
+              />
             </Show>
           </Surface>
         </div>

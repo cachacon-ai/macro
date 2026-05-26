@@ -1,10 +1,8 @@
 import { useChannelTab } from '@channel/Channel/ChannelTabContext';
 import { DEFAULT_CHANNEL_TAB } from '@channel/Channel/channel-tabs';
-import { isTouchDevice } from '@core/mobile/isTouchDevice';
-import PhoneIcon from '@macro-icons/wide/call.svg';
-import PhoneDisconnectIcon from '@macro-icons/wide/call-disconnect.svg';
+import PhoneIcon from '@icon/wide-call.svg';
 import { useActiveCallQuery } from '@queries/call/call';
-import { Button } from '@ui';
+import { Button, cn } from '@ui';
 import { Show } from 'solid-js';
 import { useCall } from './use-call';
 
@@ -17,45 +15,36 @@ export function ChannelCallButton(props: { channelId: string }) {
 
   const activeCallQuery = useActiveCallQuery(() => props.channelId);
   const isCallInProgress = () => !!activeCallQuery.data;
-  const isHighlighted = () => call.isInThisChannel() || isCallInProgress();
 
-  const isPending = () => call.isLeaving();
-
-  const tooltip = () => {
-    if (call.isInThisChannel()) return 'Leave Call';
-    if (isCallInProgress()) return 'Join Call';
-    return 'Call';
-  };
+  const tooltip = () => (isCallInProgress() ? 'Join Call' : 'Start Call');
+  const label = () => (isCallInProgress() ? 'Join' : 'Call');
 
   const handleClick = async () => {
-    if (call.isJoining() || call.isLeaving()) return;
-
+    if (call.isJoining()) return;
     try {
-      if (call.isInThisChannel()) {
-        await call.leaveCall();
-      } else {
-        await call.joinCall();
-      }
+      await call.joinCall();
     } catch (e) {
       console.error('Call action failed', e);
     }
   };
 
   return (
-    <Button
-      onClick={handleClick}
-      disabled={isPending()}
-      tooltip={tooltip()}
-      class={
-        isHighlighted()
-          ? 'px-1 bg-accent/20 hover:bg-accent/30 text-accent-ink'
-          : 'px-1'
-      }
-      size={isTouchDevice() ? 'icon-md' : 'icon-sm'}
-    >
-      <Show when={call.isInThisChannel()} fallback={<PhoneIcon />}>
-        <PhoneDisconnectIcon />
-      </Show>
-    </Button>
+    <Show when={!call.isInThisChannel()}>
+      <Button
+        onClick={handleClick}
+        tooltip={tooltip()}
+        variant="base"
+        size="sm"
+        depth={2}
+        class={cn(
+          'bg-surface',
+          isCallInProgress() &&
+            'bg-accent/20 hover:bg-accent/30 text-accent border-accent/30'
+        )}
+      >
+        <PhoneIcon />
+        <span>{label()}</span>
+      </Button>
+    </Show>
   );
 }

@@ -1,4 +1,4 @@
-import PlayIcon from '@icon/fill/play-fill.svg';
+import PlayIcon from '@phosphor/play.svg';
 import { cn } from '@ui';
 import type { ParentProps } from 'solid-js';
 
@@ -46,7 +46,7 @@ function PlayOverlay(props: { onOpen?: () => void; class?: string }) {
       )}
       onClick={() => props.onOpen?.()}
     >
-      <PlayIcon class="size-5 text-page drop-shadow" />
+      <PlayIcon class="size-5 text-surface drop-shadow" />
     </div>
   );
 }

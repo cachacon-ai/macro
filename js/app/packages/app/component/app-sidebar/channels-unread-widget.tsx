@@ -2,8 +2,7 @@ import type { SidebarState } from '@app/component/app-sidebar/sidebar';
 import { useSenderName } from '@app/component/app-sidebar/utils';
 import { useGlobalNotificationSource } from '@app/component/GlobalAppState';
 import { globalSplitManager } from '@app/signal/splitLayout';
-import { ContextMenuContent, MenuItem } from '@core/component/Menu';
-import { Tooltip } from '@core/component/Tooltip';
+import { ContextMenuContent, MenuItem } from '@core/component/ContextMenu';
 import { UserIcon } from '@core/component/UserIcon';
 import { compareDateDesc } from '@core/util/date';
 import { ContextMenu } from '@kobalte/core/context-menu';
@@ -11,7 +10,7 @@ import { openNotification } from '@notifications';
 import { isChannelNotification } from '@notifications/notification-helpers';
 import { getChannelNotificationParams } from '@notifications/notification-navigation';
 import type { UnifiedNotification } from '@notifications/types';
-import { Button, cn } from '@ui';
+import { Avatar, Button, cn, Tooltip } from '@ui';
 import {
   createEffect,
   createMemo,
@@ -72,9 +71,9 @@ function computeChannelLetters(groups: ChannelGroup[]): Map<string, string> {
 
 function ChannelLetterIcon(props: { letters: string }) {
   return (
-    <div class="size-full rounded-sm border border-ink/40 text-ink-muted flex items-center justify-center">
-      <span class="text-xxs leading-none">{props.letters}</span>
-    </div>
+    <Avatar size="md" class="bg-ink-extra-muted/15 text-ink-muted">
+      <Avatar.Fallback>{props.letters}</Avatar.Fallback>
+    </Avatar>
   );
 }
 
@@ -189,8 +188,10 @@ function ChannelGroupItem(props: {
   const ButtonContent = () => (
     <Button
       class={cn(
-        'flex items-center cursor-default rounded-xs',
-        isSlim() ? 'justify-center size-8' : 'justify-start gap-3 size-full'
+        'flex items-center cursor-default rounded-md text-ink-extra-muted not-disabled:hover:bg-ink/3',
+        isSlim()
+          ? 'justify-center size-8'
+          : 'justify-start gap-2 w-full h-8 py-1'
       )}
       draggable={false}
       variant="ghost"
@@ -199,7 +200,9 @@ function ChannelGroupItem(props: {
         'opacity-0 -translate-y-2': !isVisible(),
         'opacity-100 translate-y-0': isVisible(),
       }}
-      onClick={(e) => {
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
         navigateToLatestNotification(e.shiftKey);
       }}
     >
@@ -210,23 +213,21 @@ function ChannelGroupItem(props: {
         >
           <UserIcon
             id={senderId()!}
-            size="fill"
+            size="md"
             suppressClick
             showTooltip={false}
           />
         </Show>
         <Show when={isSlim()}>
-          <div class="absolute -top-0.5 -right-0.5 size-1.5 bg-accent rounded-full" />
+          <div class="absolute -top-0.5 -right-0.5 size-1.5 bg-accent rounded-full ring-surface ring-2" />
         </Show>
       </div>
 
       <Show when={!isSlim()}>
-        <span class="text-sm font-medium text-ink truncate">
-          {displayName()}
-        </span>
+        <span class="text-sm font-medium truncate">{displayName()}</span>
 
         <Show when={count() > 0}>
-          <span class="shrink-0 min-w-5 h-5 px-1.5 flex items-center justify-center text-xs font-medium bg-accent/10 text-accent rounded ml-auto">
+          <span class="shrink-0 min-w-5 h-5 px-1.5 flex items-center justify-center text-xs font-medium bg-ink/6 text-ink-muted rounded-md ml-auto">
             {count()}
           </span>
         </Show>
@@ -240,10 +241,7 @@ function ChannelGroupItem(props: {
         <Show
           when={!isSlim()}
           fallback={
-            <Tooltip
-              tooltip={<span class="text-xs">{displayName()}</span>}
-              placement="right"
-            >
+            <Tooltip label={displayName()} placement="right">
               <ButtonContent />
             </Tooltip>
           }

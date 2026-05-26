@@ -4,10 +4,10 @@ import {
   LoadErrors,
   loadResult,
 } from '@core/block';
-import { isErr, ok } from '@core/util/maybeResult';
-import { storageServiceClient } from '@service-storage/client';
+import { fetchBinaryDocumentData } from '@queries/storage/binary-document';
 import { fetchBinary } from '@service-storage/util/fetchBinary';
 import { makeFileFromBlob } from '@service-storage/util/makeFileFromBlob';
+import { err, ok } from 'neverthrow';
 import { lazy } from 'solid-js';
 
 export const definition = defineBlock({
@@ -25,7 +25,7 @@ export const definition = defineBlock({
   async load(source, intent) {
     if (source.type === 'dss') {
       const maybeDocument = await loadResult(
-        storageServiceClient.getBinaryDocument({ documentId: source.id })
+        fetchBinaryDocumentData(source.id)
       );
 
       if (intent === 'preload')
@@ -34,16 +34,16 @@ export const definition = defineBlock({
           origin: source,
         });
 
-      if (isErr(maybeDocument)) return maybeDocument;
+      if (maybeDocument.isErr()) return err(maybeDocument.error);
 
-      const [, documentResult] = maybeDocument;
+      const documentResult = maybeDocument.value;
 
       const { documentMetadata, blobUrl, userAccessLevel } = documentResult;
 
       const blobResult = await loadResult(fetchBinary(blobUrl, 'blob'));
 
-      if (isErr(blobResult)) return blobResult;
-      const [, blob] = blobResult;
+      if (blobResult.isErr()) return err(blobResult.error);
+      const blob = blobResult.value;
 
       const dssFile = await makeFileFromBlob({
         blob,

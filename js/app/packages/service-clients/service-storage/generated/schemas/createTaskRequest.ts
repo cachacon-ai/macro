@@ -4,13 +4,17 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateTaskRequestMarkdown } from './createTaskRequestMarkdown';
 import type { CreateTaskRequestProjectId } from './createTaskRequestProjectId';
 import type { CreateTaskRequestPropertyValues } from './createTaskRequestPropertyValues';
+import type { CreateTaskRequestTeamId } from './createTaskRequestTeamId';
 
 /**
  * Request body for creating a task.
  */
 export interface CreateTaskRequest {
+  /** Markdown source text. Defaults to an empty task document. */
+  markdown?: CreateTaskRequestMarkdown;
   /** Optional project ID to associate the task with. */
   projectId?: CreateTaskRequestProjectId;
   /** Optional property values to set on the task. */
@@ -20,4 +24,7 @@ Defaults to true */
   shareWithTeam?: boolean;
   /** The name of the task. */
   taskName: string;
+  /** Team to assign the task number within. If omitted, it is inferred only
+when the creator belongs to exactly one team. */
+  teamId?: CreateTaskRequestTeamId;
 }

@@ -1,6 +1,10 @@
 import { blockDataSignalAs, useBlockId } from '@core/block';
-import { isErr } from '@core/util/maybeResult';
-import { fetchPresigned } from '@service-storage/util/fetchPresigned';
+
+import {
+  type FetchProgress,
+  fetchPresigned,
+  fetchPresignedBlobWithProgress,
+} from '@service-storage/util/fetchPresigned';
 import { getPresignedUrl } from '@service-storage/util/presignedUrl';
 import { createMemo } from 'solid-js';
 import type { VideoFileData } from '../definition';
@@ -22,16 +26,25 @@ export const useGetFileUrl = () => {
   };
 };
 
+type GetBlobOptions = {
+  onProgress?: (progress: FetchProgress) => void;
+};
+
 export const useGetFileBlob = () => {
   const getPresignedUrl = useGetFileUrl();
 
-  const fetchFromPresignedUrl = async (url: string) => {
-    const maybeResult = await fetchPresigned(url, 'blob');
-    if (isErr(maybeResult)) {
+  const fetchFromPresignedUrl = async (
+    url: string,
+    options?: GetBlobOptions
+  ) => {
+    const result = options?.onProgress
+      ? await fetchPresignedBlobWithProgress(url, options.onProgress)
+      : await fetchPresigned(url, 'blob');
+    if (result.isErr()) {
       throw new Error('unable to fetch from presigned url');
     }
 
-    const [, blob] = maybeResult;
+    const blob = result.value;
     if (!blob) {
       throw new Error('no blob data');
     }
@@ -39,9 +52,9 @@ export const useGetFileBlob = () => {
     return blob;
   };
 
-  const getBlob = async () => {
+  const getBlob = async (options?: GetBlobOptions) => {
     const url = await getPresignedUrl();
-    const blob = await fetchFromPresignedUrl(url);
+    const blob = await fetchFromPresignedUrl(url, options);
     return blob;
   };
 

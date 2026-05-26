@@ -1,8 +1,8 @@
-import CheckIcon from '@icon/regular/check.svg';
+import CheckIcon from '@phosphor/check.svg';
 import { cn } from '@ui';
 import { Show } from 'solid-js';
 
-export interface MultiSelectCheckboxProps {
+interface MultiSelectCheckboxProps {
   checked?: boolean;
   onChecked?: (checked: boolean, shiftKey: boolean) => void;
 }
@@ -36,7 +36,7 @@ export function MultiSelectCheckbox(props: MultiSelectCheckboxProps) {
         )}
       >
         <Show when={props.checked}>
-          <CheckIcon class="size-full text-panel" />
+          <CheckIcon class="size-full text-surface" />
         </Show>
       </div>
     </button>

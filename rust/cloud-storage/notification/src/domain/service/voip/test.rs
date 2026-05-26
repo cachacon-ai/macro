@@ -118,7 +118,15 @@ impl NotificationRepository for MockRepo {
         &self,
         _: MacroUserIdStr<'_>,
         _: &[uuid::Uuid],
-    ) -> Result<(), Report> {
+    ) -> Result<
+        Vec<
+            crate::domain::models::PatchDelete<
+                uuid::Uuid,
+                crate::domain::models::NotificationStatusPatch,
+            >,
+        >,
+        Report,
+    > {
         unimplemented!()
     }
     async fn mark_notifications_done(
@@ -126,7 +134,15 @@ impl NotificationRepository for MockRepo {
         _: &MacroUserIdStr<'_>,
         _: &[uuid::Uuid],
         _: bool,
-    ) -> Result<(), Report> {
+    ) -> Result<
+        Vec<
+            crate::domain::models::PatchDelete<
+                uuid::Uuid,
+                crate::domain::models::NotificationStatusPatch,
+            >,
+        >,
+        Report,
+    > {
         unimplemented!()
     }
     async fn get_basic_notifications(

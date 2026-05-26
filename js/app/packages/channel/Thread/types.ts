@@ -36,8 +36,12 @@ export type ThreadProps = {
   listMeta?: ChannelMessageListMeta;
   threadActions?: ThreadActions;
   messageEditor?: MessageEditor;
+  targetThreadId?: string;
+  /** One-shot scroll target. Caller must clear via `onTargetReplyScrolled`. */
   targetReplyId?: string;
   onTargetReplyScrolled?: (replyId: string) => void;
+  /** Persistent highlight target. */
+  selectedReplyId?: string;
   isNewMessage?: (reply: NewMessageCheckable) => boolean;
   selectedMessageId?: Accessor<string | undefined>;
   onSelectMessage?: (messageId: string) => void;

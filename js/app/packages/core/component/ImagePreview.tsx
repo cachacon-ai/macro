@@ -4,19 +4,18 @@ false && internalDrag;
 
 import { SERVER_HOSTS } from '@core/constant/servers';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
-import { maybeThrow } from '@core/util/maybeResult';
-import ExpandIcon from '@icon/regular/arrows-out-simple.svg';
-import ClipboardIcon from '@icon/regular/clipboard.svg';
-import ThreeDotsIcon from '@icon/regular/dots-three-vertical.svg';
-import DownloadIcon from '@icon/regular/download-simple.svg';
-import TrashIcon from '@icon/regular/trash.svg';
+import { throwOnErr } from '@core/util/result';
 import { Dialog } from '@kobalte/core/dialog';
-import { DropdownMenu } from '@kobalte/core/dropdown-menu';
 import { constrainImageDimensions } from '@lexical-core/utils/media';
+import ExpandIcon from '@phosphor/arrows-out-simple.svg';
+import ClipboardIcon from '@phosphor/clipboard.svg';
+import ThreeDotsIcon from '@phosphor/dots-three-vertical.svg';
+import DownloadIcon from '@phosphor/download-simple.svg';
+import TrashIcon from '@phosphor/trash.svg';
 import Spinner from '@phosphor-icons/core/bold/spinner-gap-bold.svg?component-solid';
-import { storageServiceClient } from '@service-storage/client';
+import { fetchBinaryDocumentData } from '@queries/storage/binary-document';
 import { fetchBinary } from '@service-storage/util/fetchBinary';
-import { Button, cn } from '@ui';
+import { Button, cn, Dropdown } from '@ui';
 import { createEffect, createSignal, onCleanup, Show } from 'solid-js';
 import {
   copyImageToClipboard,
@@ -24,7 +23,6 @@ import {
 } from '../util/imageActions';
 import { platformFetch } from '../util/platformFetch';
 import { Lightbox } from './Lightbox';
-import { DropdownMenuContent, MenuItem, MenuSeparator } from './Menu';
 
 type ImageData = {
   id: string;
@@ -36,7 +34,7 @@ type ImageData = {
  * @deprecated Prefer the composable media primitives in `@channel/Media`.
  * Keep this only for legacy callers until they are migrated.
  */
-export type ImagePreviewProps = {
+type ImagePreviewProps = {
   image: ImageData;
   variant: 'small' | 'dynamic';
   square?: boolean;
@@ -55,15 +53,12 @@ const THEMES = {
 
 // NOTE: copied logic from block-image
 const getDssImageBlob = async (documentId: string) => {
-  const maybeDocument = await storageServiceClient.getBinaryDocument({
-    documentId,
-  });
-  const documentResult = maybeThrow(maybeDocument);
+  const documentResult = await throwOnErr(() =>
+    fetchBinaryDocumentData(documentId)
+  );
   // presigned url with expiry
   const { blobUrl } = documentResult;
-  const blobResult = await fetchBinary(blobUrl, 'blob');
-  const blob = maybeThrow(blobResult);
-  return blob;
+  return throwOnErr(() => fetchBinary(blobUrl, 'blob'));
 };
 
 /** Max width for single image preview containers (matches MediaPreview max-w-[400px]) */
@@ -74,7 +69,7 @@ function ImagePlaceholder(props: {
 }) {
   return (
     <div
-      class="flex items-center justify-center border border-edge rounded-2xl bg-menu"
+      class="flex items-center justify-center border border-edge rounded-2xl bg-surface"
       style={
         props.dims
           ? {
@@ -154,42 +149,41 @@ export function ImagePreview(props: ImagePreviewProps) {
     <Dialog modal={true}>
       <div class="flex group relative">
         <Show when={props.variant !== 'small'}>
-          <div class="group-hover:visible invisible absolute top-2 right-2 bg-button rounded-2xl border border-edge flex flex-row items-center gap-1 z-10">
+          <div class="group-hover:visible invisible absolute top-2 right-2 bg-surface rounded-2xl border border-edge flex flex-row items-center gap-1 z-10">
             <Dialog.Trigger disabled={props.isContext}>
               <Button variant="ghost" size="icon-md">
                 <ExpandIcon />
               </Button>
             </Dialog.Trigger>
-            <DropdownMenu>
-              <DropdownMenu.Trigger disabled={props.isContext}>
-                <Button variant="ghost" size="icon-md">
-                  <ThreeDotsIcon />
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <div class="fixed inset-0 z-modal-overlay bg-transparent" />
-                <DropdownMenuContent class="z-modal">
-                  <MenuItem
-                    text="Copy image"
-                    icon={ClipboardIcon}
-                    onClick={copyToClipboard}
-                  />
-                  <MenuItem
-                    text="Download image"
-                    icon={DownloadIcon}
-                    onClick={downloadImage}
-                  />
-                  <Show when={props.onDelete}>
-                    <MenuSeparator />
-                    <MenuItem
-                      text="Delete image"
-                      icon={TrashIcon}
-                      onClick={() => props.onDelete?.()}
-                    />
-                  </Show>
-                </DropdownMenuContent>
-              </DropdownMenu.Portal>
-            </DropdownMenu>
+            <Dropdown>
+              <Dropdown.Trigger
+                variant="ghost"
+                size="icon-md"
+                disabled={props.isContext}
+              >
+                <ThreeDotsIcon />
+              </Dropdown.Trigger>
+              <Dropdown.Content>
+                <Dropdown.Group>
+                  <Dropdown.Item onSelect={copyToClipboard}>
+                    <ClipboardIcon class="size-4 shrink-0" />
+                    <span class="flex-1 truncate">Copy image</span>
+                  </Dropdown.Item>
+                  <Dropdown.Item onSelect={downloadImage}>
+                    <DownloadIcon class="size-4 shrink-0" />
+                    <span class="flex-1 truncate">Download image</span>
+                  </Dropdown.Item>
+                </Dropdown.Group>
+                <Show when={props.onDelete}>
+                  <Dropdown.Group>
+                    <Dropdown.Item onSelect={() => props.onDelete?.()}>
+                      <TrashIcon class="size-4 shrink-0" />
+                      <span class="flex-1 truncate">Delete image</span>
+                    </Dropdown.Item>
+                  </Dropdown.Group>
+                </Show>
+              </Dropdown.Content>
+            </Dropdown>
           </div>
         </Show>
         <Dialog.Trigger class="flex" disabled={props.isContext}>

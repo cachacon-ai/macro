@@ -40,9 +40,9 @@ type BarContext = {
   truncation: Accessor<{ stage: TruncationStage; index: number }>;
 };
 
-export const BarContext = createContext<BarContext>();
+const BarContext = createContext<BarContext>();
 
-export type TruncationStage = {
+type TruncationStage = {
   fileNameLength: number;
   hideBreadcrumb?: boolean;
   hideLabels?: boolean;
@@ -276,7 +276,7 @@ function BarContent(props: BarProps) {
       <div
         use:observedSize={{ setSize: context.setBarSize }}
         style={{ 'container-type': 'inline-size' }}
-        class="w-full bg-panel"
+        class="w-full bg-surface"
       >
         <div
           class={cn(

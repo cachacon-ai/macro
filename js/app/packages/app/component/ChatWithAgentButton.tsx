@@ -2,10 +2,10 @@ import { globalSplitManager } from '@app/signal/splitLayout';
 import type { Attachment } from '@core/component/AI/types';
 import { storeChatStateImmediate } from '@core/component/AI/util/storage';
 import { toast } from '@core/component/Toast/Toast';
-import { Tooltip } from '@core/component/Tooltip';
 import { createChat } from '@core/util/create';
-import { AnimatedStarIcon } from '@macro-icons/wide/animating/star';
+import { AnimatedStarIcon } from '@icon/wide-star';
 import { ChannelType } from '@service-cognition/generated/schemas/channelType';
+import { Button } from '@ui';
 import { createSignal } from 'solid-js';
 import { match } from 'ts-pattern';
 
@@ -13,14 +13,14 @@ export { AnimatedStarIcon as ChatWithAgentIcon };
 
 const CHANNEL_TYPE_VALUES = new Set<string>(Object.values(ChannelType));
 
-export function toChatChannelType(
+function _toChatChannelType(
   t: string | undefined | null
 ): ChannelType | undefined {
   if (t && CHANNEL_TYPE_VALUES.has(t)) return t as ChannelType;
   return undefined;
 }
 
-export type ChatWithAgentEntity =
+type ChatWithAgentEntity =
   | { type: 'email'; id: string; name: string }
   | {
       type: 'document';
@@ -88,20 +88,18 @@ export function ChatWithAgentButton(props: { entity: ChatWithAgentEntity }) {
   const [hovering, setHovering] = createSignal(false);
 
   return (
-    <Tooltip tooltip="Chat with Agent">
-      <div class="border border-edge-muted flex ml-1 items-stretch rounded-xs">
-        <button
-          class="h-7 px-2 flex items-center gap-1 text-xs hover:bg-hover hover-transition-bg"
-          onMouseEnter={() => setHovering(true)}
-          onMouseLeave={() => setHovering(false)}
-          onClick={() => openChatWithAgent(props.entity)}
-        >
-          <div class="size-4">
-            <AnimatedStarIcon triggerAnimation={hovering()} />
-          </div>
-          <span class="text-ink">Chat</span>
-        </button>
-      </div>
-    </Tooltip>
+    <Button
+      tooltip="Chat with Agent"
+      variant="base"
+      size="sm"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onClick={() => openChatWithAgent(props.entity)}
+      depth={2}
+      class="bg-surface"
+    >
+      <AnimatedStarIcon triggerAnimation={hovering()} />
+      <span class="text-xs">Chat</span>
+    </Button>
   );
 }

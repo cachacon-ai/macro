@@ -41,7 +41,7 @@ export function Avatar(props: AvatarProps) {
       data-slot="avatar"
       data-size={size()}
       class={cn(
-        'group/avatar relative flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full bg-ink-extra-muted text-panel',
+        'group/avatar relative flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full bg-ink-extra-muted has-[img]:bg-transparent text-surface',
         size() === 'fill' && '@container',
         AVATAR_SIZE_CLASSES,
         AVATAR_SVG_CLASSES,
@@ -54,7 +54,7 @@ export function Avatar(props: AvatarProps) {
   );
 }
 
-export type AvatarImageProps = {
+type AvatarImageProps = {
   src: string;
   alt?: string;
   class?: string;
@@ -68,16 +68,16 @@ export type AvatarImageProps = {
 function AvatarImage(props: AvatarImageProps) {
   return (
     <img
+      class={cn('size-full object-cover', props.class)}
+      onError={props.onError}
+      alt={props.alt}
       ref={props.ref}
       src={props.src}
-      alt={props.alt}
-      class={cn('size-full object-cover rounded-full', props.class)}
-      onError={props.onError}
     />
   );
 }
 
-export type AvatarFallbackProps = ParentProps<{
+type AvatarFallbackProps = ParentProps<{
   class?: string;
 }>;
 
@@ -130,15 +130,15 @@ const GROUP_OVERLAP_CLASSES: Record<AvatarGroupSize, string> = {
  * Ring classes applied to child avatars for separation.
  */
 const GROUP_RING_CLASSES: Record<AvatarGroupSize, string> = {
-  sm: '*:data-[slot=avatar]:ring-1',
-  md: '*:data-[slot=avatar]:ring-2',
-  lg: '*:data-[slot=avatar]:ring-2',
+  sm: '**:data-[slot=avatar]:ring-1',
+  md: '**:data-[slot=avatar]:ring-2',
+  lg: '**:data-[slot=avatar]:ring-2',
 };
 
 /**
  * Avatar group container. Displays avatars in an overlapping style.
  *
- * Uses --avatar-group-separator CSS variable for ring color (defaults to --color-panel).
+ * Uses --avatar-group-separator CSS variable for ring color (defaults to --color-surface).
  * Parent containers can override to match hover backgrounds.
  *
  * @example
@@ -165,7 +165,7 @@ export function AvatarGroup(props: AvatarGroupProps) {
         'isolate flex w-fit shrink-0 items-center',
         GROUP_OVERLAP_CLASSES[size()],
         GROUP_RING_CLASSES[size()],
-        '*:data-[slot=avatar]:ring-(--avatar-group-separator,var(--color-panel))',
+        '**:data-[slot=avatar]:ring-(--avatar-group-separator,var(--color-surface))',
         local.class
       )}
       {...others}
@@ -175,7 +175,7 @@ export function AvatarGroup(props: AvatarGroupProps) {
   );
 }
 
-export type AvatarGroupCountProps = ParentProps<{
+type AvatarGroupCountProps = ParentProps<{
   size?: AvatarGroupSize;
   class?: string;
 }>;
@@ -199,8 +199,8 @@ function AvatarGroupCount(props: AvatarGroupCountProps) {
     <div
       data-slot="avatar-group-count"
       class={cn(
-        'relative z-10 flex shrink-0 select-none items-center justify-center rounded-full bg-menu text-ink leading-none',
-        'ring-(--avatar-group-separator,var(--color-panel))',
+        'relative z-10 flex shrink-0 select-none items-center justify-center rounded-full bg-surface text-ink leading-none',
+        'ring-(--avatar-group-separator,var(--color-surface))',
         GROUP_COUNT_CLASSES[size()],
         props.class
       )}

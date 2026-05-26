@@ -120,7 +120,9 @@ export function WideLayout(props: LayoutProps) {
               <Show when={(soupView?.activeTab() ?? 'all') === 'all'}>
                 <AttendanceBadge attended={entity().attended} />
               </Show>
-              <CallParticipants participantIds={entity().participantIds} />
+              <span class="flex w-10 shrink-0 justify-end">
+                <CallParticipants participantIds={entity().participantIds} />
+              </span>
             </>
           )}
         </Show>
@@ -130,7 +132,7 @@ export function WideLayout(props: LayoutProps) {
       </Entity.Slot>
       <Entity.Slot
         placement="timestamp"
-        class="text-xs font-mono text-right text-ink-extra-muted uppercase font-light"
+        class="text-xs text-right text-ink-extra-muted font-medium"
       >
         <Show
           when={

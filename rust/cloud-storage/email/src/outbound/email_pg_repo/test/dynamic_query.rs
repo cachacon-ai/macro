@@ -16,7 +16,8 @@ async fn test_dynamic_query_inbox_view(pool: Pool<Postgres>) -> anyhow::Result<(
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get inbox messages (threads 1, 4, 5, 7)
     assert_eq!(
@@ -50,7 +51,8 @@ async fn test_dynamic_query_sent_view(pool: Pool<Postgres>) -> anyhow::Result<()
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get sent messages (thread 2)
     assert_eq!(results.len(), 1, "Sent view should return 1 thread");
@@ -76,7 +78,8 @@ async fn test_dynamic_query_drafts_view(pool: Pool<Postgres>) -> anyhow::Result<
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get draft messages (threads 3 and 8)
     assert_eq!(results.len(), 2, "Drafts view should return 2 threads");
@@ -102,7 +105,8 @@ async fn test_dynamic_query_starred_view(pool: Pool<Postgres>) -> anyhow::Result
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get starred messages (thread 4)
     assert_eq!(results.len(), 1, "Starred view should return 1 thread");
@@ -128,7 +132,8 @@ async fn test_dynamic_query_important_view(pool: Pool<Postgres>) -> anyhow::Resu
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get important messages and drafts (threads 3, 5, and 8)
     assert_eq!(results.len(), 3, "Important view should return 3 threads");
@@ -206,7 +211,8 @@ async fn test_dynamic_query_user_label_view(pool: Pool<Postgres>) -> anyhow::Res
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get messages with "Work" label (thread 6)
     assert_eq!(results.len(), 1, "User label view should return 1 thread");
@@ -234,7 +240,8 @@ async fn test_dynamic_query_with_sender_filter(pool: Pool<Postgres>) -> anyhow::
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get messages from john@example.com (threads 1, 2, 5)
     assert!(
@@ -268,7 +275,8 @@ async fn test_dynamic_query_with_partial_sender_filter(pool: Pool<Postgres>) -> 
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get all messages since all contacts are from example.com
     assert!(
@@ -295,7 +303,8 @@ async fn test_dynamic_query_with_recipient_filter(pool: Pool<Postgres>) -> anyho
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get messages to alice@example.com (threads 1, 3, 5, 7)
     assert!(
@@ -322,7 +331,8 @@ async fn test_dynamic_query_with_cc_filter(pool: Pool<Postgres>) -> anyhow::Resu
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get messages with bob@example.com in CC (thread 7)
     assert_eq!(results.len(), 1, "Should return 1 thread with CC to bob");
@@ -350,7 +360,8 @@ async fn test_dynamic_query_inbox_with_sender_filter(pool: Pool<Postgres>) -> an
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get inbox messages from john@example.com (threads 1, 5)
     assert_eq!(
@@ -388,7 +399,8 @@ async fn test_dynamic_query_drafts_with_recipient_filter(
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get draft messages to alice@example.com (threads 3 and 8)
     assert_eq!(
@@ -422,7 +434,8 @@ async fn test_dynamic_query_with_and_filter(pool: Pool<Postgres>) -> anyhow::Res
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get messages from john to alice (threads 1, 5)
     assert!(
@@ -454,7 +467,8 @@ async fn test_dynamic_query_with_or_filter(pool: Pool<Postgres>) -> anyhow::Resu
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Should get messages from john or jane
     assert!(
@@ -480,7 +494,8 @@ async fn test_dynamic_query_pagination(pool: Pool<Postgres>) -> anyhow::Result<(
     ))));
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter1);
     let first_page =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     assert_eq!(first_page.len(), 2, "Should return 2 results");
 
@@ -507,7 +522,8 @@ async fn test_dynamic_query_pagination(pool: Pool<Postgres>) -> anyhow::Result<(
     };
     let query2 = Query::new(Some(cursor), SimpleSortMethod::UpdatedAt, filter3);
     let second_page =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query2, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query2, "", None)
+            .await?;
 
     assert!(
         second_page.len() > 0,
@@ -551,7 +567,8 @@ async fn test_dynamic_query_with_importance_filter(pool: Pool<Postgres>) -> anyh
         let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
         let results =
-            dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+            dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+                .await?;
 
         // Threads 1 (CATEGORY_PERSONAL), 2 (SENT), 3 (DRAFT), 4 (no depriority), 5 (no depriority), 8 (DRAFT overrides depriority)
         assert_eq!(
@@ -605,7 +622,8 @@ async fn test_dynamic_query_with_importance_filter(pool: Pool<Postgres>) -> anyh
         let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
         let results =
-            dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+            dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+                .await?;
 
         // Threads 6 (CATEGORY_UPDATES) and 7 (CATEGORY_PROMOTIONS)
         // Thread 8 has CATEGORY_UPDATES but is excluded because DRAFT is a priority label
@@ -653,7 +671,8 @@ async fn test_dynamic_query_importance_true_email_filters_domain_with_address_ov
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -688,7 +707,8 @@ async fn test_dynamic_query_importance_true_email_filters_excludes_trashed_messa
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -719,7 +739,8 @@ async fn test_dynamic_query_importance_false_email_filters_domain_with_address_o
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -754,7 +775,8 @@ async fn test_dynamic_query_with_single_project_id(pool: Pool<Postgres>) -> anyh
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Threads 1, 2, 5 are in Project Alpha
     assert_eq!(results.len(), 3, "Should return 3 threads in Project Alpha");
@@ -790,7 +812,8 @@ async fn test_dynamic_query_with_multiple_project_ids(pool: Pool<Postgres>) -> a
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Threads 1, 2, 5 (Alpha) + Thread 6 (Beta)
     assert_eq!(
@@ -831,7 +854,8 @@ async fn test_dynamic_query_project_id_with_sender_filter(
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // All results should be in Project Alpha and from john
     for result in &results {
@@ -864,7 +888,8 @@ async fn test_dynamic_query_project_id_with_inbox_view(pool: Pool<Postgres>) -> 
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     assert_eq!(
         results.len(),
@@ -901,7 +926,8 @@ async fn test_dynamic_query_inbox_view_with_importance_false(
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     // Only thread 7: inbox_visible=true AND importance=false
     assert_eq!(
@@ -941,7 +967,8 @@ async fn test_dynamic_query_with_single_thread_id(pool: Pool<Postgres>) -> anyho
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, thread_id);
@@ -977,7 +1004,8 @@ async fn test_dynamic_query_thread_id_with_sender_filter(
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, id1);
@@ -1004,7 +1032,8 @@ async fn test_importance_true_includes_drafts_with_depriority_label(
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -1040,7 +1069,8 @@ async fn test_importance_true_excludes_trashed_drafts(pool: Pool<Postgres>) -> a
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -1081,7 +1111,8 @@ async fn test_importance_false_excludes_drafts(pool: Pool<Postgres>) -> anyhow::
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -1270,6 +1301,7 @@ async fn test_shared_exclude_returns_only_own_threads(pool: Pool<Postgres>) -> a
         &view,
         query,
         "macro|user1@test.com",
+        None,
     )
     .await?;
 
@@ -1322,6 +1354,7 @@ async fn test_shared_only_returns_only_shared_threads(pool: Pool<Postgres>) -> a
         &view,
         query,
         "macro|user1@test.com",
+        None,
     )
     .await?;
 
@@ -1386,6 +1419,7 @@ async fn test_shared_include_returns_own_and_shared_threads(
         &view,
         query,
         "macro|user1@test.com",
+        None,
     )
     .await?;
 
@@ -1441,7 +1475,8 @@ async fn test_dynamic_query_calendar_only_filter(pool: Pool<Postgres>) -> anyhow
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -1506,7 +1541,8 @@ async fn test_dynamic_query_calendar_only_inbox_view(pool: Pool<Postgres>) -> an
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -1555,7 +1591,8 @@ async fn test_dynamic_query_calendar_only_combined_with_sender(
     let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
 
     let results =
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?;
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
 
     let result_ids: std::collections::HashSet<String> =
         results.iter().map(|r| r.id.to_string()).collect();
@@ -1596,14 +1633,14 @@ async fn test_dynamic_query_calendar_only_false_is_noop(
             ))),
         ));
         let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None).await?
     };
     let baseline = {
         let filter = Arc::new(Expr::Literal(EmailLiteral::Sender(Email::Partial(
             "example.com".to_string(),
         ))));
         let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
-        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "").await?
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None).await?
     };
 
     let with_false_ids: std::collections::HashSet<_> = with_false.iter().map(|r| r.id).collect();
@@ -1636,6 +1673,7 @@ async fn test_shared_only_returns_correct_owner_id(pool: Pool<Postgres>) -> anyh
         &view,
         query,
         "macro|user1@test.com",
+        None,
     )
     .await?;
 
@@ -1649,6 +1687,737 @@ async fn test_shared_only_returns_correct_owner_id(pool: Pool<Postgres>) -> anyh
             result.id
         );
     }
+
+    Ok(())
+}
+
+// Filtering by a Complete email that has no contact in `email_contacts`
+// for this link must short-circuit to an empty result set without
+// running the main query. This is what `resolve_filters` +
+// `can_short_circuit` are for: the AST `Sender(Complete(missing))`
+// folds to FALSE and the entry point returns `Vec::new()`.
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "../../../../fixtures", scripts("email_dynamic_query"))
+)]
+async fn test_dynamic_query_short_circuits_on_unresolved_complete_email(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // No contact with this email exists in the fixture.
+    let filter = Arc::new(Expr::Literal(EmailLiteral::Sender(Email::Complete(
+        EmailStr::parse_from_str("nobody@nowhere.com")?.into_owned(),
+    ))));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    assert!(
+        results.is_empty(),
+        "filtering by an unresolved Complete email must short-circuit to no results, got {} threads",
+        results.len()
+    );
+
+    Ok(())
+}
+
+// Filtering by `Bcc(bob)` must return thread 4: the edge-cases fixture
+// adds bob as a BCC recipient on message 4. Exercises the BCC arm of
+// `build_address_predicate_on_m` and the Bcc UNION branch in
+// `build_matching_threads_cte_body`. Without this test, no SQL-level
+// path covers BCC.
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_address_edge_cases")
+    )
+)]
+async fn test_dynamic_query_with_bcc_filter(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    let email_filter = Arc::new(Expr::Literal(EmailLiteral::Bcc(Email::Complete(
+        EmailStr::parse_from_str("bob@example.com")?.into_owned(),
+    ))));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, email_filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000004-0000-0000-0000-000000000004"),
+        "Bcc(bob) should match thread 4 (bob is BCC on message 4); got {:?}",
+        result_ids
+    );
+    // Thread 7 has bob as CC, not BCC — it must NOT match a Bcc filter.
+    assert!(
+        !result_ids.contains("20000007-0000-0000-0000-000000000007"),
+        "Bcc(bob) must not match thread 7 (bob is CC there, not BCC); got {:?}",
+        result_ids
+    );
+
+    Ok(())
+}
+
+// `Sender(john) AND Recipient(alice)` must match using *single-message*
+// semantics: the thread is included iff some single message satisfies
+// both conjuncts. Thread 12 (split between msg12a john→bob and msg12b
+// bob→alice) has john-as-sender on one message AND alice-as-recipient on
+// a *different* message — neither message individually satisfies both,
+// so the thread must be excluded. The same filter must still match
+// thread 1 (msg1: john→alice) where a single message does satisfy both.
+//
+// Sanity check: filtering by `Sender(john)` alone must include thread 12,
+// proving the fixture is wired correctly and the exclusion above is
+// driven by single-message semantics rather than a missing fixture row.
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_address_edge_cases")
+    )
+)]
+async fn test_dynamic_query_and_filter_uses_single_message_semantics(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Sanity: Sender(john) alone matches the split thread (msg12a is from
+    // john) — so the fixture is wired up and john has at least one
+    // message on thread 12.
+    {
+        let filter = Arc::new(Expr::Literal(EmailLiteral::Sender(Email::Complete(
+            EmailStr::parse_from_str("john@example.com")?.into_owned(),
+        ))));
+        let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+        let results =
+            dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+                .await?;
+        let ids: std::collections::HashSet<String> =
+            results.iter().map(|r| r.id.to_string()).collect();
+        assert!(
+            ids.contains("20000012-0000-0000-0000-000000000012"),
+            "fixture sanity: Sender(john) should include thread 12 (msg12a is from john); got {:?}",
+            ids
+        );
+    }
+
+    // The actual assertion: AND-of-conjuncts is single-message-scoped.
+    let filter = Arc::new(Expr::and(
+        Expr::Literal(EmailLiteral::Sender(Email::Complete(
+            EmailStr::parse_from_str("john@example.com")?.into_owned(),
+        ))),
+        Expr::Literal(EmailLiteral::Recipient(Email::Complete(
+            EmailStr::parse_from_str("alice@example.com")?.into_owned(),
+        ))),
+    ));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+    let ids: std::collections::HashSet<String> = results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        !ids.contains("20000012-0000-0000-0000-000000000012"),
+        "Sender(john) AND Recipient(alice) must NOT match thread 12: john's message and \
+         alice's message are different messages on that thread, so no single message satisfies \
+         both conjuncts. got: {:?}",
+        ids
+    );
+
+    // And it should still match thread 1, where msg1 is john → alice on
+    // a single message (the positive case, already covered by
+    // `test_dynamic_query_with_and_filter` but re-asserted here so a
+    // regression that drops thread 1 wouldn't be hidden by the negative
+    // assertion above succeeding for the wrong reason).
+    assert!(
+        ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Sender(john) AND Recipient(alice) should still match thread 1 (msg1: john → alice); \
+         got: {:?}",
+        ids
+    );
+
+    Ok(())
+}
+
+// ── Date range filter tests ─────────────────────────────────────────
+//
+// The email_dynamic_query_date_range fixture sets explicit created_at timestamps
+// for threads 1-11, aligning with their latest_non_spam_message_ts. The timeline:
+//   Thread 1: 2024-01-15 10:00:00+00 (newest)
+//   Thread 2: 2024-01-14 09:00:00+00
+//   Thread 3: 2024-01-13 08:00:00+00
+//   Thread 4: 2024-01-12 07:00:00+00
+//   Thread 5: 2024-01-11 06:00:00+00
+//   Thread 6: 2024-01-10 05:00:00+00
+//   Thread 7: 2024-01-09 04:00:00+00
+//   Thread 8: 2024-01-08 03:00:00+00
+//   Thread 9: 2024-01-07 02:00:00+00
+//   Thread 10: 2024-01-06 01:00:00+00
+//   Thread 11: 2024-01-05 00:00:00+00 (oldest)
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_updated_at_greater_than(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads updated after 2024-01-12 (should match threads 1, 2, 3)
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 12, 12, 0, 0).unwrap();
+    let filter = Arc::new(Expr::Literal(EmailLiteral::UpdatedAt(
+        DateLiteral::GreaterThan(cutoff),
+    )));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 (2024-01-15) should match"
+    );
+    assert!(
+        result_ids.contains("20000002-0000-0000-0000-000000000002"),
+        "Thread 2 (2024-01-14) should match"
+    );
+    assert!(
+        result_ids.contains("20000003-0000-0000-0000-000000000003"),
+        "Thread 3 (2024-01-13) should match"
+    );
+    assert!(
+        !result_ids.contains("20000004-0000-0000-0000-000000000004"),
+        "Thread 4 (2024-01-12 07:00) should not match (before cutoff)"
+    );
+    assert!(
+        !result_ids.contains("20000005-0000-0000-0000-000000000005"),
+        "Thread 5 (2024-01-11) should not match"
+    );
+
+    assert_eq!(results.len(), 3, "Should return exactly 3 threads");
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_updated_at_less_than(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads updated before 2024-01-09 (should match thread 8)
+    // Note: threads 9, 10, 11 are trashed, so they're excluded from "All" view
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 9, 0, 0, 0).unwrap();
+    let filter = Arc::new(Expr::Literal(EmailLiteral::UpdatedAt(
+        DateLiteral::LessThan(cutoff),
+    )));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    // Thread 8 (2024-01-08 03:00) should match - it's before the cutoff
+    assert!(
+        result_ids.contains("20000008-0000-0000-0000-000000000008"),
+        "Thread 8 (2024-01-08) should match"
+    );
+
+    // Threads after the cutoff should not match
+    assert!(
+        !result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 (2024-01-15) should not match"
+    );
+    assert!(
+        !result_ids.contains("20000007-0000-0000-0000-000000000007"),
+        "Thread 7 (2024-01-09) should not match (at or after cutoff)"
+    );
+
+    // Trashed threads should also not appear even if they match the date filter
+    assert!(
+        !result_ids.contains("20000009-0000-0000-0000-000000000009"),
+        "Thread 9 (trashed) should not match"
+    );
+    assert!(
+        !result_ids.contains("20000011-0000-0000-0000-000000000011"),
+        "Thread 11 (trashed) should not match"
+    );
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_updated_at_greater_than_or_equal(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads updated at or after exactly 2024-01-12 07:00:00 (thread 4's timestamp)
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 12, 7, 0, 0).unwrap();
+    let filter = Arc::new(Expr::Literal(EmailLiteral::UpdatedAt(
+        DateLiteral::GreaterThanOrEqual(cutoff),
+    )));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 should match"
+    );
+    assert!(
+        result_ids.contains("20000002-0000-0000-0000-000000000002"),
+        "Thread 2 should match"
+    );
+    assert!(
+        result_ids.contains("20000003-0000-0000-0000-000000000003"),
+        "Thread 3 should match"
+    );
+    assert!(
+        result_ids.contains("20000004-0000-0000-0000-000000000004"),
+        "Thread 4 (exact match) should match"
+    );
+    assert!(
+        !result_ids.contains("20000005-0000-0000-0000-000000000005"),
+        "Thread 5 (2024-01-11) should not match"
+    );
+
+    assert_eq!(results.len(), 4, "Should return exactly 4 threads");
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_updated_at_less_than_or_equal(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads updated at or before exactly 2024-01-09 04:00:00 (thread 7's timestamp)
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 9, 4, 0, 0).unwrap();
+    let filter = Arc::new(Expr::Literal(EmailLiteral::UpdatedAt(
+        DateLiteral::LessThanOrEqual(cutoff),
+    )));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000007-0000-0000-0000-000000000007"),
+        "Thread 7 (exact match) should match"
+    );
+    assert!(
+        result_ids.contains("20000008-0000-0000-0000-000000000008"),
+        "Thread 8 should match"
+    );
+    assert!(
+        !result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 should not match"
+    );
+    assert!(
+        !result_ids.contains("20000006-0000-0000-0000-000000000006"),
+        "Thread 6 (2024-01-10) should not match"
+    );
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_created_at_greater_than(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads created after 2024-01-13 (should match threads 1, 2)
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 13, 12, 0, 0).unwrap();
+    let filter = Arc::new(Expr::Literal(EmailLiteral::CreatedAt(
+        DateLiteral::GreaterThan(cutoff),
+    )));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 (2024-01-15) should match"
+    );
+    assert!(
+        result_ids.contains("20000002-0000-0000-0000-000000000002"),
+        "Thread 2 (2024-01-14) should match"
+    );
+    assert!(
+        !result_ids.contains("20000003-0000-0000-0000-000000000003"),
+        "Thread 3 (2024-01-13 08:00) should not match (before cutoff)"
+    );
+
+    assert_eq!(results.len(), 2, "Should return exactly 2 threads");
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_created_at_less_than(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads created before 2024-01-09 (should match thread 8)
+    // Note: threads 9, 10, 11 are trashed, so they're excluded from "All" view
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 9, 0, 0, 0).unwrap();
+    let filter = Arc::new(Expr::Literal(EmailLiteral::CreatedAt(
+        DateLiteral::LessThan(cutoff),
+    )));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    // Thread 8 (2024-01-08) should match
+    assert!(
+        result_ids.contains("20000008-0000-0000-0000-000000000008"),
+        "Thread 8 (2024-01-08) should match"
+    );
+
+    // Newer threads should not match
+    assert!(
+        !result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 should not match"
+    );
+    assert!(
+        !result_ids.contains("20000007-0000-0000-0000-000000000007"),
+        "Thread 7 (2024-01-09) should not match (at or after cutoff)"
+    );
+
+    // Trashed threads should also not appear even if they match the date filter
+    assert!(
+        !result_ids.contains("20000009-0000-0000-0000-000000000009"),
+        "Thread 9 (trashed) should not match"
+    );
+    assert!(
+        !result_ids.contains("20000011-0000-0000-0000-000000000011"),
+        "Thread 11 (trashed) should not match"
+    );
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_date_range_combined(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads updated between 2024-01-10 and 2024-01-13 (inclusive)
+    // Should match threads 3, 4, 5, 6
+    let start = Utc.with_ymd_and_hms(2024, 1, 10, 0, 0, 0).unwrap();
+    let end = Utc.with_ymd_and_hms(2024, 1, 14, 0, 0, 0).unwrap();
+    let filter = Arc::new(Expr::and(
+        Expr::Literal(EmailLiteral::UpdatedAt(DateLiteral::GreaterThanOrEqual(
+            start,
+        ))),
+        Expr::Literal(EmailLiteral::UpdatedAt(DateLiteral::LessThan(end))),
+    ));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000003-0000-0000-0000-000000000003"),
+        "Thread 3 (2024-01-13) should match"
+    );
+    assert!(
+        result_ids.contains("20000004-0000-0000-0000-000000000004"),
+        "Thread 4 (2024-01-12) should match"
+    );
+    assert!(
+        result_ids.contains("20000005-0000-0000-0000-000000000005"),
+        "Thread 5 (2024-01-11) should match"
+    );
+    assert!(
+        result_ids.contains("20000006-0000-0000-0000-000000000006"),
+        "Thread 6 (2024-01-10) should match"
+    );
+    assert!(
+        !result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 (2024-01-15) should not match (after end)"
+    );
+    assert!(
+        !result_ids.contains("20000002-0000-0000-0000-000000000002"),
+        "Thread 2 (2024-01-14) should not match (at end, using LessThan)"
+    );
+    assert!(
+        !result_ids.contains("20000007-0000-0000-0000-000000000007"),
+        "Thread 7 (2024-01-09) should not match (before start)"
+    );
+
+    assert_eq!(results.len(), 4, "Should return exactly 4 threads");
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_date_with_sender_filter(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads from john@example.com AND updated after 2024-01-12
+    // John's threads are 1, 2, 5; after 2024-01-12 are 1, 2, 3, 4
+    // Intersection should be threads 1, 2
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 12, 12, 0, 0).unwrap();
+    let filter = Arc::new(Expr::and(
+        Expr::Literal(EmailLiteral::Sender(Email::Complete(
+            EmailStr::parse_from_str("john@example.com")?.into_owned(),
+        ))),
+        Expr::Literal(EmailLiteral::UpdatedAt(DateLiteral::GreaterThan(cutoff))),
+    ));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 (john, 2024-01-15) should match"
+    );
+    assert!(
+        result_ids.contains("20000002-0000-0000-0000-000000000002"),
+        "Thread 2 (john, 2024-01-14) should match"
+    );
+    assert!(
+        !result_ids.contains("20000005-0000-0000-0000-000000000005"),
+        "Thread 5 (john, 2024-01-11) should not match (before cutoff)"
+    );
+    assert!(
+        !result_ids.contains("20000003-0000-0000-0000-000000000003"),
+        "Thread 3 (bob, 2024-01-13) should not match (wrong sender)"
+    );
+
+    assert_eq!(results.len(), 2, "Should return exactly 2 threads");
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_date_with_inbox_view(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::Inbox);
+    let limit = 50;
+
+    // Filter for inbox threads updated after 2024-01-10
+    // Inbox threads are 1, 4, 5, 7; after 2024-01-10 are 1, 2, 3, 4, 5, 6
+    // Intersection should be threads 1, 4, 5
+    let cutoff = Utc.with_ymd_and_hms(2024, 1, 10, 12, 0, 0).unwrap();
+    let filter = Arc::new(Expr::Literal(EmailLiteral::UpdatedAt(
+        DateLiteral::GreaterThan(cutoff),
+    )));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 (inbox, 2024-01-15) should match"
+    );
+    assert!(
+        result_ids.contains("20000004-0000-0000-0000-000000000004"),
+        "Thread 4 (inbox, 2024-01-12) should match"
+    );
+    assert!(
+        result_ids.contains("20000005-0000-0000-0000-000000000005"),
+        "Thread 5 (inbox, 2024-01-11) should match"
+    );
+    assert!(
+        !result_ids.contains("20000002-0000-0000-0000-000000000002"),
+        "Thread 2 (sent, not inbox) should not match"
+    );
+    assert!(
+        !result_ids.contains("20000007-0000-0000-0000-000000000007"),
+        "Thread 7 (inbox but 2024-01-09) should not match (before cutoff)"
+    );
+
+    assert_eq!(results.len(), 3, "Should return exactly 3 threads");
+
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(
+        path = "../../../../fixtures",
+        scripts("email_dynamic_query", "email_dynamic_query_date_range")
+    )
+)]
+async fn test_dynamic_query_created_at_and_updated_at_combined(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    let link_id = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")?;
+    let view = PreviewView::StandardLabel(PreviewViewStandardLabel::All);
+    let limit = 50;
+
+    // Filter for threads created after 2024-01-09 AND updated before 2024-01-14
+    // Created after 2024-01-09: threads 1, 2, 3, 4, 5, 6
+    // Updated before 2024-01-14: threads 3, 4, 5, 6, 7, 8, 9, 10, 11
+    // Intersection: threads 3, 4, 5, 6
+    let created_cutoff = Utc.with_ymd_and_hms(2024, 1, 9, 12, 0, 0).unwrap();
+    let updated_cutoff = Utc.with_ymd_and_hms(2024, 1, 14, 0, 0, 0).unwrap();
+    let filter = Arc::new(Expr::and(
+        Expr::Literal(EmailLiteral::CreatedAt(DateLiteral::GreaterThan(
+            created_cutoff,
+        ))),
+        Expr::Literal(EmailLiteral::UpdatedAt(DateLiteral::LessThan(
+            updated_cutoff,
+        ))),
+    ));
+    let query = Query::new(None, SimpleSortMethod::UpdatedAt, filter);
+
+    let results =
+        dynamic::dynamic_email_thread_cursor(&pool, &link_id, limit, &view, query, "", None)
+            .await?;
+
+    let result_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.id.to_string()).collect();
+
+    assert!(
+        result_ids.contains("20000003-0000-0000-0000-000000000003"),
+        "Thread 3 should match"
+    );
+    assert!(
+        result_ids.contains("20000004-0000-0000-0000-000000000004"),
+        "Thread 4 should match"
+    );
+    assert!(
+        result_ids.contains("20000005-0000-0000-0000-000000000005"),
+        "Thread 5 should match"
+    );
+    assert!(
+        result_ids.contains("20000006-0000-0000-0000-000000000006"),
+        "Thread 6 should match"
+    );
+    assert!(
+        !result_ids.contains("20000001-0000-0000-0000-000000000001"),
+        "Thread 1 should not match (updated after cutoff)"
+    );
+    assert!(
+        !result_ids.contains("20000002-0000-0000-0000-000000000002"),
+        "Thread 2 should not match (updated at cutoff)"
+    );
+    assert!(
+        !result_ids.contains("20000007-0000-0000-0000-000000000007"),
+        "Thread 7 should not match (created before cutoff)"
+    );
+
+    assert_eq!(results.len(), 4, "Should return exactly 4 threads");
 
     Ok(())
 }

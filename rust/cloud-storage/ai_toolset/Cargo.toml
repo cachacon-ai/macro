@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 serde_json = { workspace = true }
-futures = { workspace = true }
 serde = { workspace = true }
 utoipa = { workspace = true }
 schemars = { workspace = true }

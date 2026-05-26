@@ -14,7 +14,7 @@ import { convertContactInfoToEmailRecipient } from '@block-email/util/recipientC
 import { useChatContext } from '@core/component/AI/context';
 import type { AssistantMessagePart } from '@core/component/AI/types';
 import { toast } from '@core/component/Toast/Toast';
-import { isErr } from '@core/util/maybeResult';
+
 import { useChatQuery } from '@queries/chat';
 import { useEmailLinksQuery } from '@queries/email/link';
 import { cognitionApiServiceClient } from '@service-cognition/client';
@@ -240,7 +240,7 @@ export function ComposeTool(props: ComposeToolProps) {
         args,
       });
 
-    if (isErr(updateCallResult)) {
+    if (updateCallResult.isErr()) {
       toast.failure('Failed to save changes');
       return;
     }
@@ -253,7 +253,7 @@ export function ComposeTool(props: ComposeToolProps) {
         response: { UserAction: 'userEdited' },
       });
 
-    if (isErr(updateResponseResult)) {
+    if (updateResponseResult.isErr()) {
       toast.failure('Failed to save changes');
       return;
     }
@@ -278,12 +278,12 @@ export function ComposeTool(props: ComposeToolProps) {
 
     setIsSending(false);
 
-    if (isErr(result)) {
+    if (result.isErr()) {
       toast.failure('Failed to send email');
       return;
     }
 
-    const sentResponse = getSentToolResponse(result[1]);
+    const sentResponse = getSentToolResponse(result.value);
     if (sentResponse) {
       toolFinalized = true;
       chat.setMessages((messages) =>
@@ -361,7 +361,7 @@ export function ComposeTool(props: ComposeToolProps) {
         <ComposeLayout
           bodyDebugName={`chat-compose:${props.chatId}:${props.messageId}:${props.toolCallId}`}
           class={cn(
-            'flex flex-col w-full text-sm border border-edge-muted rounded-lg p-4 bg-input',
+            'flex flex-col w-full text-sm border border-edge-muted rounded-lg p-4 bg-surface',
             uiDisabled() &&
               '[&_button:disabled]:opacity-50 [&_button:disabled]:text-ink-disabled [&_input:disabled]:text-ink-muted'
           )}

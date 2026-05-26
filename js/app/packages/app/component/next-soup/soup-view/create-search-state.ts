@@ -20,7 +20,7 @@ import type {
   EntityFilters,
   UnifiedSearchRequest,
 } from '@service-search/generated/models';
-import { type Accessor, createMemo, createSignal, on } from 'solid-js';
+import { type Accessor, createMemo, on, type Setter } from 'solid-js';
 
 function filterDataToQueryFilters(data: QueryState): EntityFilters {
   const filters: EntityFilters = {};
@@ -124,9 +124,12 @@ interface CreateSearchStateArgs {
   assignees: Accessor<string[]>;
   disableLocalSearch?: boolean;
   searchPaused?: Accessor<boolean>;
-  searchMentions?: Accessor<string[]>;
-  /** Pre-populate searchText so the service request fires on mount (skips the debounce wait for the initial value). */
-  initialText?: string;
+  /**
+   * Reactive search text. Owned by the caller so it can be wired to
+   * per-entry navigation state and survive back/forward.
+   */
+  searchText: Accessor<string>;
+  setSearchText: Setter<string>;
 }
 
 export const createSearchState = ({
@@ -135,11 +138,9 @@ export const createSearchState = ({
   assignees,
   disableLocalSearch,
   searchPaused,
-  searchMentions,
-  initialText,
+  searchText,
+  setSearchText,
 }: CreateSearchStateArgs) => {
-  const [searchText, setSearchText] = createSignal(initialText ?? '');
-
   const notificationSource = useGlobalNotificationSource();
   const userId = useUserId();
 
@@ -174,21 +175,7 @@ export const createSearchState = ({
   const searchUnifiedNameContentRequest = createMemo(
     (): UnifiedSearchRequest => {
       const query = debouncedSearchForService();
-      const mentionIds =
-        isSearchServiceDebounceSettled() && !isSearchServiceDisabled()
-          ? searchMentions?.()
-          : undefined;
-
-      // Translate FilterData to legacy EntityFilters format for search service
       const baseFilters = filterDataToQueryFilters(filters());
-
-      // Merge mention filters into channel_filters if present
-      if (mentionIds && mentionIds.length > 0) {
-        baseFilters.channel_filters = {
-          ...baseFilters.channel_filters,
-          mentions: mentionIds,
-        };
-      }
 
       return {
         search_on: 'name_content',
@@ -313,5 +300,3 @@ export const createSearchState = ({
     isLocalSearchSettling,
   };
 };
-
-export type SearchState = ReturnType<typeof createSearchState>;

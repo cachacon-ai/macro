@@ -1,7 +1,3 @@
-import {
-  ChatWithAgentButton,
-  toChatChannelType,
-} from '@app/component/ChatWithAgentButton';
 import { useBlockEntityCommands } from '@app/component/next-soup/actions';
 import { useMaybePreviewPanel } from '@app/component/PreviewPanel';
 import { SplitHeaderRight } from '@app/component/split-layout/components/SplitHeader';
@@ -51,7 +47,6 @@ import {
   createSignal,
   Match,
   onCleanup,
-  onMount,
   Show,
   Suspense,
   Switch,
@@ -85,7 +80,6 @@ function NewTop(props: { channelId: string }) {
   const { activeTab, setActiveTab } = useChannelTab();
   const channelName = useChannelName(props.channelId);
   const channelType = useChannelType(props.channelId);
-  const chatChannelType = () => toChatChannelType(channelType());
   const participantsQuery = useChannelParticipantsQuery(() => props.channelId);
   const call = useCall(() => props.channelId);
   const participants = () =>
@@ -118,24 +112,10 @@ function NewTop(props: { channelId: string }) {
         activeTab={activeTab()}
         onTabChange={setActiveTab}
       />
-      <Show when={chatChannelType() || ENABLE_CALLS()}>
+      <Show when={ENABLE_CALLS()}>
         <SplitHeaderRight>
           <div class="flex items-center gap-1.5">
-            <Show when={chatChannelType()}>
-              {(type) => (
-                <ChatWithAgentButton
-                  entity={{
-                    type: 'channel',
-                    id: props.channelId,
-                    name: channelName() ?? 'Channel',
-                    channelType: type(),
-                  }}
-                />
-              )}
-            </Show>
-            <Show when={ENABLE_CALLS()}>
-              <ChannelCallButton channelId={props.channelId} />
-            </Show>
+            <ChannelCallButton channelId={props.channelId} />
           </div>
         </SplitHeaderRight>
       </Show>
@@ -195,18 +175,18 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
     callCtx.syncCallPageTab(channelId, false);
   });
 
-  // Clear the URL param after consuming it so a reload doesn't re-trigger
-  // the join if the user has since left the call.
-  onMount(() => {
-    if (
-      wantsJoinCall &&
-      searchParams[CHANNEL_URL_PARAMS.joinCall] !== undefined
-    ) {
-      setSearchParams(
-        { [CHANNEL_URL_PARAMS.joinCall]: undefined },
-        { replace: true }
-      );
-    }
+  // Once the call actually mounts for this channel, replace the URL so a
+  // reload doesn't re-trigger auto-join after the user has left. Waiting for
+  // the call to mount (instead of running on adapter mount) preserves the
+  // deep link if the join fails so the user can retry by refreshing.
+  createComputed(() => {
+    if (!callCtx) return;
+    if (!callCtx.isInCall() || callCtx.activeChannelId() !== channelId) return;
+    if (searchParams[CHANNEL_URL_PARAMS.joinCall] === undefined) return;
+    setSearchParams(
+      { [CHANNEL_URL_PARAMS.joinCall]: undefined },
+      { replace: true }
+    );
   });
 
   const convertTargetMessage = (
@@ -241,7 +221,7 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
 
       if (targetMessageId && messagesChannelHandle.current) {
         setActiveTab(DEFAULT_CHANNEL_TAB);
-        await messagesChannelHandle.current.goToMessage(
+        messagesChannelHandle.current.goToMessage(
           targetMessageId,
           targetMessageReplyId
         );

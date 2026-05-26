@@ -2,9 +2,9 @@ import { AvatarGroup, type AvatarGroupSize } from '@ui';
 import { createMemo, For, Show } from 'solid-js';
 import { UserIcon } from './UserIcon';
 
-export type UserGroupSize = AvatarGroupSize;
+type UserGroupSize = AvatarGroupSize;
 
-export type UserGroupProps = {
+type UserGroupProps = {
   userIds: string[];
   maxUsers?: number;
   size?: UserGroupSize;
@@ -15,7 +15,7 @@ export type UserGroupProps = {
 /**
  * Displays a group of user avatars in an overlapping style with an overflow indicator.
  *
- * Uses --avatar-group-separator CSS variable for ring color (defaults to --color-panel).
+ * Uses --avatar-group-separator CSS variable for ring color (defaults to --color-surface).
  * Parent containers can override to match hover backgrounds:
  *
  * @example

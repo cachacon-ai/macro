@@ -1,7 +1,6 @@
 use document_sub_type::DocumentSubType;
 use macro_user_id::user_id::MacroUserIdStr;
-use model::document::VersionIDWithTimeStamps;
-use model_file_type::FileType;
+use model::document::{FileType, VersionIDWithTimeStamps};
 use models_permissions::share_permission::SharePermissionV2;
 
 /// Inserts a record into the document table
@@ -73,6 +72,37 @@ pub async fn set_document_sub_type(
     } else {
         Ok(None)
     }
+}
+
+/// Allocates the next per-team task number and records the document association.
+#[tracing::instrument(skip(transaction), err)]
+pub async fn allocate_team_task_number(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    team_id: &uuid::Uuid,
+    document_id: &uuid::Uuid,
+) -> Result<i32, sqlx::Error> {
+    let document_id = document_id.to_string();
+
+    sqlx::query_scalar!(
+        r#"
+        WITH allocated AS (
+            INSERT INTO team_task_counter (team_id, last_task_num)
+            VALUES ($1, 1)
+            ON CONFLICT (team_id) DO UPDATE
+            SET last_task_num = team_task_counter.last_task_num + 1,
+                updated_at = NOW()
+            RETURNING last_task_num AS task_num
+        )
+        INSERT INTO team_task (team_id, document_id, task_num)
+        SELECT $1, $2, task_num
+        FROM allocated
+        RETURNING task_num AS "task_num!"
+        "#,
+        team_id,
+        document_id,
+    )
+    .fetch_one(transaction.as_mut())
+    .await
 }
 
 pub async fn set_document_version(

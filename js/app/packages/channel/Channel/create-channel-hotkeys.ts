@@ -14,6 +14,8 @@ type CreateChannelHotkeysOptions = {
   userId: Accessor<string | undefined>;
   isInputEmpty: Accessor<boolean>;
   isEditing: Accessor<boolean>;
+  onOpenFindBar: () => void;
+  onGoToBottom: () => void;
 };
 
 export function canReplyToSelectedMessageFromHotkey(input: {
@@ -89,10 +91,8 @@ export function createChannelHotkeys(options: CreateChannelHotkeysOptions) {
     description: 'Go to latest message',
     keyDownHandler: () => {
       options.selection.clear();
-      const id = options.selection.selectPrevious();
-      if (!id) return false;
       options.navigation()?.markUserIntent('down');
-      options.navigation()?.scrollToId(id, { align: 'end' });
+      options.onGoToBottom();
       return true;
     },
   });
@@ -187,6 +187,20 @@ export function createChannelHotkeys(options: CreateChannelHotkeysOptions) {
       return true;
     },
   });
+
+  for (const scopeId of [messageListScope, inputScope]) {
+    registerHotkey({
+      scopeId,
+      hotkey: 'cmd+f',
+      hotkeyToken: TOKENS.channel.findInChannel,
+      description: 'Find in channel',
+      runWithInputFocused: true,
+      keyDownHandler: () => {
+        options.onOpenFindBar();
+        return true;
+      },
+    });
+  }
 
   return {
     messageListScopeId: messageListScope,

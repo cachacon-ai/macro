@@ -1,5 +1,5 @@
 import { toast } from '@core/component/Toast/Toast';
-import { throwOnErr } from '@core/util/maybeResult';
+import { throwOnErr } from '@core/util/result';
 import { authServiceClient } from '@service-auth/client';
 import type { InviteToTeamRequest } from '@service-auth/generated/schemas/inviteToTeamRequest';
 import type { TeamInvitesResponse } from '@service-auth/generated/schemas/teamInvitesResponse';
@@ -15,12 +15,12 @@ export function useTeamInvitesQuery(teamId: Accessor<string>) {
   return useQuery(() => ({
     queryKey: teamKeys.invites(teamId()).queryKey,
     queryFn: async () =>
-      await throwOnErr(() => authServiceClient.getTeamInvites(teamId())),
+      await throwOnErr(() => authServiceClient.getTeamInvites()),
     enabled: !!teamId(),
   }));
 }
 
-export function invalidateTeamInvites(teamId: string) {
+function invalidateTeamInvites(teamId: string) {
   return queryClient.invalidateQueries({
     queryKey: teamKeys.invites(teamId).queryKey,
   });
@@ -31,8 +31,8 @@ type InviteToTeamCallbacks = MutationCallbacks<void, Error, InviteToTeamArgs>;
 
 export function useInviteToTeamMutation(callbacks?: InviteToTeamCallbacks) {
   return useMutation(() => ({
-    mutationFn: async ({ teamId, request }: InviteToTeamArgs) => {
-      await throwOnErr(() => authServiceClient.inviteToTeam(teamId, request));
+    mutationFn: async ({ request }: InviteToTeamArgs) => {
+      await throwOnErr(() => authServiceClient.inviteToTeam(request));
     },
 
     ...withCallbacks<void, Error, InviteToTeamArgs>(
@@ -67,10 +67,8 @@ export function useDeleteTeamInviteMutation(
   callbacks?: DeleteTeamInviteCallbacks
 ) {
   return useMutation(() => ({
-    mutationFn: async ({ teamId, teamInviteId }: DeleteTeamInviteArgs) => {
-      await throwOnErr(() =>
-        authServiceClient.deleteTeamInvite(teamId, teamInviteId)
-      );
+    mutationFn: async ({ teamInviteId }: DeleteTeamInviteArgs) => {
+      await throwOnErr(() => authServiceClient.deleteTeamInvite(teamInviteId));
     },
 
     ...withCallbacks<

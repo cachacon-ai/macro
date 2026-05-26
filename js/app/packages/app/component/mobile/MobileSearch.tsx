@@ -11,8 +11,8 @@ import { debouncedDependent } from '@core/util/debounce';
 import { windowSearchMatch } from '@core/util/searchHighlight';
 import { Entity, type EntityData, type WithSearch } from '@entity';
 import { SearchContent } from '@entity/extractors-search/search-content';
-import ArrowLeft from '@icon/regular/arrow-left.svg';
 import { Dialog } from '@kobalte/core/dialog';
+import ArrowLeft from '@phosphor/arrow-left.svg';
 import SearchIcon from '@phosphor-icons/core/regular/magnifying-glass.svg?component-solid';
 import { useFullTextSearch } from '@queries/soup/useFullTextSearch';
 import { cn, Layer } from '@ui';
@@ -68,7 +68,7 @@ export function MobileSearchOuter() {
   );
 }
 
-export function MobileSearchInner() {
+function MobileSearchInner() {
   const { openWithSplit } = useSplitLayout();
 
   const query = debouncedDependent(SearchState.query, 60);
@@ -146,7 +146,7 @@ export function MobileSearchInner() {
   };
 
   return (
-    <div class="flex flex-col h-full bg-panel">
+    <div class="flex flex-col h-full bg-surface">
       <ResultsContainer
         nameMatchItems={filteredItems()}
         fullTextItems={fullTextResults()}
@@ -164,7 +164,7 @@ export function MobileSearchInner() {
         <CategoryFilterTabs />
       </Show>
       {/* Search Input */}
-      <div class="flex items-center gap-2 bg-page px-2 border-t border-edge-muted">
+      <div class="flex items-center gap-2 bg-surface px-2 border-t border-edge-muted">
         <button
           class="text-ink-muted flex flex-col items-center justify-center pl-2 pt-3 pb-2"
           onClick={handleBack}
@@ -175,7 +175,7 @@ export function MobileSearchInner() {
         <input
           id="mobile-search-input"
           type="text"
-          class="pt-3 pb-2 flex-1 bg-transparent border-0 outline-none focus:outline-none ring-0 focus:ring-0 text-ink-muted placeholder:text-ink-placeholder/50"
+          class="pt-3 pb-2 flex-1 bg-transparent border-0 outline-none focus:outline-none ring-0 focus:ring-0 text-ink-muted placeholder:text-ink-placeholder"
           placeholder={'Search...'}
           value={SearchState.query()}
           onInput={(e) => SearchState.setQuery(e.currentTarget.value)}
@@ -218,7 +218,7 @@ function ResultsContainer(props: {
   };
 
   return (
-    <div class="flex-1 min-h-0 bg-panel" ref={ref}>
+    <div class="flex-1 min-h-0 bg-surface" ref={ref}>
       <Switch>
         <Match when={props.isLoading?.()}>
           <div class="flex items-center gap-2 text-ink-muted h-10 px-2">
@@ -379,7 +379,7 @@ function FullTextResultItem(props: {
 
 function CategoryFilterTabs() {
   return (
-    <div class="bg-panel border-t border-edge-muted h-11 px-1 overflow-x-auto scrollbar-hidden">
+    <div class="bg-surface border-t border-edge-muted h-11 px-1 overflow-x-auto scrollbar-hidden">
       <Tabs
         list={CATEGORIES.map((c) => ({ value: c.id, label: c.label }))}
         value={SearchState.categoryFilter()}

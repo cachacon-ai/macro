@@ -16,6 +16,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+#[cfg(test)]
+mod test;
+
 #[derive(Debug, Clone, ToSchema, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiResponseMetadata {
@@ -79,6 +82,9 @@ pub struct ChannelMessageSendMetadata {
     /// The message id
     #[serde(alias = "message_id")]
     pub message_id: String,
+    /// Whether the message includes attachments.
+    #[serde(skip)]
+    pub has_attachments: bool,
     #[serde(flatten)]
     pub common: CommonChannelMetadata,
     #[serde(default)]
@@ -118,6 +124,9 @@ pub struct ChannelMentionMetadata {
     /// The message content
     #[serde(alias = "message_content")]
     pub message_content: String,
+    /// Whether the message includes attachments.
+    #[serde(skip)]
+    pub has_attachments: bool,
     /// the id of the thread
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(alias = "thread_id")]
@@ -144,6 +153,9 @@ pub struct ChannelReplyMetadata {
     /// The message content
     #[serde(alias = "message_content")]
     pub message_content: String,
+    /// Whether the message includes attachments.
+    #[serde(skip)]
+    pub has_attachments: bool,
     /// The user who sent the root message of the thread
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(alias = "thread_parent_sender_id")]
@@ -180,8 +192,8 @@ pub struct DocumentMentionMetadata {
     #[serde(alias = "sub_type")]
     #[serde(default)]
     pub sub_type: Option<NotificationDocumentSubType>,
-    #[serde(default)]
-    pub sender_profile_picture_url: Option<String>,
+    #[serde(flatten)]
+    pub channel: ChannelMentionMetadata,
 }
 
 impl From<DocumentMentionMetadata> for serde_json::Value {
@@ -265,7 +277,7 @@ impl NotificationTitle for ChannelMentionMetadata {
         &self,
         _sender_id: Option<MacroUserIdStr<'_>>,
     ) -> Result<String, rootcause::Report> {
-        parse_message_plain_text(&self.message_content)
+        parse_message_plain_text_or_attachment(&self.message_content, self.has_attachments)
     }
 }
 
@@ -309,7 +321,7 @@ impl NotificationTitle for ChannelMessageSendMetadata {
         &self,
         _sender_id: Option<MacroUserIdStr<'_>>,
     ) -> Result<String, rootcause::Report> {
-        parse_message_plain_text(&self.message_content)
+        parse_message_plain_text_or_attachment(&self.message_content, self.has_attachments)
     }
 }
 
@@ -340,19 +352,19 @@ impl NotificationTitle for MentionedInDocumentCommentMetadata {
 impl NotificationTitle for ChannelReplyMetadata {
     fn format_title(
         &self,
-        sender_id: Option<MacroUserIdStr<'_>>,
+        _sender_id: Option<MacroUserIdStr<'_>>,
     ) -> Result<String, rootcause::Report> {
-        let sender =
-            sender_id.ok_or_else(|| report!("Expected sender id to exist for {:?}", &self))?;
-
-        Ok(format!("Reply from {}", sender.0.email_part().email_str()))
+        Ok(format!(
+            "Reply from {}",
+            self.user_id.email_part().local_part()
+        ))
     }
 
     fn format_body(
         &self,
         _sender_id: Option<MacroUserIdStr<'_>>,
     ) -> Result<String, rootcause::Report> {
-        parse_message_plain_text(&self.message_content)
+        parse_message_plain_text_or_attachment(&self.message_content, self.has_attachments)
     }
 }
 
@@ -366,6 +378,10 @@ pub struct TaskAssignedMetadata {
     /// The name of the task (optional)
     #[serde(alias = "task_name")]
     pub task_name: Option<String>,
+    /// The sub type of the backing document (task).
+    #[serde(alias = "sub_type")]
+    #[serde(default)]
+    pub sub_type: Option<NotificationDocumentSubType>,
     /// The user who assigned the task
     #[serde(alias = "assigned_by")]
     #[schema(value_type = String)]
@@ -378,6 +394,22 @@ pub struct TaskAssignedMetadata {
 fn parse_message_plain_text(content: &str) -> Result<String, Report> {
     let parsed = ParsedXmlText::parse(content)?;
     Ok(PlainTextFormatter::format_xml_text(parsed).0)
+}
+
+fn parse_message_plain_text_or_attachment(
+    content: &str,
+    has_attachments: bool,
+) -> Result<String, Report> {
+    let mut text = parse_message_plain_text(content)?;
+    let attached_items = "[attached items]";
+    if has_attachments && text.trim().is_empty() {
+        return Ok(attached_items.to_string());
+    }
+    if has_attachments {
+        text.push('\n');
+        text.push_str(attached_items);
+    }
+    Ok(text)
 }
 
 /// Helper to create an alert-style APNS notification with title and body.
@@ -503,9 +535,8 @@ impl NotificationExtIos for ChannelReplyMetadata {
 impl NotificationExtIos for DocumentMentionMetadata {
     type NotifData = ::notification::domain::models::apple::PushNotificationData;
 
-    fn collapse_key(&self, entity: &Entity<'_>) -> NotifCollapseKey {
-        let entity_type: &'static str = entity.entity_type.into();
-        NotifCollapseKey::new(entity_type).append(&entity.entity_id)
+    fn collapse_key(&self, _entity: &Entity<'_>) -> NotifCollapseKey {
+        NotifCollapseKey::new(&self.channel.message_id)
     }
 
     fn as_apns<'a>(
@@ -514,7 +545,7 @@ impl NotificationExtIos for DocumentMentionMetadata {
         _entity: &Entity<'_>,
         notification_id: Uuid,
     ) -> Option<APNSPushNotification<Self::NotifData>> {
-        let profile_pic = self.sender_profile_picture_url.clone();
+        let profile_pic = self.channel.sender_profile_picture_url.clone();
         alert_apns(self, sender_id, notification_id, profile_pic).ok()
     }
 }
@@ -576,6 +607,10 @@ pub struct MentionedInDocumentCommentMetadata {
     pub owner: MacroUserIdStr<'static>,
     /// The file type of the document.
     pub file_type: Option<String>,
+    /// The sub type of the document (e.g. task).
+    #[serde(alias = "sub_type")]
+    #[serde(default)]
+    pub sub_type: Option<NotificationDocumentSubType>,
     /// The mention ID.
     pub mention_id: String,
     /// the comment id
@@ -622,6 +657,10 @@ pub struct RepliedToDocumentCommentThreadMetadata {
     pub owner: MacroUserIdStr<'static>,
     /// The file type of the document.
     pub file_type: Option<String>,
+    /// The sub type of the document (e.g. task).
+    #[serde(alias = "sub_type")]
+    #[serde(default)]
+    pub sub_type: Option<NotificationDocumentSubType>,
     /// the comment id
     pub comment_id: i64,
     /// the thread id
@@ -690,6 +729,10 @@ pub struct CommentedOnDocumentMetadata {
     pub owner: MacroUserIdStr<'static>,
     /// The file type of the document.
     pub file_type: Option<String>,
+    /// The sub type of the document (e.g. task).
+    #[serde(alias = "sub_type")]
+    #[serde(default)]
+    pub sub_type: Option<NotificationDocumentSubType>,
     /// the comment id
     pub comment_id: i64,
     /// the thread id

@@ -1,3 +1,4 @@
+import { useSplitPanel } from '@app/component/split-layout/layoutUtils';
 import { EmailCompose } from '@block-email/component/compose/Compose';
 import {
   EmailProvider,
@@ -10,6 +11,7 @@ import { useUserContext } from '@core/context/user';
 import { TOKENS } from '@core/hotkey/tokens';
 import { registerScopeSignalHotkey } from '@core/hotkey/utils';
 import { isMobile } from '@core/mobile/isMobile';
+import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import {
   blockElementSignal,
   blockHotkeyScopeSignal,
@@ -32,6 +34,7 @@ import { registerEmailHotkeys } from '../util/emailHotkeys';
 import { scrollToMessage } from '../util/scrollToMessage';
 import { BottomReplyButtons } from './BottomReplyButtons';
 import { EmailFormContextProvider } from './EmailFormContext';
+import { EmailParticipants } from './EmailParticipants';
 import { MessageList } from './MessageList';
 import { ModalsProvider } from './ModalsProvider';
 import { TopBar } from './TopBar';
@@ -60,6 +63,7 @@ function EmailContent(props: EmailViewProps) {
   const blockElement = blockElementSignal.get;
 
   const context = useEmailContext();
+  const splitPanel = useSplitPanel();
   const { isLoading: isUserLoading } = useUserContext();
 
   const [isScrolled, setIsScrolled] = createSignal(false);
@@ -192,12 +196,19 @@ function EmailContent(props: EmailViewProps) {
     )?.db_id;
   });
 
+  const canRunInitialEmailScroll = () =>
+    !isTouchDevice() || splitPanel?.isPanelActive() !== false;
+
   // ============================================
   // PHASE 2: HANDLE TARGET MESSAGE SCROLLING
   // ============================================
   // This effect handles scrolling to a specific message (if provided via URL) or scrolling to the last message by default
   // This effect should only run once.
   context.onInitialDataLoad(() => {
+    // Initial scroll positioning visibly shifts the email panel if it runs
+    // while the split is swiping in on touch devices.
+    if (!canRunInitialEmailScroll()) return false;
+
     // Check for target message
     const targetMessageId_ = context.messages.targetMessageID();
 
@@ -216,8 +227,7 @@ function EmailContent(props: EmailViewProps) {
         );
         context.messages.setFocused(lastUnreadMessageId_!);
       } else {
-        // No unread message, scroll to last message
-        scrollToLastMessage('instant', true);
+        scrollToLastMessage('instant', false);
       }
     }
 
@@ -289,10 +299,22 @@ function EmailContent(props: EmailViewProps) {
   });
 
   const navigateMessage = createCallback((dir: 'prev' | 'next') => {
-    const currentFocusedId = context.messages.focusedID();
     const messages = context.messages.list();
     const list = context.messagesListRef();
-    if (!currentFocusedId || !messages || !list) return false;
+    if (!messages?.length || !list) return false;
+
+    const currentFocusedId = context.messages.focusedID();
+
+    if (!currentFocusedId) {
+      const target =
+        dir === 'prev' ? messages[messages.length - 1] : messages[0];
+      if (!target?.db_id) return false;
+      performScrollToMessage(target.db_id, {
+        behavior: 'smooth',
+        focus: true,
+      });
+      return true;
+    }
 
     const currentIndex = messages.findIndex(
       (m) => m.db_id === currentFocusedId
@@ -300,13 +322,18 @@ function EmailContent(props: EmailViewProps) {
     if (currentIndex < 0) return false;
 
     const delta = dir === 'prev' ? -1 : 1;
-
     const targetIndex = currentIndex + delta;
 
-    if (targetIndex < 0 || targetIndex >= messages.length) return false;
+    if (targetIndex < 0 || targetIndex >= messages.length) {
+      if (dir === 'next' && markdownDomRef) {
+        context.messages.setFocused(undefined);
+        markdownDomRef.focus();
+        return true;
+      }
+      return false;
+    }
 
     const targetMsg = messages[targetIndex];
-
     if (!targetMsg?.db_id) return false;
 
     performScrollToMessage(targetMsg.db_id, {
@@ -335,8 +362,9 @@ function EmailContent(props: EmailViewProps) {
   createEffect(() => {
     if (hasRun) return;
     // Focus the email block on mount
+    if (isTouchDevice()) return;
     if (!blockElement()) return;
-    blockElement()?.focus();
+    blockElement()?.focus({ preventScroll: true });
     hasRun = true;
   });
 
@@ -484,7 +512,7 @@ function EmailContent(props: EmailViewProps) {
                 onRecipientsChange: context.onRecipientsChange,
               }}
             >
-              <div class="size-full bg-panel select-none overscroll-none overflow-hidden flex flex-col">
+              <div class="size-full bg-surface select-none overscroll-none overflow-hidden flex flex-col">
                 <TopBar
                   id={props.threadId()}
                   title={props.title}
@@ -502,13 +530,16 @@ function EmailContent(props: EmailViewProps) {
                       <div
                         class="macro-message-width macro-message-padding w-full border-b"
                         classList={{
-                          'border-edge-muted': isScrolled(),
+                          'border-edge-muted/50': isScrolled(),
                           'border-transparent': !isScrolled(),
                         }}
                       >
-                        <h1 class="ph-no-capture text-3xl font-semibold text-ink pt-3 pb-2">
+                        <h1 class="ph-no-capture text-2xl font-semibold text-ink pt-3 pb-1.5 tracking-tight text-balance">
                           {props.title}
                         </h1>
+                        <div class="pb-2.5">
+                          <EmailParticipants />
+                        </div>
                       </div>
                     </div>
                   </Show>
@@ -530,8 +561,8 @@ function EmailContent(props: EmailViewProps) {
                   }
                 >
                   {(info) => (
-                    <div class="shrink-0 w-full pb-2">
-                      <div class="relative w-full flex flex-row justify-center bg-panel macro-message-width macro-message-padding mx-auto">
+                    <div class="shrink-0 w-full pb-4">
+                      <div class="relative w-full flex flex-row justify-center bg-surface macro-message-width macro-message-padding mx-auto">
                         <FloatingInputLoader
                           isLoading={context.query.isFetching}
                           loadingText="Loading messages"

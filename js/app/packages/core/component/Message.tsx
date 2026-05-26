@@ -1,7 +1,7 @@
 import { observedSize } from '@core/directive/observedSize';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { type DateValue, formatDate } from '@core/util/date';
-import IconPlus from '@icon/regular/plus.svg';
+import IconPlus from '@phosphor/plus.svg';
 import { Button, cn } from '@ui';
 import {
   type Accessor,
@@ -24,7 +24,7 @@ import { UserIcon } from './UserIcon';
 
 false && observedSize;
 
-export type MessageRootProps = {
+type MessageRootProps = {
   id?: string;
   focused: boolean;
   unfocusable?: boolean;
@@ -51,6 +51,8 @@ export type MessageRootProps = {
   children: JSX.Element;
   setMessageBodyRef?: Setter<HTMLDivElement | undefined>;
   isTarget?: boolean;
+  /** When true, shows the rail and connector to the reply input below the last message */
+  hasReplyInputBelow?: boolean;
 };
 
 type MessageContextValue = {
@@ -68,7 +70,7 @@ type MessageContextValue = {
 };
 
 const MessageContext = createContext<MessageContextValue>();
-export function useMessageContext(): MessageContextValue {
+function useMessageContext(): MessageContextValue {
   const ctx = useContext(MessageContext);
   if (!ctx) throw new Error('Message.* must be used within <Message>');
   return ctx;
@@ -76,20 +78,18 @@ export function useMessageContext(): MessageContextValue {
 
 /* TopBar */
 
-export type MessageTopBarSimpleProps = {
+type MessageTopBarSimpleProps = {
   name: string;
   timestamp?: DateValue | null;
   tagLabel?: string;
   tagIcon?: Component<JSX.SvgSVGAttributes<SVGSVGElement>> | undefined;
 };
 
-export type MessageTopBarChildrenProps = {
+type MessageTopBarChildrenProps = {
   children: JSX.Element;
 };
 
-export type MessageTopBarProps =
-  | MessageTopBarSimpleProps
-  | MessageTopBarChildrenProps;
+type MessageTopBarProps = MessageTopBarSimpleProps | MessageTopBarChildrenProps;
 
 function isTopBarChildrenProps(
   props: MessageTopBarProps
@@ -141,7 +141,7 @@ const TopBar: Component<MessageTopBarProps> = (props) => {
 
 /* Body */
 
-export type MessageBodyProps = {
+type MessageBodyProps = {
   children: JSX.Element;
   isDeleted?: boolean;
 };
@@ -164,9 +164,7 @@ type NestedConnectorLinesProps = {
   isParentNewMessage?: boolean;
 };
 
-export const NestedConnectorLines: Component<NestedConnectorLinesProps> = (
-  props
-) => {
+const NestedConnectorLines: Component<NestedConnectorLinesProps> = (props) => {
   const NestedLines: JSX.Element[] = [];
   for (let i = 0; i < (props.threadDepth ?? 0); i++) {
     NestedLines.push(
@@ -174,7 +172,7 @@ export const NestedConnectorLines: Component<NestedConnectorLinesProps> = (
         class="absolute h-full border-l"
         classList={{
           'border-accent': props.isParentNewMessage,
-          'border-edge-muted': !props.isParentNewMessage,
+          'border-rail': !props.isParentNewMessage,
         }}
         style={{
           left: `calc(${i} * var(--thread-shift) + var(--left-of-connector))`,
@@ -216,9 +214,11 @@ const Root: Component<MessageRootProps> = (props) => {
   return (
     <MessageContext.Provider value={ctx}>
       <div
-        class="relative flex flex-row items-stretch w-full transition-colors duration-1000 ease"
+        class="relative flex flex-row items-stretch w-full"
         classList={{
           'bg-accent': props.isTarget,
+          'bg-active': props.focused,
+          'bg-hover': hover(),
         }}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
@@ -252,14 +252,16 @@ const Root: Component<MessageRootProps> = (props) => {
             <div
               class={cn(
                 'relative flex flex-col pl-[calc(var(--user-icon-width)/2+var(--message-padding-x))] ml-(--left-of-connector)',
-                !props.hideConnectors && !props.isLastMessage && 'border-l',
-                props.isNewMessage ? 'border-accent' : 'border-edge-muted',
+                !props.hideConnectors &&
+                  (!props.isLastMessage || props.hasReplyInputBelow) &&
+                  'border-l',
+                props.isNewMessage ? 'border-accent' : 'border-rail',
                 !(
                   props.isConsecutive ||
                   props.isFirstMessage ||
                   props.isFirstInThread
                 ) && 'pt-2',
-                props.isLastMessage && 'pb-4',
+                props.isLastMessage && !props.hasReplyInputBelow && 'pb-4',
                 props.hasThreadChildren && 'pb-4'
               )}
             >
@@ -271,7 +273,7 @@ const Root: Component<MessageRootProps> = (props) => {
                       {/* Slanted Line Connector */}
                       <div
                         class={cn(
-                          'absolute text-edge-muted -z-1',
+                          'absolute text-rail -z-1',
                           props.isNewMessage && 'text-accent'
                         )}
                         style={{
@@ -354,14 +356,14 @@ const Root: Component<MessageRootProps> = (props) => {
           >
             <Show when={props.timestamp}>
               {(timestamp) => (
-                <div class="absolute top-0 -translate-y-full bg-panel pl-2 pt-2 text-xs text-ink-muted font-mono mb-0.5 select-text cursor-default">
+                <div class="absolute top-0 -translate-y-full bg-surface pl-2 pt-2 text-xs text-ink-muted font-mono mb-0.5 select-text cursor-default">
                   {formatDate(timestamp(), {
                     showTime: true,
                   })}
                 </div>
               )}
             </Show>
-            <div class="border border-edge bg-panel">
+            <div class="border border-edge bg-surface">
               {props.hoverActions?.()}
             </div>
           </div>
@@ -388,7 +390,7 @@ const Root: Component<MessageRootProps> = (props) => {
                     tabIndex={0}
                     class="text-ink-muted flex flex-row justify-center items-center relative p-0 hover:bg-transparent active:border-transparent active:bg-transparent active:text-inherit hover:opacity-100"
                   >
-                    <div class="border border-edge-muted bg-menu hover:bg-hover hover-transition-bg flex flex-row justify-center items-center mx-2 mb-2 size-(--user-icon-width) touch:min-h-(--user-icon-width) touch:min-w-(--user-icon-width)">
+                    <div class="border border-edge-muted bg-surface hover:bg-hover hover-transition-bg flex flex-row justify-center items-center mx-2 mb-2 size-(--user-icon-width) touch:min-h-(--user-icon-width) touch:min-w-(--user-icon-width)">
                       <IconPlus class="size-1/2" />
                     </div>
                   </Button>
@@ -407,7 +409,7 @@ const Root: Component<MessageRootProps> = (props) => {
                 ref={(el) => props.setThreadAppendMountTarget?.(el)}
               >
                 <div
-                  class="absolute border-l border-edge-muted"
+                  class="absolute border-l border-rail"
                   style={{
                     left: `calc((var(--user-icon-width) / 2) * -1)`,
                     height:
@@ -416,7 +418,7 @@ const Root: Component<MessageRootProps> = (props) => {
                 />
 
                 <div
-                  class="absolute text-edge-muted -z-1"
+                  class="absolute text-rail -z-1"
                   style={{
                     left: `calc((var(--user-icon-width) / 2) * -1)`,
                     bottom: '50%',

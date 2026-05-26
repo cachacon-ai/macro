@@ -1,10 +1,10 @@
 // Organized imports alphabetically
-import Article from '@icon/regular/article-medium.svg';
-import CheckList from '@icon/regular/list-checks.svg';
-import Microscope from '@icon/regular/microscope.svg';
-import NoteBook from '@icon/regular/notebook.svg';
-import NotePad from '@icon/regular/notepad.svg';
-import Chart from '@icon/regular/projector-screen-chart.svg';
+import Article from '@phosphor/article-medium.svg';
+import CheckList from '@phosphor/list-checks.svg';
+import Microscope from '@phosphor/microscope.svg';
+import NoteBook from '@phosphor/notebook.svg';
+import NotePad from '@phosphor/notepad.svg';
+import Chart from '@phosphor/projector-screen-chart.svg';
 import type { Component, JSX } from 'solid-js';
 
 export type Template = {
@@ -72,7 +72,7 @@ A compelling introduction to your topic that hooks the reader and gives a brief 
 This article will help you understand [main benefit] by exploring [topic overview].
 \n\n \n
 ## [Section 1 Heading]
-Main content for section 1. Include relevant information, examples, and insights. 
+Main content for section 1. Include relevant information, examples, and insights.
 \n\n \n
 ### [Subsection 1.1]
 More detailed exploration of a specific aspect of section 1.
@@ -113,9 +113,9 @@ What will you try first? Share your experience in the comments below!
     title: 'Meeting Notes: [DATE]',
     content: `**Date:** [DATE]
 **Time:** [HH:MM] - [HH:MM] [Timezone]
-**Location:** [Physical Location/Virtual Platform]  
+**Location:** [Physical Location/Virtual Platform]
 **Meeting Link:** [URL for recording/virtual meeting]
-**Attendees:** 
+**Attendees:**
 - [USER], [Role/Department]
 - @attendee2, [Role/Department]
 - @attendee3, [Role/Department]

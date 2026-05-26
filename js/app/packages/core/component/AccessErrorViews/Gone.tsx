@@ -1,4 +1,4 @@
-import Question from '@icon/regular/question.svg';
+import Question from '@phosphor/question.svg';
 
 /**
  * @description This is the view for when a user tries to access an item that returns a 410 indicating it was not successfully uploaded.
@@ -12,7 +12,7 @@ export default function Gone() {
       <p class="text-ink-muted text-center max-w-xs">
         Whoops! It looks like the file was not successfully uploaded.
       </p>
-      <span class="text-accent-ink">410</span>
+      <span class="text-accent">410</span>
     </div>
   );
 }

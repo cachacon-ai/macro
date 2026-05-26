@@ -1,18 +1,17 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
-import { Hotkey } from '@core/component/Hotkey';
-import type { HotkeySequenceStep } from '@core/component/Tooltip';
 import { hasValidHotkey } from '@core/hotkey/utils';
 import { Entity, type EntityData } from '@entity';
-import SearchIcon from '@macro-icons/macro-magnifying-glass.svg';
+import SearchIcon from '@icon/macro-magnifying-glass.svg';
 import Terminal from '@phosphor-icons/core/regular/terminal.svg?component-solid';
 import {
   BULK_DOCUMENT_WAKEUP_FEATURE_FLAG,
   enqueueDocumentWakeup,
   isWakeableDocument,
 } from '@queries/preview';
-import { cn } from '@ui';
+import { cn, Hotkey } from '@ui';
 import { createEffect, For, Match, Show, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
+import type { DisplayHotkeyStep } from './types';
 import {
   type CommandMenuItem,
   isCommandItem,
@@ -21,7 +20,7 @@ import {
   type SearchItem,
 } from './useCommandItems';
 
-export interface CommandItemProps {
+interface CommandItemProps {
   item: CommandMenuItem;
   index: number;
   selected: boolean;
@@ -48,7 +47,7 @@ function CommandItemHotkey(props: { item: CommandMenuItem }) {
     Boolean(shortcut()) ||
     Boolean(sequence()?.length);
 
-  const StepHotkey = (step: HotkeySequenceStep) => (
+  const StepHotkey = (step: DisplayHotkeyStep) => (
     <div class="p-2 py-0.5 border border-edge-muted rounded-xs">
       <Hotkey
         token={step.token}
@@ -109,7 +108,12 @@ function CommandDisplay(props: { item: CommandMenuItem }) {
           {(icon) => <Dynamic component={icon()} class="size-4" />}
         </Show>
       </div>
-      <span class="truncate text-ink">{description()}</span>
+      <Show
+        when={command()?.displayComponent}
+        fallback={<span class="truncate">{description()}</span>}
+      >
+        {(comp) => <Dynamic component={comp()} />}
+      </Show>
     </div>
   );
 }
@@ -167,11 +171,10 @@ export function CommandItem(props: CommandItemProps) {
   return (
     <div
       class={cn(
-        'group flex items-center h-10 px-2 text-sm font-semibold relative',
+        'rounded-md group flex items-center h-10 px-2 text-sm font-semibold relative',
         {
-          'bg-accent/5 outline-1 outline-accent/20 -outline-offset-1':
-            props.selected,
-          'hover:bg-hover/30': !props.selected,
+          'bg-active ring ring-edge': props.selected,
+          'hover:bg-hover/50': !props.selected,
         }
       )}
       onMouseMove={() => props.onHover?.(props.index)}
@@ -181,12 +184,6 @@ export function CommandItem(props: CommandItemProps) {
         props.onSelect(props.item, e.shiftKey);
       }}
     >
-      {/* Accent bar indicator */}
-      <div
-        class={cn('absolute h-full w-0.75 left-0 top-0 bg-accent opacity-0', {
-          'opacity-100': props.selected,
-        })}
-      />
       <ItemDisplay item={props.item} />
       <div class="ml-auto">
         <CommandItemHotkey item={props.item} />

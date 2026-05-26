@@ -5,18 +5,17 @@ import {
   showTabBarSignal,
 } from '@block-pdf/signal/placeables';
 import { isThreadPlaceable } from '@block-pdf/store/comments/freeComments';
-import { LabelAndHotKey } from '@core/component/Tooltip';
 import {
   useCanComment,
   useCanEdit,
   useIsDocumentOwner,
 } from '@core/signal/permissions';
-import ChatTeardrop from '@icon/regular/chat-teardrop.svg';
-import Signature from '@icon/regular/signature.svg';
-import Tabs from '@icon/regular/tabs.svg';
-import Textbox from '@icon/regular/textbox.svg';
-import Trash from '@icon/regular/trash-simple.svg';
-import Cancel from '@icon/regular/x.svg';
+import ChatTeardrop from '@phosphor/chat-teardrop.svg';
+import Signature from '@phosphor/signature.svg';
+import Tabs from '@phosphor/tabs.svg';
+import Textbox from '@phosphor/textbox.svg';
+import Trash from '@phosphor/trash-simple.svg';
+import Cancel from '@phosphor/x.svg';
 import { Button } from '@ui';
 import { createMemo, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
@@ -89,20 +88,11 @@ export function MarkupToolbar() {
 
   return (
     <Show when={canComment()}>
-      <div
-        class="flex flex-row items-center"
-        on:click={(e) => {
-          e.stopPropagation();
-        }}
-      >
+      <div class="flex flex-row items-center">
         <Show when={canEdit()}>
           <Button
             size="icon-sm"
-            tooltip={
-              <LabelAndHotKey
-                label={showTabBar() ? 'Hide Tabs' : 'Show Tabs'}
-              />
-            }
+            label={showTabBar() ? 'Hide Tabs' : 'Show Tabs'}
             variant="ghost"
             onClick={() => {
               setShowTabBar(!showTabBar());
@@ -113,7 +103,7 @@ export function MarkupToolbar() {
           <div class="w-px h-5 bg-edge mx-2" />
           <Button
             size="icon-sm"
-            tooltip={<LabelAndHotKey label="Text Box" />}
+            label="Text Box"
             variant="ghost"
             onClick={() => {
               setMode(PayloadMode.FreeTextAnnotation);
@@ -123,7 +113,7 @@ export function MarkupToolbar() {
           </Button>
           <Button
             size="icon-sm"
-            tooltip={<LabelAndHotKey label="Signature" />}
+            label="Signature"
             variant="ghost"
             onClick={() => setMode(PayloadMode.Signature)}
           >
@@ -132,7 +122,7 @@ export function MarkupToolbar() {
         </Show>
         <Button
           size="icon-sm"
-          tooltip={<LabelAndHotKey label="Comment" />}
+          label="Comment"
           variant="ghost"
           onClick={() => {
             setMode(PayloadMode.Thread);

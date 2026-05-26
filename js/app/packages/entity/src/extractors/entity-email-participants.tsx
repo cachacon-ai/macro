@@ -1,7 +1,7 @@
+import { HoverCard } from '@core/component/HoverCard';
 import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { unifiedListMarkdownTheme } from '@core/component/LexicalMarkdown/theme';
 import { toast } from '@core/component/Toast/Toast';
-import { Tooltip } from '@core/component/Tooltip';
 import { UserTooltip } from '@core/component/UserTooltip';
 import { useEmail } from '@core/context/user';
 import { emailToMacroId, useDisplayName } from '@core/user';
@@ -9,18 +9,19 @@ import {
   highlightTermsInText,
   mergeAdjacentMacroEmTags,
 } from '@core/util/searchHighlight';
-import WideCopy from '@macro-icons/wide/copy.svg';
-import { For, Show } from 'solid-js';
+import WideCopy from '@icon/wide-copy.svg';
+import { Surface } from '@ui';
+import { createSignal, For, Show } from 'solid-js';
 import type { EmailEntity, EmailThreadParticipants } from '../types/entity';
 import { isSearchEntity } from '../types/search';
 
 /** Checks if a value is likely an email address */
-export function isLikelyEmail(value?: string): boolean {
+function isLikelyEmail(value?: string): boolean {
   return typeof value === 'string' && value.includes('@');
 }
 
 /** Extracts the local part of an email address (before @) */
-export function getEmailLocalPart(email: string): string {
+function getEmailLocalPart(email: string): string {
   return email.split('@')[0];
 }
 
@@ -28,7 +29,7 @@ export function getEmailLocalPart(email: string): string {
  * Resolves the best display name for a participant
  * Priority: macroDisplayName > participant.name > email local part
  */
-export function resolveParticipantName(
+function resolveParticipantName(
   participant: EmailThreadParticipants[number],
   macroDisplayName?: string
 ): string {
@@ -56,33 +57,36 @@ function ParticipantWithTooltip(props: {
   const [macroDisplayName] = useDisplayName(macroId());
   const tooltipName = () =>
     resolveParticipantName(props.participant, macroDisplayName());
+  const [open, setOpen] = createSignal(false);
 
   return (
-    <Tooltip
-      unstyled
-      spanMode
-      tooltip={(close) => (
+    <HoverCard
+      open={open()}
+      onOpenChange={setOpen}
+      triggerAs="span"
+      trigger={
+        <Show
+          when={props.highlighted}
+          fallback={<span>{props.displayName}</span>}
+        >
+          {(md) => (
+            <StaticMarkdown
+              markdown={md()}
+              theme={unifiedListMarkdownTheme}
+              singleLine
+            />
+          )}
+        </Show>
+      }
+      content={
         <UserTooltip
           displayName={tooltipName()}
           email={props.participant.email}
           id={macroId()}
-          onClose={close}
+          onClose={() => setOpen(false)}
         />
-      )}
-    >
-      <Show
-        when={props.highlighted}
-        fallback={<span>{props.displayName}</span>}
-      >
-        {(md) => (
-          <StaticMarkdown
-            markdown={md()}
-            theme={unifiedListMarkdownTheme}
-            singleLine
-          />
-        )}
-      </Show>
-    </Tooltip>
+      }
+    />
   );
 }
 
@@ -147,11 +151,11 @@ function copyEmail(email: string, e: MouseEvent) {
 
 function HiddenParticipantsTooltip(props: { hidden: ResolvedParticipant[] }) {
   return (
-    <Tooltip
-      spanMode
-      unstyled
-      tooltip={
-        <div class="bg-panel text-ink border border-edge py-1">
+    <HoverCard
+      triggerAs="span"
+      trigger={<span class="opacity-60">+{props.hidden.length}</span>}
+      content={
+        <Surface depth={3} class="py-1 text-ink">
           <For each={props.hidden}>
             {(r) => (
               <div
@@ -163,11 +167,9 @@ function HiddenParticipantsTooltip(props: { hidden: ResolvedParticipant[] }) {
               </div>
             )}
           </For>
-        </div>
+        </Surface>
       }
-    >
-      <span class="opacity-60">+{props.hidden.length}</span>
-    </Tooltip>
+    />
   );
 }
 

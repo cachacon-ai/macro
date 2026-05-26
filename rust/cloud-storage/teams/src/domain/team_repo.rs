@@ -2,13 +2,16 @@
 
 use std::collections::HashSet;
 
+use entity_access::domain::models::{
+    AdminTeamRole, EntityAccessReceipt, MemberTeamRole, OwnerTeamRole,
+};
 use macro_user_id::{email::Email, lowercased::Lowercase, user_id::MacroUserIdStr};
 
 use crate::domain::model::{
     AcceptedTeamInvite, CreateTeamError, DeleteTeamError, InviteUsersToTeamError, JoinTeamError,
-    PatchTeamRequest, PatchTeamUserTierRequest, RemoveTeamInviteError, RemoveUserFromTeamError,
+    PatchTeamCrmSettingsResponse, PatchTeamRequest, RemoveTeamInviteError, RemoveUserFromTeamError,
     RestorePermissionsForTeamMembersError, RevokePermissionsForTeamMembersError, Team, TeamError,
-    TeamInvite, TeamInviteDetails, TeamMember, TeamRole, TeamUserTier, TeamWithMembers,
+    TeamInvite, TeamInviteDetails, TeamMember, TeamMembers, TeamPlan, TeamRole, TeamWithMembers,
 };
 
 /// The TeamChannelsRepository defines a set of actions related to team channels
@@ -36,18 +39,29 @@ pub trait TeamRepository: Clone + Send + Sync + 'static {
         user_id: &MacroUserIdStr<'_>,
     ) -> impl Future<Output = Result<Option<stripe::CustomerId>, TeamError>> + Send;
 
+    /// Checks if a user has already used a trial.
+    fn has_user_trialed(
+        &self,
+        user_id: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<bool, TeamError>> + Send;
+
     /// Gets the subscription id for a team
     fn get_team_subscription_id(
         &self,
         team_id: &uuid::Uuid,
     ) -> impl Future<Output = Result<Option<stripe::SubscriptionId>, TeamError>> + Send;
 
+    /// Gets the payment status for a team
+    fn get_team_payment_status(
+        &self,
+        team_id: &uuid::Uuid,
+    ) -> impl Future<Output = Result<bool, TeamError>> + Send;
+
     /// Creates a new team
     fn create_team(
         &self,
         user_id: &MacroUserIdStr<'_>,
         team_name: &str,
-        team_user_tier: &TeamUserTier,
     ) -> impl Future<Output = Result<Team, CreateTeamError>> + Send;
 
     /// Invites users to a team.
@@ -57,8 +71,16 @@ pub trait TeamRepository: Clone + Send + Sync + 'static {
         &self,
         team_id: &uuid::Uuid,
         invited_by: &MacroUserIdStr<'_>,
-        invites: non_empty::NonEmpty<&[(Email<Lowercase<'_>>, TeamUserTier)]>,
+        invites: non_empty::NonEmpty<&[Email<Lowercase<'_>>]>,
     ) -> impl Future<Output = Result<Vec<TeamInvite<'_>>, InviteUsersToTeamError>> + Send;
+
+    /// Compares the list of users you are trying to invite to ones already invited
+    /// to return a list of emails who will be newly invited
+    fn get_new_invites(
+        &self,
+        team_id: &uuid::Uuid,
+        invites: non_empty::NonEmpty<&[Email<Lowercase<'_>>]>,
+    ) -> impl Future<Output = Result<Vec<Email<Lowercase<'static>>>, InviteUsersToTeamError>> + Send;
 
     /// Marks the given team invites as sent by updating their last_sent_at timestamp.
     fn mark_invites_sent(
@@ -91,6 +113,13 @@ pub trait TeamRepository: Clone + Send + Sync + 'static {
         &self,
         team_id: &uuid::Uuid,
         subscription_id: &stripe::SubscriptionId,
+    ) -> impl Future<Output = Result<(), TeamError>> + Send;
+
+    /// Updates the teams payment status
+    fn update_team_payment_status(
+        &self,
+        team_id: &uuid::Uuid,
+        paying: bool,
     ) -> impl Future<Output = Result<(), TeamError>> + Send;
 
     /// Deletes a team
@@ -200,14 +229,6 @@ pub trait TeamRepository: Clone + Send + Sync + 'static {
         user_id: &MacroUserIdStr<'_>,
     ) -> impl Future<Output = Result<TeamMember<'_>, TeamError>> + Send;
 
-    /// Patches the tier of the provided user id for the team
-    fn patch_team_tier(
-        &self,
-        team_id: &uuid::Uuid,
-        user_id: &MacroUserIdStr<'_>,
-        team_tier: TeamUserTier,
-    ) -> impl Future<Output = Result<(), TeamError>> + Send;
-
     /// Patches the role of the provided user id for the team
     fn patch_team_user_role(
         &self,
@@ -215,6 +236,34 @@ pub trait TeamRepository: Clone + Send + Sync + 'static {
         user_id: &MacroUserIdStr<'_>,
         team_role: TeamRole,
     ) -> impl Future<Output = Result<(), TeamError>> + Send;
+
+    /// Get the teams current seat count
+    fn get_team_seat_count(
+        &self,
+        team_id: &uuid::Uuid,
+    ) -> impl Future<Output = Result<i32, TeamError>> + Send;
+
+    /// Gets the teams current plan
+    fn get_team_plan(
+        &self,
+        team_id: &uuid::Uuid,
+    ) -> impl Future<Output = Result<Option<TeamPlan>, TeamError>> + Send;
+
+    /// Patches the teams current plan
+    fn patch_team_plan(
+        &self,
+        team_id: &uuid::Uuid,
+        team_plan: TeamPlan,
+    ) -> impl Future<Output = Result<(), TeamError>> + Send;
+}
+
+/// The TeamMembersService defines read-only team membership queries.
+pub trait TeamMembersService: Clone + Send + Sync + 'static {
+    /// Lists current members and pending invites for a team.
+    fn list_team_members(
+        &self,
+        entity_access_receipt: EntityAccessReceipt<MemberTeamRole>,
+    ) -> impl Future<Output = Result<TeamMembers, TeamError>> + Send;
 }
 
 /// The TeamService defines a set of actions to perform on the teams
@@ -231,15 +280,14 @@ pub trait TeamService: Clone + Send + Sync + 'static {
     /// Returns the team invites created.
     fn invite_users_to_team(
         &self,
-        team_id: &uuid::Uuid,
-        invited_by: &MacroUserIdStr<'_>,
-        invites: non_empty::NonEmpty<&[(Email<Lowercase<'_>>, TeamUserTier)]>,
+        entity_access_receipt: EntityAccessReceipt<OwnerTeamRole>,
+        invites: non_empty::NonEmpty<&[Email<Lowercase<'_>>]>,
     ) -> impl Future<Output = Result<Vec<TeamInvite<'_>>, InviteUsersToTeamError>> + Send;
 
     /// Remove user from a team.
     fn remove_user_from_team(
         &self,
-        team_id: &uuid::Uuid,
+        entity_access_receipt: EntityAccessReceipt<OwnerTeamRole>,
         user_id: &MacroUserIdStr<'_>,
     ) -> impl Future<Output = Result<(), RemoveUserFromTeamError>> + Send;
 
@@ -253,14 +301,14 @@ pub trait TeamService: Clone + Send + Sync + 'static {
     /// Deletes a team invite from a team.
     fn delete_team_invite(
         &self,
-        team_id: &uuid::Uuid,
+        entity_access_receipt: EntityAccessReceipt<OwnerTeamRole>,
         team_invite_id: &uuid::Uuid,
     ) -> impl Future<Output = Result<(), RemoveTeamInviteError>> + Send;
 
     /// Cancels the team subscription and deletes the team.
     fn delete_team(
         &self,
-        team_id: &uuid::Uuid,
+        entity_access_receipt: EntityAccessReceipt<OwnerTeamRole>,
     ) -> impl Future<Output = Result<(), DeleteTeamError>> + Send;
 
     /// Accepts a team invite for a user
@@ -272,6 +320,7 @@ pub trait TeamService: Clone + Send + Sync + 'static {
 
     /// Revokes permissions for all team members (not owner)
     /// This is used when a team subscription is canceled or frozen in some way.
+    /// NOTE: this is not exposed via axum and is meant for internal usage within stripe webhook only.
     fn revoke_permissions_for_team_members(
         &self,
         team_id: &uuid::Uuid,
@@ -279,15 +328,32 @@ pub trait TeamService: Clone + Send + Sync + 'static {
 
     /// Restores permissions for all team members.
     /// This is used when a team subscription becomes active again.
+    /// NOTE: this is not exposed via axum and is meant for internal usage within stripe webhook only.
     fn restore_permissions_for_team_members(
         &self,
         team_id: &uuid::Uuid,
     ) -> impl Future<Output = Result<(), RestorePermissionsForTeamMembersError>> + Send;
 
+    /// Patches the team subscription id
+    /// NOTE: this is not exposed via axum and is meant for internal usage within stripe webhook only.
+    fn patch_team_subscription_id(
+        &self,
+        team_id: &uuid::Uuid,
+        subscription_id: &stripe::SubscriptionId,
+    ) -> impl Future<Output = Result<(), TeamError>> + Send;
+
+    /// Patches the teams payment status
+    /// NOTE: this is not exposed via axum and is meant for internal usage within stripe webhook only.
+    fn patch_team_payment_status(
+        &self,
+        team_id: &uuid::Uuid,
+        paying: bool,
+    ) -> impl Future<Output = Result<(), TeamError>> + Send;
+
     /// Gets a team by id with all its members
     fn get_team(
         &self,
-        team_id: &uuid::Uuid,
+        entity_access_receipt: EntityAccessReceipt<MemberTeamRole>,
     ) -> impl Future<Output = Result<TeamWithMembers, TeamError>> + Send;
 
     /// Gets all teams for a user
@@ -305,22 +371,15 @@ pub trait TeamService: Clone + Send + Sync + 'static {
     /// Gets all invites for a team
     fn get_team_invites(
         &self,
-        team_id: &uuid::Uuid,
+        entity_access_receipt: EntityAccessReceipt<AdminTeamRole>,
     ) -> impl Future<Output = Result<Vec<TeamInviteDetails>, TeamError>> + Send;
 
     /// Updates a team
     fn patch_team(
         &self,
-        team_id: &uuid::Uuid,
+        entity_access_receipt: EntityAccessReceipt<AdminTeamRole>,
         req: &PatchTeamRequest,
     ) -> impl Future<Output = Result<(), TeamError>> + Send;
-
-    /// Gets the role of a user in a team
-    fn get_team_role(
-        &self,
-        team_id: &uuid::Uuid,
-        user_id: &MacroUserIdStr<'_>,
-    ) -> impl Future<Output = Result<Option<TeamRole>, TeamError>> + Send;
 
     /// Gets the team users permissions
     fn get_team_user_permissions(
@@ -330,10 +389,15 @@ pub trait TeamService: Clone + Send + Sync + 'static {
         Output = Result<HashSet<roles_and_permissions::domain::model::PermissionId>, TeamError>,
     > + Send;
 
-    /// Patches the team users tier and updates the stripe subscription accordingly
-    fn patch_team_user_tier(
+    /// Enables or disables CRM for a team. On a `false → true`
+    /// transition, fans out a `PopulateCrmForUser` enqueue per current
+    /// team member (best-effort, log-and-swallow). On any disable call,
+    /// flips the flag and purges the team's `crm_companies` rows in a
+    /// single transaction — the FK cascade clears the rest of the CRM
+    /// tables. Idempotent in both directions.
+    fn set_team_crm_enabled(
         &self,
-        team_id: &uuid::Uuid,
-        request: &PatchTeamUserTierRequest,
-    ) -> impl Future<Output = Result<(), TeamError>> + Send;
+        entity_access_receipt: EntityAccessReceipt<AdminTeamRole>,
+        enabled: bool,
+    ) -> impl Future<Output = Result<PatchTeamCrmSettingsResponse, TeamError>> + Send;
 }

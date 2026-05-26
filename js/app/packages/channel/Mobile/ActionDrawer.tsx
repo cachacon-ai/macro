@@ -1,13 +1,13 @@
 import { MobileDrawer } from '@app/component/mobile/MobileDrawer';
 import { EmojiSelector } from '@core/component/Emoji/EmojiSelector';
 import { focusInput } from '@core/directive/focusInput';
-import ReplyIcon from '@icon/regular/arrow-bend-up-left.svg';
-import CheckSquareIcon from '@icon/regular/check-square.svg';
-import CopyIcon from '@icon/regular/copy.svg';
-import LinkIcon from '@icon/regular/link.svg';
-import PencilIcon from '@icon/regular/pencil.svg';
-import SmileyIcon from '@icon/regular/smiley.svg';
-import TrashIcon from '@icon/regular/trash.svg';
+import ReplyIcon from '@phosphor/arrow-bend-up-left.svg';
+import CheckSquareIcon from '@phosphor/check-square.svg';
+import CopyIcon from '@phosphor/copy.svg';
+import LinkIcon from '@phosphor/link.svg';
+import PencilIcon from '@phosphor/pencil.svg';
+import SmileyIcon from '@phosphor/smiley.svg';
+import TrashIcon from '@phosphor/trash.svg';
 import {
   type Component,
   createSignal,
@@ -117,7 +117,7 @@ function EmojiSearchView(props: {
     <div class="flex flex-col flex-1 min-h-0 pb-2">
       {/* Search input */}
       <div class="flex items-center gap-2 px-3 pb-2 shrink-0">
-        <div class="flex flex-1 items-center bg-input border border-edge-muted rounded-sm px-2 py-1.5 text-sm gap-1">
+        <div class="flex flex-1 items-center bg-surface border border-edge-muted rounded-sm px-2 py-1.5 text-sm gap-1">
           <input
             ref={inputRef}
             value={query()}
@@ -253,7 +253,7 @@ export function ActionDrawer() {
                     <button
                       type="button"
                       data-message-action={action.id}
-                      class="flex items-center gap-3 px-4 py-3 text-sm text-ink hover:bg-hover hover-transition-bg text-left not-last:mb-px bg-panel"
+                      class="flex items-center gap-3 px-4 py-3 text-sm text-ink hover:bg-hover hover-transition-bg text-left not-last:mb-px bg-surface"
                       ref={(el) => {
                         const getTarget = action.getFocusTarget;
                         if (getTarget) focusInput(el, () => ({ getTarget }));
@@ -278,7 +278,7 @@ export function ActionDrawer() {
                     <button
                       type="button"
                       data-message-action={action.id}
-                      class="flex items-center gap-3 px-4 py-3 text-sm text-failure-ink hover:bg-hover hover-transition-bg text-left not-last:mb-px bg-panel"
+                      class="flex items-center gap-3 px-4 py-3 text-sm text-failure-ink hover:bg-hover hover-transition-bg text-left not-last:mb-px bg-surface"
                       ref={(el) => {
                         const getTarget = action.getFocusTarget;
                         if (getTarget) focusInput(el, () => ({ getTarget }));

@@ -7,7 +7,7 @@ import { EntityIcon } from '@core/component/EntityIcon';
 import { ImagePreview } from '@core/component/ImagePreview';
 import { ItemPreview } from '@core/component/ItemPreview';
 import { toast } from '@core/component/Toast/Toast';
-import XIcon from '@icon/regular/x.svg';
+import XIcon from '@phosphor/x.svg';
 import Spinner from '@phosphor-icons/core/bold/spinner-gap-bold.svg?component-solid';
 import Close from '@phosphor-icons/core/regular/x.svg?component-solid';
 import type { ItemType } from '@service-storage/client';
@@ -44,7 +44,7 @@ function UploadingAttachment(props: AttachmentPreview) {
   return (
     <Switch>
       <Match when={isImageAttachment(props)}>
-        <div class="flex flex-col items-center justify-center gap-2 size-15 border border-edge rounded-md bg-menu">
+        <div class="flex flex-col items-center justify-center gap-2 size-15 border border-edge rounded-md bg-surface">
           <Spinner class="size-4 animate-spin" />
         </div>
       </Match>
@@ -74,7 +74,7 @@ function ImageAttachment(props: {
     >
       <Show when={hover()}>
         <XIcon
-          class="size-6 text-ink absolute -top-2 -right-2 rounded-full bg-menu p-1 border border-edge z-10"
+          class="size-6 text-ink absolute -top-2 -right-2 rounded-full bg-surface p-1 border border-edge z-10"
           onClick={() => props.onRemove()}
         />
       </Show>
@@ -109,7 +109,7 @@ function ChatAttachment(props: {
           props.attachment.entity_type
         )}
       >
-        <div class="flex items-center px-1 space-x-1 hover:bg-hover hover-transition-bg cursor-default text-sm border border-edge-muted rounded-xs">
+        <div class="flex items-center px-1 space-x-1 hover:bg-hover hover-transition-bg cursor-default text-sm border border-edge-muted rounded-xs max-w-full min-w-0">
           <ItemPreview
             id={props.attachment.entity_id}
             type={

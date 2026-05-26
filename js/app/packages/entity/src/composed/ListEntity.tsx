@@ -3,7 +3,7 @@ import { EntityRow, EntityRowContext } from '@app/component/mobile/EntityRow';
 import { useSplitPanel } from '@app/component/split-layout/layoutUtils';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { isMobile } from '@core/mobile/isMobile';
-import type { DateValue } from '@core/util/date';
+import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { stackNotifications } from '@notifications';
 import {
   BULK_DOCUMENT_WAKEUP_FEATURE_FLAG,
@@ -22,7 +22,6 @@ import {
   createSignal,
   type JSX,
   Match,
-  type Ref,
   Show,
   Switch,
   useContext,
@@ -33,17 +32,9 @@ import {
   isHitSnippetComplete,
   isSnippetEntity,
 } from '../extractors-search/snippet-entity';
-import {
-  type EntityData,
-  isChannelEntity,
-  isEmailEntity,
-  type ProjectEntity,
-} from '../types/entity';
-import {
-  isWithNotification,
-  type WithNotification,
-} from '../types/notification';
-import { isSearchEntity, type SearchLocation } from '../types/search';
+import { isChannelEntity, isEmailEntity } from '../types/entity';
+import { isWithNotification } from '../types/notification';
+import { isSearchEntity } from '../types/search';
 import { createEntityDraggable } from '../utils/draggable';
 import { unreadFilterFn } from '../utils/filter';
 import {
@@ -54,6 +45,7 @@ import { useIsShared } from '../utils/shared';
 import { NarrowInboxLayout } from './list-entity/narrow-inbox-layout';
 import { NarrowLayout } from './list-entity/narrow-layout';
 import {
+  type BaseListEntityProps,
   hasSearchContentHits,
   InboxDivider,
   type LayoutProps,
@@ -64,27 +56,8 @@ import { WideLayout } from './list-entity/wide-layout';
 
 export { ListLayoutProvider } from './list-entity/shared';
 
-interface ListEntityProps {
-  entity: WithNotification<EntityData>;
-  onClick?: (event: MouseEvent) => void;
-  timestamp?: DateValue | null;
-  ref?: Ref<HTMLDivElement>;
-  checked?: boolean;
-  highlighted?: boolean;
-  hovered?: boolean;
-  hideContentHits?: boolean;
-  onChecked?: (checked: boolean, shiftKey: boolean) => void;
-  onMouseMove?: () => void;
+interface ListEntityProps extends BaseListEntityProps {
   showUnrollNotifications?: boolean;
-  onProjectClick?: (
-    entity: ProjectEntity,
-    e: PointerEvent | MouseEvent
-  ) => void;
-  onContentHitClick?: (
-    e: PointerEvent | MouseEvent,
-    location?: SearchLocation
-  ) => void;
-  entityRowConfig?: EntityRowConfig;
 }
 
 function MaybeEntityRow(props: {
@@ -190,13 +163,26 @@ export function ListEntity(props: ListEntityProps) {
     return stackNotifications(validNotifs);
   });
 
-  // Latch to true once multi-stack is ever seen (including async arrivals).
-  // Prevents a jarring layout switch when swiping down to 1 stack.
-  const [hasBeenMultiStack, setHasBeenMultiStack] = createSignal(
-    mobileStacks().length > 1
+  // A single stack collapses into the condensed entity row only when it's a
+  // new-messages-in-a-channel stack — the entity (channel) preview already
+  // conveys "new messages here". Replies, mentions, and other types carry
+  // per-stack context worth showing, so they render as a stack even when
+  // alone.
+  const shouldUnrollStacks = () => {
+    const stacks = mobileStacks();
+    if (stacks.length === 0) return false;
+    if (stacks.length > 1) return true;
+    return stacks[0].type !== 'channel_message_send';
+  };
+
+  // Latch to true once the stack view has ever been used (including async
+  // arrivals). Prevents a jarring layout switch when notifications drop back
+  // to a single condensable stack.
+  const [hasBeenUnrolled, setHasBeenUnrolled] = createSignal(
+    shouldUnrollStacks()
   );
   createEffect(() => {
-    if (mobileStacks().length > 1) setHasBeenMultiStack(true);
+    if (shouldUnrollStacks()) setHasBeenUnrolled(true);
   });
 
   return (
@@ -211,26 +197,19 @@ export function ListEntity(props: ListEntityProps) {
       }}
       ref={mergeRefs(props.ref, draggable)}
       class={cn(
-        'soup-list-entity @container/entity w-full relative group/narrow flex flex-col',
+        'soup-list-entity rounded-lg @container/entity w-[calc(100%-0.5rem)] mr-1 relative group/narrow flex flex-col py-0.5',
         {
-          'min-h-10': !isMobile(),
-          'bg-accent/5': props.checked,
-          'hover:bg-hover group-data-expanded/cm-trigger:bg-hover':
-            !props.checked && !props.highlighted && !props.hovered,
-          'bg-hover': props.hovered && !props.highlighted && !props.checked,
-          'bg-accent/5 outline-1 outline-accent/20 -outline-offset-1':
-            props.highlighted && !isMobile(),
+          'min-h-10 mx-1': !isMobile(),
+          'bg-accent/8': props.checked,
+          'ring ring-accent/16 ring-inset': props.checked && props.highlighted,
+          'ring ring-edge bg-active/60 ring-inset':
+            props.highlighted && !props.checked && !isTouchDevice(),
+          'hover:bg-active/30':
+            !props.highlighted && !props.checked && !isTouchDevice(),
         }
       )}
       onMouseMove={props.onMouseMove}
     >
-      <div
-        data-accent-bar
-        class={cn('absolute h-full w-0.75 left-0 top-0 bg-accent opacity-0', {
-          'opacity-100': props.highlighted && !isMobile(),
-        })}
-      />
-
       <Switch>
         <Match when={isWide()}>
           <MaybeEntityRow
@@ -240,11 +219,7 @@ export function ListEntity(props: ListEntityProps) {
             <WideLayout {...layoutProps()} />
           </MaybeEntityRow>
         </Match>
-        <Match
-          when={
-            isMobile() && (hasBeenMultiStack() || mobileStacks().length > 1)
-          }
-        >
+        <Match when={isMobile() && (hasBeenUnrolled() || shouldUnrollStacks())}>
           <Entity.Notification.MobileStacks
             stacks={mobileStacks()}
             entity={props.entity}
@@ -278,8 +253,8 @@ export function ListEntity(props: ListEntityProps) {
       </Switch>
 
       <Show when={hasNotifications() && !isMobile()}>
-        <div class="flex gap-2 size-full items-center text-sm px-2 pb-1 -mt-2 min-w-0 overflow-hidden">
-          <div class={cn('min-w-0 flex-1 truncate ml-2 @lg/entity:ml-6')}>
+        <div class="px-2 pb-1.5 -mt-1 min-w-0 overflow-hidden">
+          <div class={cn('min-w-0 flex-1 ml-2 @lg/entity:ml-6')}>
             <Show when={isWithNotification(props.entity) && !showContentHits()}>
               <Entity.Notification.Stacks
                 entity={props.entity}

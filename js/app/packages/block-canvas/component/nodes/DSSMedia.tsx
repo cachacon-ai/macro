@@ -2,13 +2,12 @@ import { clamp } from '@block-canvas/util/math';
 import { LoadErrors } from '@core/block';
 import { CircleSpinner } from '@core/component/CircleSpinner';
 import { staticFileIdEndpoint } from '@core/constant/servers';
-import { isErr } from '@core/util/maybeResult';
-import PauseIcon from '@icon/regular/pause.svg';
-import PlayIcon from '@icon/regular/play.svg';
+import PauseIcon from '@phosphor/pause.svg';
+import PlayIcon from '@phosphor/play.svg';
 import ArrowCounterClockwise from '@phosphor-icons/core/regular/arrow-counter-clockwise.svg?component-solid';
 import LockKey from '@phosphor-icons/core/regular/lock-key.svg?component-solid';
 import Question from '@phosphor-icons/core/regular/question.svg?component-solid';
-import { storageServiceClient } from '@service-storage/client';
+import { fetchBinaryDocumentData } from '@queries/storage/binary-document';
 import { fetchBinary } from '@service-storage/util/fetchBinary';
 import {
   createEffect,
@@ -48,11 +47,11 @@ function ErrorMessage(props: {
   const bottomMargin = !tooSmall() ? 8 : 0;
   const textColor = 'text-ink';
   const visibilityScreen =
-    'w-full h-full bg-menu/50 flex flex-col items-center justify-center';
+    'w-full h-full bg-surface/50 flex flex-col items-center justify-center';
 
   return (
     <div
-      class="flex flex-col size-full text-center bg-menu/40 rounded border border-dashed border-edge items-center justify-center"
+      class="flex flex-col size-full text-center bg-surface/40 rounded border border-dashed border-edge items-center justify-center"
       style={{
         'border-radius': getBorderRadius(props.node),
         'font-size': TOOLTIP_FONTSIZE / currentScale() + 'px',
@@ -70,7 +69,7 @@ function ErrorMessage(props: {
           <div class={visibilityScreen}>
             <LockKey
               width={iconSize / currentScale() + 'px'}
-              class="fill-ink bg-menu rounded-full"
+              class="fill-ink bg-surface rounded-full"
               style={{
                 'margin-bottom': bottomMargin / currentScale() + 'px',
               }}
@@ -87,7 +86,7 @@ function ErrorMessage(props: {
           <div class={visibilityScreen}>
             <Question
               width={iconSize / currentScale() + 'px'}
-              class="fill-ink bg-menu rounded-full"
+              class="fill-ink bg-surface rounded-full"
               style={{
                 'margin-bottom': bottomMargin / currentScale() + 'px',
               }}
@@ -101,7 +100,7 @@ function ErrorMessage(props: {
           <div class={visibilityScreen}>
             <Question
               width={iconSize / currentScale() + 'px'}
-              class="fill-ink bg-menu rounded-full"
+              class="fill-ink bg-surface rounded-full"
               style={{
                 'margin-bottom': bottomMargin / currentScale() + 'px',
               }}
@@ -170,32 +169,34 @@ export function DSSMedia(props: { node: MediaNode; mode: RenderMode }) {
 
   createEffect(async () => {
     if (props.node.status === 'dss' || !props.node.status) {
-      const res = await storageServiceClient.getBinaryDocument({
-        documentId: props.node.uuid,
-      });
+      const res = await fetchBinaryDocumentData(props.node.uuid);
 
-      if (isErr(res, 'UNAUTHORIZED') || isErr(res, 'HTTP_ERROR')) {
+      if (
+        (res.isErr() &&
+          res.error.some((error) => error.code === 'UNAUTHORIZED')) ||
+        (res.isErr() && res.error.some((error) => error.code === 'HTTP_ERROR'))
+      ) {
         setError();
         setError('UNAUTHORIZED');
         return LoadErrors.UNAUTHORIZED;
       }
-      if (isErr(res)) {
+      if (res.isErr()) {
         setError();
         setError('MISSING');
         return LoadErrors.MISSING;
       }
 
-      const [, documentResult] = res;
+      const documentResult = res.value;
 
       const { blobUrl } = documentResult;
 
       const blobResult = await fetchBinary(blobUrl, 'blob');
 
-      if (isErr(blobResult)) {
+      if (blobResult.isErr()) {
         return LoadErrors.MISSING;
       }
 
-      const url = URL.createObjectURL(blobResult[1]);
+      const url = URL.createObjectURL(blobResult.value);
       setUrl(url);
       setError();
 
@@ -330,7 +331,7 @@ export function DSSMedia(props: { node: MediaNode; mode: RenderMode }) {
               <div class="absolute top-1/2 left-1/2 -translate-1/2 z-10 flex pointer-events-auto cursor-auto">
                 <div
                   onPointerDown={handleVideoRewind}
-                  class="text-panel bg-edge rounded-full flex items-center justify-center"
+                  class="text-surface bg-edge rounded-full flex items-center justify-center"
                   style={{
                     'margin-right': 10 / currentScale() + 'px',
                     ...size(),
@@ -340,7 +341,7 @@ export function DSSMedia(props: { node: MediaNode; mode: RenderMode }) {
                 </div>
                 <div
                   onPointerDown={handleVideoClick}
-                  class="text-panel bg-edge rounded-full flex items-center justify-center"
+                  class="text-surface bg-edge rounded-full flex items-center justify-center"
                   style={size()}
                 >
                   {controlIcon}

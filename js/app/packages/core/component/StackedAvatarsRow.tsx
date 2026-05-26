@@ -1,5 +1,5 @@
 import User from '@phosphor-icons/core/regular/user.svg?component-solid';
-import { cn } from '@ui';
+import { cn, Tooltip } from '@ui';
 import {
   type Accessor,
   createEffect,
@@ -10,7 +10,7 @@ import {
   onCleanup,
   Show,
 } from 'solid-js';
-import { Tooltip } from './Tooltip';
+import { HoverCard } from './HoverCard';
 import type { UserIconProps } from './UserIcon';
 
 /** Same keys as {@link UserIconProps} `size` (aligned ring + overlap + overflow chip). */
@@ -25,10 +25,10 @@ const AVATAR_DIAMETER_PX: Record<StackedAvatarsSize, number> = {
 };
 
 /** Horizontal row shell: stacking context (`isolate`). */
-export const STACKED_AVATARS_ROW_CLASS =
+const STACKED_AVATARS_ROW_CLASS =
   'flex items-center h-full shrink-0 w-fit isolate leading-none min-w-0';
 
-export type StackedAvatarsOverflowContext<T = unknown> = {
+type StackedAvatarsOverflowContext<T = unknown> = {
   overflowItems: T[];
   overflowCount: number;
 };
@@ -51,41 +51,41 @@ const STACK_STYLE: Record<
   sm: {
     overlap: '-mr-1.5',
     overflowChip:
-      'size-4 shrink-0 rounded-full border-2 border-panel bg-menu flex flex-col items-center justify-center',
+      'size-4 shrink-0 rounded-full border-2 border-surface bg-surface flex flex-col items-center justify-center',
     overflowChipText:
       'text-[8px] font-semibold tabular-nums leading-none text-ink',
     inner:
-      'bg-panel size-4 rounded-full p-[1px] border-2 border-panel box-border',
+      'bg-surface size-4 rounded-full p-[1px] border-2 border-surface box-border',
     defaultEmptyIcon: 'w-2 h-2',
   },
   md: {
     overlap: '-mr-2',
     overflowChip:
-      'size-6 shrink-0 rounded-full border-2 border-panel bg-menu flex flex-col items-center justify-center',
+      'size-6 shrink-0 rounded-full border-2 border-surface bg-surface flex flex-col items-center justify-center',
     overflowChipText:
       'text-[10px] font-semibold tabular-nums leading-none text-ink',
     inner:
-      'bg-panel size-6 rounded-full p-[2px] border-2 border-panel box-border',
+      'bg-surface size-6 rounded-full p-[2px] border-2 border-surface box-border',
     defaultEmptyIcon: 'w-3 h-3',
   },
   lg: {
     overlap: '-mr-4',
     overflowChip:
-      'size-10 shrink-0 rounded-full border-2 border-panel bg-menu flex flex-col items-center justify-center',
+      'size-10 shrink-0 rounded-full border-2 border-surface bg-surface flex flex-col items-center justify-center',
     overflowChipText:
       'text-sm font-semibold tabular-nums leading-none text-ink',
     inner:
-      'bg-panel size-10 rounded-full p-[2px] border-2 border-panel box-border',
+      'bg-surface size-10 rounded-full p-[2px] border-2 border-surface box-border',
     defaultEmptyIcon: 'w-5 h-5',
   },
   fill: {
     overlap: '-mr-2',
     overflowChip:
-      'size-6 shrink-0 rounded-full border-2 border-panel bg-menu flex flex-col items-center justify-center',
+      'size-6 shrink-0 rounded-full border-2 border-surface bg-surface flex flex-col items-center justify-center',
     overflowChipText:
       'text-[10px] font-semibold tabular-nums leading-none text-ink',
     inner:
-      'bg-panel size-6 rounded-full p-[2px] border-2 border-panel box-border',
+      'bg-surface size-6 rounded-full p-[2px] border-2 border-surface box-border',
     defaultEmptyIcon: 'w-3 h-3',
   },
 };
@@ -96,15 +96,11 @@ export function stackedAvatarInnerClass(size: StackedAvatarsSize = 'sm') {
 }
 
 /** Default +N chip shell (no text); pair with {@link stackedAvatarOverflowChipTextClass}. */
-export function stackedAvatarOverflowChipClass(
-  size: StackedAvatarsSize = 'sm'
-) {
+function stackedAvatarOverflowChipClass(size: StackedAvatarsSize = 'sm') {
   return STACK_STYLE[size].overflowChip;
 }
 
-export function stackedAvatarOverflowChipTextClass(
-  size: StackedAvatarsSize = 'sm'
-) {
+function stackedAvatarOverflowChipTextClass(size: StackedAvatarsSize = 'sm') {
   return STACK_STYLE[size].overflowChipText;
 }
 
@@ -118,7 +114,7 @@ export function StackedAvatarsDefaultEmptyPlaceholder(props: {
   const s = () => props.size ?? 'md';
   return (
     <div class={stackedAvatarInnerClass(s())}>
-      <div class="flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-full bg-ink-extra-muted text-panel leading-none">
+      <div class="flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-full bg-ink-extra-muted text-surface leading-none">
         <User
           class={cn(STACK_STYLE[s()].defaultEmptyIcon, 'block shrink-0')}
           aria-hidden
@@ -135,7 +131,23 @@ export type StackedAvatarInput = {
   ariaLabel?: string;
 };
 
-export type StackedAvatarsRowProps<T = unknown> = {
+function OverflowTooltip(props: {
+  chip: JSX.Element;
+  render: (close: () => void) => JSX.Element;
+}) {
+  const [open, setOpen] = createSignal(false);
+  return (
+    <HoverCard
+      open={open()}
+      onOpenChange={setOpen}
+      triggerAs="div"
+      trigger={props.chip}
+      content={props.render(() => setOpen(false))}
+    />
+  );
+}
+
+type StackedAvatarsRowProps<T = unknown> = {
   each: Accessor<T[]>;
   max: number | Accessor<number>;
   size?: StackedAvatarsSize;
@@ -340,18 +352,14 @@ export function StackedAvatarsRow<T = unknown>(
 
     if (props.overflowTooltipContent) {
       return faceShell(
-        <Tooltip
-          unstyled
-          tooltip={(close) => props.overflowTooltipContent!(close, ctx)}
-        >
-          {chip}
-        </Tooltip>
+        <OverflowTooltip
+          chip={chip}
+          render={(close) => props.overflowTooltipContent!(close, ctx)}
+        />
       );
     }
 
-    return faceShell(
-      <Tooltip tooltip={plainOverflowTooltip()}>{chip}</Tooltip>
-    );
+    return faceShell(<Tooltip label={plainOverflowTooltip()}>{chip}</Tooltip>);
   };
 
   return (

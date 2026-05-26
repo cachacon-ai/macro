@@ -1,18 +1,16 @@
-import { createMarkdownStateFromContent } from '@core/component/LexicalMarkdown/collaboration/utils';
 import { createLexicalWrapper } from '@core/component/LexicalMarkdown/context/LexicalWrapperContext';
 import {
   getTextContent,
   initializeEditorWithState,
 } from '@core/component/LexicalMarkdown/utils';
-import { isOk } from '@core/util/maybeResult';
-import { rawMarkdownStateToLoroSnapshot } from '@lexical-core/markdown-loro-snapshot';
+
 import { storageServiceClient } from '@service-storage/client';
 import { syncServiceClient } from '@service-sync/client';
 import { useQuery } from '@tanstack/solid-query';
 import { queryClient } from '../client';
 import { instructionsMdKeys } from './keys';
 
-export { default as AiInstructionsIcon } from '@icon/regular/notepad.svg';
+export { default as AiInstructionsIcon } from '@phosphor/notepad.svg';
 
 /**
  * Returns the instructions md document id for the current user.
@@ -21,12 +19,12 @@ export { default as AiInstructionsIcon } from '@icon/regular/notepad.svg';
 const getInstructionsMdId = async (): Promise<string | null | undefined> => {
   const getResult = await storageServiceClient.instructions.get();
 
-  if (isOk(getResult)) {
-    const [, { documentId }] = getResult;
+  if (getResult.isOk()) {
+    const { documentId } = getResult.value;
     return documentId;
   }
 
-  const [error] = getResult;
+  const error = getResult.error;
   const [{ code }] = error;
   if (code === 'NOT_FOUND') {
     return null;
@@ -101,25 +99,9 @@ export function useInstructionsMdTextQuery() {
 /** Creates the instructions md document. Backend prevents duplicates */
 export function useCreateInstructionsMd() {
   return async () => {
-    const emptyMarkdownState = await createMarkdownStateFromContent(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const snapshot = await rawMarkdownStateToLoroSnapshot(
-      emptyMarkdownState as any
-    );
-    if (!snapshot) return;
     const createResult = await storageServiceClient.instructions.create();
-    if (isOk(createResult)) {
-      const [, { documentId }] = createResult;
-      const res = await syncServiceClient.initializeFromSnapshot({
-        snapshot,
-        documentId: documentId,
-      });
-      if (!isOk(res)) {
-        console.error(
-          'Failed to initialize instructions document from snapshot'
-        );
-        return;
-      }
+    if (createResult.isOk()) {
+      const { documentId } = createResult.value;
       queryClient.setQueryData(instructionsMdKeys.id.queryKey, documentId);
       return documentId;
     }

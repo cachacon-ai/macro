@@ -1,5 +1,12 @@
 export type EmailView = 'inbox' | 'drafts' | 'sent' | 'all';
 
+export type DateRangeFilter = {
+  gt?: string;
+  gte?: string;
+  lt?: string;
+  lte?: string;
+};
+
 export type PropertyFilter = {
   propertyId: string;
   type: 'select' | 'entity';
@@ -47,6 +54,13 @@ export type ScalarFieldFilters = {
   folderSeen?: boolean;
   folderDone?: boolean;
   callAttended?: boolean;
+  documentCreatedAt?: DateRangeFilter;
+  documentUpdatedAt?: DateRangeFilter;
+  chatCreatedAt?: DateRangeFilter;
+  chatUpdatedAt?: DateRangeFilter;
+  folderCreatedAt?: DateRangeFilter;
+  folderUpdatedAt?: DateRangeFilter;
+  emailUpdatedAt?: DateRangeFilter;
 };
 
 export type FieldFilters = ArrayFieldFilters & ScalarFieldFilters;
@@ -63,32 +77,4 @@ export type Query = {
   include?: FieldFilters;
   exclude?: FieldFilters;
   emailView?: EmailView;
-};
-
-export type FilterPredicate<T> = (entity: T, ctx?: unknown) => boolean;
-
-export type FilterConfig<T, TId extends string = string> = {
-  readonly id: TId;
-  readonly predicate: FilterPredicate<T>;
-  readonly query?: Query | ((ctx: unknown) => Query);
-};
-
-export type FilterStoreOptions<
-  T,
-  TFilter extends FilterConfig<T>,
-  TId extends string = TFilter['id'],
-> = {
-  readonly filters: readonly TFilter[];
-  readonly initialFilters?: {
-    readonly and?: readonly TId[];
-    readonly or?: readonly TId[];
-  };
-  readonly initialQuery?: Query;
-};
-
-export type FilterIdInput<TId extends string> = TId | (string & {});
-
-export type SetFiltersInput<TId extends string> = {
-  readonly and?: readonly FilterIdInput<TId>[];
-  readonly or?: readonly FilterIdInput<TId>[];
 };

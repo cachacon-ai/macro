@@ -5,6 +5,7 @@ use analytics_client::{
 use anyhow::Context;
 use config::{Config, Environment};
 use document_storage_service_client::DocumentStorageServiceClient;
+use entity_access::{domain::service::EntityAccessServiceImpl, outbound::PgAccessRepository};
 use github::{
     domain::service::{GithubLinkConfig, GithubLinkServiceImpl},
     outbound::{
@@ -190,7 +191,8 @@ async fn main() -> anyhow::Result<()> {
         &macro_aws_config::get_macro_aws_config().await,
     ))
     .search_event_queue(&config.search_event_queue)
-    .email_link_manager_queue(&config.link_manager_queue);
+    .email_link_manager_queue(&config.link_manager_queue)
+    .email_backfill_queue(&config.email_backfill_queue);
     tracing::trace!("initialized sqs client");
 
     // Initialize analytics client with configured providers
@@ -239,17 +241,15 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let teams_repo_impl = TeamRepositoryImpl::new(db.clone());
-    let customer_repo_impl = CustomerRepositoryImpl::new(
-        stripe_client.clone(),
-        teams::outbound::customer_repo::StripePriceIds {
-            haiku: config.stripe_price_ids.stripe_price_id_haiku.to_string(),
-            sonnet: config.stripe_price_ids.stripe_price_id_sonnet.to_string(),
-            opus: config.stripe_price_ids.stripe_price_id_opus.to_string(),
-        },
-    );
+    let customer_repo_impl =
+        CustomerRepositoryImpl::new(stripe_client.clone(), config.stripe_price_id.clone());
     let team_channels_repo_impl = TeamChannelsRepositoryImpl::new(db.clone());
+    let team_crm_settings_repo_impl =
+        teams::outbound::team_crm_settings_repo::TeamCrmSettingsRepositoryImpl::new(db.clone());
 
     let notification_ingress_service = Arc::new(notification_ingress_service);
+
+    let crm_enqueuer = teams::outbound::crm_enqueuer::SqsCrmEnqueuer::new(sqs_client.clone());
 
     let teams_service_impl = TeamServiceImpl::new(
         teams_repo_impl,
@@ -257,6 +257,8 @@ async fn main() -> anyhow::Result<()> {
         team_channels_repo_impl,
         user_roles_and_permissions_service.clone(),
         notification_ingress_service.clone(),
+        crm_enqueuer,
+        team_crm_settings_repo_impl,
     );
 
     let github_link_service_impl = GithubLinkServiceImpl::new(
@@ -284,6 +286,9 @@ async fn main() -> anyhow::Result<()> {
         notification_ingress: notification_ingress_service.clone(),
     };
 
+    let entity_access_service_impl =
+        EntityAccessServiceImpl::new(PgAccessRepository::new(db.clone()));
+
     api::setup_and_serve(
         ApiContext {
             db,
@@ -310,6 +315,7 @@ async fn main() -> anyhow::Result<()> {
             stripe_webhook_secret,
             user_roles_and_permissions_service: Arc::new(user_roles_and_permissions_service),
             teams_service: Arc::new(teams_service_impl),
+            entity_access_service: Arc::new(entity_access_service_impl),
             referral_service: Arc::new(referral_service),
             native_app_service: Arc::new(NativeAppServiceImpl {
                 bundle_fetcher: DefaultBundleFetcher::new(config.environment.app()),
@@ -319,7 +325,8 @@ async fn main() -> anyhow::Result<()> {
                 },
             }),
             analytics_client: Arc::new(analytics_client),
-            stripe_price_ids: config.stripe_price_ids,
+            legacy_stripe_price_ids: config.legacy_stripe_price_ids,
+            stripe_price_id: config.stripe_price_id,
         },
         config.port,
     )

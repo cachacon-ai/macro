@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use analytics_client::AnalyticsClient;
 use axum::extract::FromRef;
+use entity_access::domain::service::EntityAccessServiceImpl;
+use entity_access::outbound::PgAccessRepository;
 use github::domain::service::GithubLinkServiceImpl;
 use github::outbound::github_auth_client::GithubAuthImpl;
 use github::outbound::github_oauth_client::GithubOauthImpl;
@@ -27,7 +29,7 @@ use roles_and_permissions::{
 };
 use sqlx::PgPool;
 
-use crate::config::StripePriceIds;
+use crate::config::LegacyStripePriceIds;
 
 pub(crate) type NotificationIngressType = SqsNotificationIngress<SqsQueue>;
 
@@ -37,6 +39,8 @@ pub(crate) type TeamsServiceType = teams::domain::team_service::TeamServiceImpl<
     teams::outbound::team_channels_repo::TeamChannelsRepositoryImpl,
     UserRolesAndPermissionsServiceImpl<MacroDB, MacroDB>,
     NotificationIngressType,
+    teams::outbound::crm_enqueuer::SqsCrmEnqueuer,
+    teams::outbound::team_crm_settings_repo::TeamCrmSettingsRepositoryImpl,
 >;
 
 type RateLimiter = RateLimitServiceImpl<RedisRateLimitAdapter<redis::Client>>;
@@ -49,6 +53,8 @@ pub(crate) type ReferralServiceType = ReferralServiceImpl<
 
 pub(crate) type GithubLinkServiceType =
     GithubLinkServiceImpl<PgGithubRepo, GithubOauthImpl, GithubAuthImpl>;
+
+pub(crate) type EntityAccessServiceType = EntityAccessServiceImpl<PgAccessRepository>;
 
 #[derive(Clone, FromRef)]
 pub(crate) struct ApiContext {
@@ -70,12 +76,15 @@ pub(crate) struct ApiContext {
     pub user_roles_and_permissions_service:
         Arc<UserRolesAndPermissionsServiceImpl<MacroDB, MacroDB>>, // Note: since FromRef doesn't support generics we have to specify the concrete types here
     pub teams_service: Arc<TeamsServiceType>,
+    pub entity_access_service: Arc<EntityAccessServiceType>,
     pub native_app_service: Arc<NativeAppServiceImpl<DefaultBundleFetcher>>,
     pub analytics_client: Arc<AnalyticsClient>,
     pub referral_service: Arc<ReferralServiceType>,
     pub rate_limit_service: RateLimiter,
     /// The stripe price ids
-    pub stripe_price_ids: StripePriceIds,
+    pub legacy_stripe_price_ids: LegacyStripePriceIds,
+    /// The stripe price id
+    pub stripe_price_id: String,
 }
 
 env_var! {

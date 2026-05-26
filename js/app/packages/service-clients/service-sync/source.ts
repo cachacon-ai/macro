@@ -11,7 +11,7 @@ import {
 } from '@core/collab/source';
 import { SYNC_SERVICE_HOSTS } from '@core/constant/servers';
 import { arrayEquals } from '@core/util/compareUtils';
-import { isErr as isChaseError } from '@core/util/maybeResult';
+
 import { storageServiceClient } from '@service-storage/client';
 import { createEventBus } from '@solid-primitives/event-bus';
 import { raceTimeout, until } from '@solid-primitives/promise';
@@ -53,26 +53,35 @@ function mapToSyncStatus(status: WebsocketConnectionState): SyncSourceStatus {
   }
 }
 
-function createSyncServiceSocket(documentId: string, token: string) {
-  const URL = `${SYNC_SERVICE_WS_URL}/${documentId}/connect?token=${token}`;
+function createSyncServiceSocket(documentId: string, initialToken: string) {
+  const connectUrl = (token: string) =>
+    `${SYNC_SERVICE_WS_URL}/${documentId}/connect?token=${token}`;
+  let initialUrl: string | undefined = connectUrl(initialToken);
+  let fallbackUrl = initialUrl;
 
   /**
-   * Refetches the token if it is expired
+   * Uses the already-fetched token for the initial connect, then refetches on reconnect.
    */
   const getUrl: UrlResolver = async () => {
+    if (initialUrl) {
+      const url = initialUrl;
+      initialUrl = undefined;
+      return url;
+    }
+
     const response =
       await storageServiceClient.permissionsTokens.createPermissionToken({
         document_id: documentId,
       });
 
-    if (isChaseError(response)) {
+    if (response.isErr()) {
       console.error('failed to fetch permission token', response);
-      return URL;
+      return fallbackUrl;
     }
 
-    let token = response[1].token;
-
-    return `${SYNC_SERVICE_WS_URL}/${documentId}/connect?token=${token}`;
+    const refreshedUrl = connectUrl(response.value.token);
+    fallbackUrl = refreshedUrl;
+    return refreshedUrl;
   };
 
   return new WebsocketBuilder(getUrl)
@@ -80,8 +89,8 @@ function createSyncServiceSocket(documentId: string, token: string) {
     .withBackoff(new ConstantBackoff(500))
     .withMaxRetries(20)
     .withHeartbeat({
-      interval: 3_000,
-      timeout: 2_000,
+      interval: 10_000,
+      timeout: 5_000,
       pingMessage: 'ping',
       pongMessage: 'pong',
       maxMissedHeartbeats: 2,

@@ -10,12 +10,19 @@ use crate::api::{
     stream::stop::{
         self as stream_stop, StopChatStreamError, StopChatStreamRequest, StopChatStreamResponse,
     },
+    structured_completion::{
+        self, StructuredCompletionError, StructuredCompletionRequest, StructuredCompletionResponse,
+    },
 };
 use crate::model::{
     response::{
         attachments::GetChatsForAttachmentResponse, models::AIModel, models::GetModelsResponse,
     },
     stream::{ChatStream, SendChatMessagePayload, StreamError, ToolSet},
+};
+use mcp_client::inbound::axum_router::{
+    self as mcp_api, AddServerRequest, ServerResponse, StartAuthRequest, StartAuthResponse,
+    UpdateServerRequest,
 };
 use memory::inbound::axum_router::{self as memory_api, MemoryErrorBody, MemoryResponse};
 
@@ -24,8 +31,8 @@ use crate::api::preview::get_batch_preview::{GetBatchPreviewRequest, GetBatchPre
 use ai::types::{ModelMetadata, Provider};
 
 use chat::domain::models::{ChatResponse, GetChatResponse, WebCitation};
-use chat::inbound::{
-    self as chat_inbound, CallToolRequest, CallToolResponse, CreateChatRequest,
+use chat::inbound::http::router::{
+    self as chat_router, CallToolRequest, CallToolResponse, CreateChatRequest,
     GetChatPermissionsResponse, PatchChatRequest, RejectToolCallRequest, UpdateToolCallRequest,
     UpdateToolResponseRequest,
 };
@@ -56,18 +63,18 @@ use utoipa::OpenApi;
         ),
         paths(
             health::health_handler,
-            chat_inbound::get_chat_handler,
-            chat_inbound::create_chat_handler,
-            chat_inbound::copy_chat_handler,
-            chat_inbound::get_chat_permissions_handler,
-            chat_inbound::delete_chat_handler,
-            chat_inbound::permanently_delete_chat_handler,
-            chat_inbound::patch_chat_handler,
-            chat_inbound::revert_delete_handler,
-            chat_inbound::update_tool_call_handler,
-            chat_inbound::update_tool_response_handler,
-            chat_inbound::call_tool_handler,
-            chat_inbound::reject_tool_call_handler,
+            chat_router::get_chat_handler,
+            chat_router::create_chat_handler,
+            chat_router::copy_chat_handler,
+            chat_router::get_chat_permissions_handler,
+            chat_router::delete_chat_handler,
+            chat_router::permanently_delete_chat_handler,
+            chat_router::patch_chat_handler,
+            chat_router::revert_delete_handler,
+            chat_router::update_tool_call_handler,
+            chat_router::update_tool_response_handler,
+            chat_router::call_tool_handler,
+            chat_router::reject_tool_call_handler,
             get_models::get_models_handler,
             get_chats_for_attachment::get_chats_for_attachment_handler,
             citations::get_citation_handler,
@@ -76,7 +83,14 @@ use utoipa::OpenApi;
             chat_history_batch_messages::get_chat_history_batch_messages_handler,
             chat_message::send_chat_message,
             stream_stop::stop_chat_stream,
-            memory_api::get_memory_handler
+            structured_completion::structured_completion,
+            memory_api::get_memory_handler,
+            mcp_api::list_servers,
+            mcp_api::add_server,
+            mcp_api::update_server,
+            mcp_api::delete_server,
+            mcp_api::start_auth,
+            mcp_api::auth_callback
         ),
         components(
             schemas(
@@ -153,10 +167,22 @@ use utoipa::OpenApi;
                 StopChatStreamError,
                 StreamError,
                 ToolSet,
+                StructuredCompletionRequest,
+                StructuredCompletionResponse,
+                StructuredCompletionError,
+                ai::structured_output_v2::DynamicSchema,
 
                 // Memory
                 MemoryResponse,
                 MemoryErrorBody,
+
+                // MCP
+                ServerResponse,
+                AddServerRequest,
+                UpdateServerRequest,
+                StartAuthRequest,
+                StartAuthResponse,
+                model_error_response::ErrorResponse,
 
                 // Tools
                 ai::tool::schema::ToolSchema,

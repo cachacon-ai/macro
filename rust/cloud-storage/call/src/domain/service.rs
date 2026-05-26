@@ -29,13 +29,13 @@ use crate::domain::models::{EditCallRecordRequest, EditCallTranscriptRequest};
 
 use super::models::{
     AddParticipantError, CallActiveResponse, CallError, CallRecord, CallRecordTranscriptSegment,
-    CallTokenResponse, EgressS3Config, GetBatchCallRecordPreviewRequest,
-    GetBatchCallRecordPreviewResponse, GetCallRecordsRequest, LeaveCallResponse,
-    TranscriptSegmentRequest,
+    CallTokenResponse, CallTranscriptCustomSpeakerResult, EgressS3Config, EnrichedCallTranscript,
+    GetBatchCallRecordPreviewRequest, GetBatchCallRecordPreviewResponse, GetCallRecordsRequest,
+    LeaveCallResponse, TranscriptSegmentRequest,
 };
 use super::ports::{
     CallRecordQueryService, CallRepository, CallRtcClient, CallSearchIndexer, CallService,
-    CallSummarizer, NoOpCallSearchIndexer, RecordingStorage,
+    CallSummarizer, NoOpCallSearchIndexer, NoOpVoiceRepository, RecordingStorage, VoiceRepository,
 };
 
 const VOIP_TOKEN_MINT_CONCURRENCY: usize = 16;
@@ -51,6 +51,7 @@ pub struct CallServiceImpl<
     Sm: CallSummarizer = NoopCallSummarizer,
     I: CallSearchIndexer = NoOpCallSearchIndexer,
     V: VoipPushSender = (),
+    Vr: VoiceRepository = NoOpVoiceRepository,
 > {
     repo: R,
     rtc_client: C,
@@ -64,6 +65,7 @@ pub struct CallServiceImpl<
     internal_call_secret: Option<String>,
     summarizer: Option<Sm>,
     voip_push_sender: V,
+    voice_repo: Vr,
 }
 
 impl<
@@ -74,7 +76,7 @@ impl<
     N: NotificationIngress,
     S: RecordingStorage,
     Sm: CallSummarizer,
-> CallServiceImpl<R, C, Cn, E, N, S, Sm, NoOpCallSearchIndexer, ()>
+> CallServiceImpl<R, C, Cn, E, N, S, Sm, NoOpCallSearchIndexer, (), NoOpVoiceRepository>
 {
     /// Create a new call service.
     pub fn new(
@@ -99,6 +101,7 @@ impl<
             internal_call_secret: None,
             summarizer: None,
             voip_push_sender: (),
+            voice_repo: NoOpVoiceRepository,
         }
     }
 }
@@ -113,7 +116,8 @@ impl<
     Sm: CallSummarizer,
     I: CallSearchIndexer,
     V: VoipPushSender,
-> CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V>
+    Vr: VoiceRepository,
+> CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V, Vr>
 {
     /// Enable auto-recording with the given S3 configuration.
     pub fn with_egress(mut self, s3_config: EgressS3Config) -> Self {
@@ -139,7 +143,7 @@ impl<
     pub fn with_voip_push_sender<V2: VoipPushSender>(
         self,
         sender: V2,
-    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V2> {
+    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V2, Vr> {
         CallServiceImpl {
             repo: self.repo,
             rtc_client: self.rtc_client,
@@ -153,6 +157,7 @@ impl<
             internal_call_secret: self.internal_call_secret,
             summarizer: self.summarizer,
             voip_push_sender: sender,
+            voice_repo: self.voice_repo,
         }
     }
 
@@ -160,7 +165,7 @@ impl<
     pub fn with_search_indexer<I2: CallSearchIndexer>(
         self,
         indexer: I2,
-    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, I2, V> {
+    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, I2, V, Vr> {
         CallServiceImpl {
             repo: self.repo,
             rtc_client: self.rtc_client,
@@ -174,6 +179,29 @@ impl<
             internal_call_secret: self.internal_call_secret,
             summarizer: self.summarizer,
             voip_push_sender: self.voip_push_sender,
+            voice_repo: self.voice_repo,
+        }
+    }
+
+    /// Swap the voice repository.
+    pub fn with_voice_repo<Vr2: VoiceRepository>(
+        self,
+        voice_repo: Vr2,
+    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V, Vr2> {
+        CallServiceImpl {
+            repo: self.repo,
+            rtc_client: self.rtc_client,
+            connection_service: self.connection_service,
+            entity_access_service: self.entity_access_service,
+            notification_ingress: self.notification_ingress,
+            recording_storage: self.recording_storage,
+            search_indexer: self.search_indexer,
+            server_url: self.server_url,
+            egress_s3_config: self.egress_s3_config,
+            internal_call_secret: self.internal_call_secret,
+            summarizer: self.summarizer,
+            voip_push_sender: self.voip_push_sender,
+            voice_repo,
         }
     }
 
@@ -382,7 +410,8 @@ impl<
     Sm: CallSummarizer + Clone,
     I: CallSearchIndexer,
     V: VoipPushSender,
-> CallService for CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V>
+    Vr: VoiceRepository + Clone,
+> CallService for CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V, Vr>
 {
     fn validate_internal_call(&self, token: &str) -> bool {
         self.internal_call_secret
@@ -721,6 +750,7 @@ impl<
                     // Fire-and-forget summarization now that the
                     // `call_records` row is persisted.
                     self.spawn_summarize_call(call.id);
+                    self.spawn_process_voices_for_call(call.id);
 
                     if let Err(e) = self.search_indexer.enqueue_upsert(&call.id).await {
                         tracing::error!(error=?e, call_id=%call.id, "failed to enqueue call record for search indexing");
@@ -830,6 +860,7 @@ impl<
                     // Fire-and-forget summarization now that the
                     // `call_records` row is persisted.
                     self.spawn_summarize_call(call.id);
+                    self.spawn_process_voices_for_call(call.id);
 
                     if let Err(e) = self.search_indexer.enqueue_upsert(&call.id).await {
                         tracing::error!(error=?e, call_id=%call.id, "failed to enqueue call record for search indexing");
@@ -1056,8 +1087,45 @@ impl<
             .map_err(|e| CallError::Internal(e.into()))?
             .ok_or_else(|| CallError::NotFound(channel_id.to_string()))?;
 
+        // Attach a stable voice id to each transcript row. Reuse an earlier
+        // voice id for the same diarized speaker in this call before falling
+        // back to embedding-based upsert; this prevents creating a fresh
+        // `voice.id` for every finalized utterance from the same user.
+        // Failure to persist the embedding must not block transcript ingest —
+        // log and continue without a voice id.
+        let voice_id = match segment.embedding.as_deref() {
+            Some(embedding) if !embedding.is_empty() => {
+                let existing_voice_id = self
+                    .repo
+                    .get_transcript_voice_id_for_speaker(
+                        &call.id,
+                        &segment.speaker_id,
+                        segment.diarized_speaker_id.as_deref(),
+                    )
+                    .await
+                    .inspect_err(|e| {
+                        tracing::error!(error=?e, "failed to look up existing speaker voice id")
+                    })
+                    .ok()
+                    .flatten();
+
+                match existing_voice_id {
+                    Some(voice_id) => Some(voice_id),
+                    None => self
+                        .voice_repo
+                        .upsert_voice(embedding)
+                        .await
+                        .inspect_err(
+                            |e| tracing::error!(error=?e, "failed to upsert voice embedding"),
+                        )
+                        .ok(),
+                }
+            }
+            _ => None,
+        };
+
         self.repo
-            .create_transcript_segment(&call.id, &segment)
+            .create_transcript_segment(&call.id, &segment, voice_id)
             .await
             .map_err(|e| CallError::Internal(e.into()))?;
 
@@ -1168,8 +1236,15 @@ impl<
             return Ok(());
         };
 
-        // Load the finalized call record. May race with deletion, in which
-        // case there's nothing to summarize — log and move on.
+        if let Err(e) = generate_and_persist_custom_speakers(&self.repo, summarizer, call_id).await
+        {
+            tracing::error!(error=?e, %call_id, "failed to generate custom speakers before summarization");
+        }
+
+        // Load the finalized call record after the custom-speaker step so the
+        // summary prompt sees any newly persisted speaker overrides. May race
+        // with deletion, in which case there's nothing to summarize — log and
+        // move on.
         let Some(record) = self
             .repo
             .get_call_record_by_call_id(call_id)
@@ -1235,6 +1310,32 @@ impl<
 
         Ok(())
     }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn get_user_voices(&self, macro_user_id: &Uuid) -> Result<Vec<Uuid>, CallError> {
+        self.voice_repo
+            .get_user_voices(macro_user_id)
+            .await
+            .map_err(|e| CallError::Internal(e.into()))
+    }
+
+    #[tracing::instrument(err, skip(self, embedding))]
+    async fn set_user_voice(
+        &self,
+        macro_user_id: &Uuid,
+        embedding: &[f32],
+    ) -> Result<Uuid, CallError> {
+        let voice_id = self
+            .voice_repo
+            .upsert_voice(embedding)
+            .await
+            .map_err(|e| CallError::Internal(e.into()))?;
+        self.voice_repo
+            .link_user_voice(macro_user_id, &voice_id)
+            .await
+            .map_err(|e| CallError::Internal(e.into()))?;
+        Ok(voice_id)
+    }
 }
 
 impl<
@@ -1247,7 +1348,8 @@ impl<
     Sm: CallSummarizer + Clone,
     I: CallSearchIndexer,
     V: VoipPushSender,
-> CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V>
+    Vr: VoiceRepository + Clone,
+> CallServiceImpl<R, C, Cn, E, N, S, Sm, I, V, Vr>
 {
     /// Fire-and-forget spawn of [`CallService::summarize_call`] for `call_id`.
     ///
@@ -1262,6 +1364,11 @@ impl<
         };
         let repo = self.repo.clone();
         tokio::spawn(async move {
+            if let Err(e) = generate_and_persist_custom_speakers(&repo, &summarizer, &call_id).await
+            {
+                tracing::error!(error=?e, %call_id, "failed to generate custom speakers before summarization");
+            }
+
             let record = match repo.get_call_record_by_call_id(&call_id).await {
                 Ok(Some(record)) => record,
                 Ok(None) => {
@@ -1325,6 +1432,119 @@ impl<
             }
         });
     }
+
+    /// Fire-and-forget spawn of finished-call voice enrollment.
+    ///
+    /// Called from `process_webhook_event` immediately after `archive_call`
+    /// finalizes the `call_records` row. Voice ids for consistently diarized
+    /// speakers are enrolled for the users who spoke them. This intentionally
+    /// does not populate `custom_speaker`; AI speaker attribution is handled
+    /// separately before summarization.
+    fn spawn_process_voices_for_call(&self, call_record_id: Uuid) {
+        let repo = self.repo.clone();
+        let voice_repo = self.voice_repo.clone();
+        tokio::spawn(async move {
+            enroll_stable_speaker_voices_for_call_record(&repo, &voice_repo, call_record_id).await;
+        });
+    }
+}
+
+async fn generate_and_persist_custom_speakers<R, Sm>(
+    repo: &R,
+    summarizer: &Sm,
+    call_record_id: &Uuid,
+) -> anyhow::Result<()>
+where
+    R: CallRepository,
+    Sm: CallSummarizer,
+{
+    let transcripts = repo
+        .get_enhanced_call_record_transcripts(call_record_id)
+        .await
+        .map_err(Into::into)?;
+    if transcripts.is_empty() {
+        tracing::info!(%call_record_id, "call has empty archived transcript; skipping custom speaker generation");
+        return Ok(());
+    }
+
+    let candidate_speakers = repo
+        .get_call_participants_with_team_members(call_record_id)
+        .await
+        .map_err(Into::into)?;
+    if candidate_speakers.is_empty() {
+        tracing::info!(%call_record_id, "call has no candidate speakers; skipping custom speaker generation");
+        return Ok(());
+    }
+
+    let assignments = summarizer
+        .generate_custom_speakers(transcripts, candidate_speakers)
+        .await
+        .map_err(Into::into)?;
+    if assignments.is_empty() {
+        tracing::info!(%call_record_id, "custom speaker generation returned no assignments");
+        return Ok(());
+    }
+
+    let num_assignments = assignments.len();
+    repo.overwrite_custom_speakers(
+        assignments
+            .into_iter()
+            .map(|result| (result.call_transcript_id, result.custom_speaker))
+            .collect(),
+    )
+    .await
+    .map_err(Into::into)?;
+
+    tracing::info!(%call_record_id, num_assignments, "persisted generated custom speaker assignments");
+    Ok(())
+}
+
+/// Enroll stable speaker voice ids observed in a freshly archived call.
+///
+/// For each `speaker_id` in the call transcript, the repository returns
+/// candidates only when every transcript row for that speaker has the same
+/// non-NULL `diarized_speaker_id`. All distinct non-NULL `voice_id`s on those
+/// rows are linked to the resolved macro user in `macro_user_voice` via
+/// [`VoiceRepository::link_user_voice`].
+async fn enroll_stable_speaker_voices_for_call_record<R: CallRepository, Vr: VoiceRepository>(
+    repo: &R,
+    voice_repo: &Vr,
+    call_record_id: Uuid,
+) {
+    let stable_voices = match repo
+        .get_stable_speaker_voices_for_call_record(&call_record_id)
+        .await
+    {
+        Ok(stable_voices) => stable_voices,
+        Err(e) => {
+            tracing::error!(
+                error=?e, %call_record_id,
+                "failed to load stable speaker voices for enrollment"
+            );
+            return;
+        }
+    };
+
+    if stable_voices.is_empty() {
+        return;
+    }
+
+    let total = stable_voices.len();
+    let mut linked = 0usize;
+    for (macro_user_id, voice_id) in stable_voices {
+        match voice_repo.link_user_voice(&macro_user_id, &voice_id).await {
+            Ok(()) => linked += 1,
+            Err(e) => tracing::error!(
+                error=?e, %call_record_id, %macro_user_id, %voice_id,
+                "failed to link stable speaker voice to user"
+            ),
+        }
+    }
+
+    tracing::info!(
+        %call_record_id, linked, total,
+        "stable speaker voice enrollment completed"
+    );
 }
 
 /// Extract the recording key from a full S3 URL.
@@ -1373,6 +1593,16 @@ impl CallSummarizer for NoopCallSummarizer {
     ) -> Result<Option<String>, Self::Err> {
         unreachable!(
             "NoopCallSummarizer::generate_call_name invoked; it exists only as a type placeholder when the optional summarizer is None"
+        )
+    }
+
+    async fn generate_custom_speakers(
+        &self,
+        _transcript: Vec<EnrichedCallTranscript>,
+        _candidate_speakers: Vec<MacroUserIdStr<'static>>,
+    ) -> Result<Vec<CallTranscriptCustomSpeakerResult>, Self::Err> {
+        unreachable!(
+            "NoopCallSummarizer::generate_custom_speakers invoked; it exists only as a type placeholder when the optional summarizer is None"
         )
     }
 }

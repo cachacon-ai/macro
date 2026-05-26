@@ -1,15 +1,13 @@
 import { currentThemeId, isThemeSaved, themes } from '../signals/themeSignals';
-import { Button } from '@ui';
-import { LabelAndHotKey } from '@core/component/Tooltip';
-import IconLightDark from '@macro-icons/macro-light-dark.svg';
+import IconLightDark from '@icon/macro-light-dark.svg';
 import { invertTheme, saveTheme } from '../utils/themeUtils';
 import { randomizeTheme } from './ThemeEditorBasic';
-import IconDice from '@macro-icons/macro-dice.svg';
-import IconSave from '@macro-icons/macro-save.svg';
+import IconDice from '@phosphor-icons/core/regular/dice-five.svg?component-solid';
+import IconSave from '@phosphor-icons/core/regular/floppy-disk-back.svg?component-solid';
 import { createMemo, Show } from 'solid-js';
-import { cn } from '@ui';
+import { Button, cn } from '@ui';
 
-export function ThemeTools(props: { class?: string }) {
+function ThemeTools(props: { class?: string }) {
   let themeName!: HTMLDivElement;
 
   const defaultThemeName = 'New Theme';
@@ -38,7 +36,7 @@ export function ThemeTools(props: { class?: string }) {
           onPointerDown={() => {
             saveTheme(themeName.innerText);
           }}
-          tooltip={<LabelAndHotKey label="Save Theme" />}
+          label="Save Theme"
           variant="ghost"
           size="icon-sm"
         >
@@ -46,26 +44,8 @@ export function ThemeTools(props: { class?: string }) {
         </Button>
       </Show>
 
-      {/*<Show when={DEV_MODE_ENV}>
-        <IconButton
-          tooltip={{label: "Copy Tokens"}}
-          onPointerDown={copyTokens}
-          icon={IconFigma}
-          theme="clear"
-          size="sm"
-        />
-      </Show>*/}
-
-      {/*<DeprecatedIconButton
-        tooltip={{label: "Import From Clipboard"}}
-        onPointerDown={importTheme}
-        icon={IconImport}
-        theme="clear"
-        size="sm"
-      />*/}
-
       <Button
-        tooltip={<LabelAndHotKey label="Randomize Theme" />}
+        label="Randomize Theme"
         onPointerDown={randomizeTheme}
         variant="ghost"
         size="icon-sm"
@@ -74,7 +54,7 @@ export function ThemeTools(props: { class?: string }) {
       </Button>
 
       <Button
-        tooltip={<LabelAndHotKey label="Toggle Light / Dark" />}
+        label="Toggle Light / Dark"
         onPointerDown={invertTheme}
         variant="ghost"
         size="icon-sm"
@@ -100,10 +80,10 @@ export function ThemeTools(props: { class?: string }) {
           }
         }}
         class={cn(
-          'rounded-xs py-1.5 px-2 border text-xs outline-none',
+          'rounded-lg py-1.5 px-2 border text-xs outline-none',
           'bg-transparent text-ink-muted border-edge-muted',
-          'hover:bg-input hover:text-ink',
-          'focus:bg-input focus:text-ink',
+          'hover:bg-surface hover:text-ink',
+          'focus:bg-surface focus:text-ink focus:border-accent',
           'min-w-0 overflow-hidden text-ellipsis',
         )}
         style={{

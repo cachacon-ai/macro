@@ -29,3 +29,15 @@ export function whenSplitManagerReady(): Promise<SplitManager> {
     });
   });
 }
+
+if (import.meta.env.DEV) {
+  createRoot(() => {
+    createEffect(() => {
+      const m = globalSplitManager();
+      if (m)
+        (
+          globalThis as { __macroSplitManager?: SplitManager }
+        ).__macroSplitManager = m;
+    });
+  });
+}

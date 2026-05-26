@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::domain::{
     models::{
-        GithubError, GithubInstallationAccessToken, GithubKey, MacroTaskId,
+        GithubError, GithubInstallationAccessToken, GithubKey, MacroTaskId, TeamTaskReference,
         ValidatedGithubWebhookEvent,
     },
     ports::{GithubSyncClient, GithubSyncRepo, GithubSyncService},
@@ -11,17 +11,19 @@ use crate::domain::{
 use document_sub_type::DocumentSubType;
 use documents::domain::models::EditDocumentServiceArgs;
 use documents::domain::{
+    content::{DocumentContent, DocumentContentLocation},
     models::{CreateDocumentRepoArgs, DocumentError, LocationQueryParams},
     ports::DocumentService,
+    response::{
+        CreateDocumentResponseData, DocumentMetadataWithContent, DocumentResponse,
+        GetDocumentResponseData, LocationResponseV3,
+    },
 };
 use entity_access::domain::models::{
     EditAccessLevel, EntityAccessReceipt, OwnerAccessLevel, ViewAccessLevel,
 };
 use macro_user_id::user_id::MacroUserIdStr;
-use model::document::{
-    DocumentBasic, DocumentMetadata,
-    response::{CreateDocumentResponseData, GetDocumentResponseData, LocationResponseV3},
-};
+use model::document::{DocumentBasic, DocumentMetadata};
 use model_entity::Entity;
 use models_permissions::share_permission::access_level::AccessLevel;
 
@@ -118,6 +120,20 @@ impl DocumentService for StubDocumentService {
     ) -> Result<String, DocumentError> {
         unimplemented!()
     }
+    async fn get_task_branch_name(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _document_name: String,
+    ) -> Result<documents::domain::models::TaskBranchName, DocumentError> {
+        unimplemented!()
+    }
+    async fn get_task_github_pull_requests(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _document_context: &DocumentBasic,
+    ) -> Result<documents::domain::models::GithubPullRequestsResponse, DocumentError> {
+        unimplemented!()
+    }
     async fn get_project_children(
         &self,
         _project_id: &str,
@@ -134,7 +150,10 @@ impl DocumentService for StubDocumentService {
         let document_id = receipt.entity().entity_id.clone();
         if document_id == KNOWN_TASK_UUID {
             Ok(GetDocumentResponseData {
-                document_metadata: Self::task_metadata(&document_id),
+                document_metadata: DocumentMetadataWithContent::new(
+                    Self::task_metadata(&document_id),
+                    DocumentContent::ready(DocumentContentLocation::SyncService),
+                ),
                 user_access_level: AccessLevel::Owner,
                 view_location: None,
             })
@@ -171,6 +190,13 @@ impl DocumentService for StubDocumentService {
     ) -> Result<CreateDocumentResponseData, DocumentError> {
         unimplemented!()
     }
+
+    async fn get_document_content(
+        &self,
+        _document_context: &DocumentBasic,
+    ) -> Result<DocumentContent, DocumentError> {
+        unimplemented!()
+    }
     async fn update_task_status(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -200,16 +226,7 @@ impl DocumentService for StubDocumentService {
         _document_name: String,
         _query_version_id: Option<i64>,
         _sync_version_id: Option<model::sync_service::SyncServiceVersionID>,
-    ) -> Result<model::document::response::DocumentResponse, DocumentError> {
-        unimplemented!()
-    }
-
-    async fn create_task(
-        &self,
-        _user_id: MacroUserIdStr<'static>,
-        _plain_user_id: String,
-        _request: documents::domain::models::CreateTaskRequest,
-    ) -> Result<documents::domain::models::CreateTaskResponse, DocumentError> {
+    ) -> Result<DocumentResponse, DocumentError> {
         unimplemented!()
     }
 
@@ -233,6 +250,8 @@ impl DocumentService for StubDocumentService {
 /// Stateful stub repo that tracks task IDs per github key.
 struct StubSyncRepo {
     tasks: Mutex<HashMap<String, HashSet<String>>>,
+    /// Maps (installation_id, normalized team_slug, team_task_id) -> task ID.
+    team_task_references: Mutex<HashMap<(String, String, i32), MacroTaskId>>,
     /// Maps github_user_id -> macro_id for installation event lookups.
     github_links: Mutex<HashMap<String, String>>,
     /// Maps macro_id -> team_ids for installation event lookups.
@@ -245,6 +264,7 @@ impl StubSyncRepo {
     fn new() -> Self {
         Self {
             tasks: Mutex::new(HashMap::new()),
+            team_task_references: Mutex::new(HashMap::new()),
             github_links: Mutex::new(HashMap::new()),
             user_teams: Mutex::new(HashMap::new()),
             installation_associations: Mutex::new(Vec::new()),
@@ -264,6 +284,24 @@ impl StubSyncRepo {
             .lock()
             .unwrap()
             .insert(macro_id.to_string(), team_ids);
+        self
+    }
+
+    fn with_team_task_reference(
+        self,
+        installation_id: &str,
+        team_slug: &str,
+        team_task_id: i32,
+        task_id: MacroTaskId,
+    ) -> Self {
+        self.team_task_references.lock().unwrap().insert(
+            (
+                installation_id.to_string(),
+                team_slug.to_ascii_lowercase(),
+                team_task_id,
+            ),
+            task_id,
+        );
         self
     }
 
@@ -317,6 +355,31 @@ impl GithubSyncRepo for StubSyncRepo {
             })
             .cloned()
             .collect())
+    }
+
+    async fn resolve_team_task_references(
+        &self,
+        installation_id: &str,
+        references: &[TeamTaskReference],
+    ) -> Result<Vec<MacroTaskId>, Self::Err> {
+        let team_task_references = self.team_task_references.lock().unwrap();
+        let mut seen = HashSet::new();
+        let mut resolved = Vec::new();
+
+        for reference in references {
+            let key = (
+                installation_id.to_string(),
+                reference.team_slug.to_ascii_lowercase(),
+                reference.team_task_id,
+            );
+            if let Some(task_id) = team_task_references.get(&key)
+                && seen.insert(task_id.clone())
+            {
+                resolved.push(task_id.clone());
+            }
+        }
+
+        Ok(resolved)
     }
 
     async fn get_macro_id_by_github_user_id(
@@ -513,6 +576,71 @@ async fn pr_with_task_id_in_branch_name() {
     let comments = service.client.pr_comments();
     assert_eq!(comments.len(), 1);
     assert_eq!(comments[0].pull_number, 7);
+}
+
+#[tokio::test]
+async fn pr_with_team_task_id_in_branch_name() {
+    let task_id = MacroTaskId::from_uuid(&uuid::Uuid::parse_str(KNOWN_TASK_UUID).unwrap());
+    let repo = StubSyncRepo::new().with_team_task_reference("12345", "eng", 123, task_id);
+    let service = make_sync_service_with_repo(repo);
+
+    let event = ValidatedGithubWebhookEvent::new(
+        "pull_request".to_string(),
+        serde_json::json!({
+            "action": "opened",
+            "pull_request": {
+                "number": 7,
+                "title": "some feature",
+                "body": "no legacy task ids here",
+                "head": { "ref": "whutch/eng-123-fix-some-bug" }
+            },
+            "repository": {
+                "name": "my-repo",
+                "owner": { "login": "my-org" }
+            },
+            "installation": { "id": 12345 }
+        }),
+    );
+
+    let result = service.process_webhook_event(&event).await;
+    assert!(result.is_ok());
+
+    let comments = service.client.pr_comments();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].pull_number, 7);
+    assert_eq!(
+        comments[0].body,
+        format!("[My Task](https://macro.com/app/task/{KNOWN_TASK_UUID})")
+    );
+}
+
+#[tokio::test]
+async fn team_task_id_requires_installation_team_match() {
+    let task_id = MacroTaskId::from_uuid(&uuid::Uuid::parse_str(KNOWN_TASK_UUID).unwrap());
+    let repo = StubSyncRepo::new().with_team_task_reference("99999", "eng", 123, task_id);
+    let service = make_sync_service_with_repo(repo);
+
+    let event = ValidatedGithubWebhookEvent::new(
+        "pull_request".to_string(),
+        serde_json::json!({
+            "action": "opened",
+            "pull_request": {
+                "number": 7,
+                "title": "some feature",
+                "body": null,
+                "head": { "ref": "whutch/eng-123-fix-some-bug" }
+            },
+            "repository": {
+                "name": "my-repo",
+                "owner": { "login": "my-org" }
+            },
+            "installation": { "id": 12345 }
+        }),
+    );
+
+    let result = service.process_webhook_event(&event).await;
+    assert!(result.is_ok());
+    assert!(service.client.pr_comments().is_empty());
 }
 
 #[tokio::test]
@@ -877,7 +1005,7 @@ async fn pr_merged_sets_task_status_completed() {
 }
 
 #[tokio::test]
-async fn pr_closed_without_merge_sets_task_status_canceled() {
+async fn pr_closed_without_merge_sets_task_status_todo() {
     let (service, doc_service) = make_sync_service_with_doc_service();
     let event = ValidatedGithubWebhookEvent::new(
         "pull_request".to_string(),
@@ -903,7 +1031,59 @@ async fn pr_closed_without_merge_sets_task_status_canceled() {
     let status_calls = doc_service.task_status_calls();
     assert_eq!(status_calls.len(), 1);
     assert_eq!(status_calls[0].entity_id, KNOWN_TASK_UUID);
-    assert_eq!(status_calls[0].status, "Canceled");
+    assert_eq!(status_calls[0].status, "Not Started");
+}
+
+#[tokio::test]
+async fn pr_closed_without_merge_sets_previously_tracked_task_status_todo() {
+    let (service, doc_service) = make_sync_service_with_doc_service();
+
+    let opened_event = ValidatedGithubWebhookEvent::new(
+        "pull_request".to_string(),
+        serde_json::json!({
+            "action": "opened",
+            "pull_request": {
+                "number": 42,
+                "title": "fixes MACRO-2BuyvtY3aeEvHx4uG8iD51",
+                "body": null,
+                "head": { "ref": "feature/some-branch" },
+                "merged": false
+            },
+            "repository": {
+                "name": "my-repo",
+                "owner": { "login": "my-org" }
+            },
+            "installation": { "id": 12345 }
+        }),
+    );
+    service.process_webhook_event(&opened_event).await.unwrap();
+
+    let closed_event = ValidatedGithubWebhookEvent::new(
+        "pull_request".to_string(),
+        serde_json::json!({
+            "action": "closed",
+            "pull_request": {
+                "number": 42,
+                "title": "fixes MACRO-2BuyvtY3aeEvHx4uG8iD51",
+                "body": null,
+                "head": { "ref": "feature/some-branch" },
+                "merged": false
+            },
+            "repository": {
+                "name": "my-repo",
+                "owner": { "login": "my-org" }
+            },
+            "installation": { "id": 12345 }
+        }),
+    );
+    service.process_webhook_event(&closed_event).await.unwrap();
+
+    let status_calls = doc_service.task_status_calls();
+    assert_eq!(status_calls.len(), 2);
+    assert_eq!(status_calls[0].entity_id, KNOWN_TASK_UUID);
+    assert_eq!(status_calls[0].status, "In Review");
+    assert_eq!(status_calls[1].entity_id, KNOWN_TASK_UUID);
+    assert_eq!(status_calls[1].status, "Not Started");
 }
 
 #[tokio::test]

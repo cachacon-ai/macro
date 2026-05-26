@@ -32,7 +32,7 @@ import {
 } from '../../plugins/generate/generatePlugin';
 
 export type generateCallback = (userRequest: string) => void;
-export type GenerateMenuProps = {
+type GenerateMenuProps = {
   menuOpen: GenerateMenuOpen;
   generateCallback: generateCallback;
   completionSignal: Accessor<Completion | undefined>;
@@ -101,7 +101,7 @@ function GenerateActionMenu(props: GenerateMenuProps) {
   });
 
   return (
-    <div class="w-fit flex flex-col ring-1 ring-edge rounded-md p-1 bg-menu shadow-md space-y-1">
+    <div class="w-fit flex flex-col ring-1 ring-edge rounded-md p-1 bg-surface shadow-md space-y-1">
       <MenuItem
         onClick={() => {
           props.editor.dispatchCommand(ACCEPT_COMPLETION, undefined);

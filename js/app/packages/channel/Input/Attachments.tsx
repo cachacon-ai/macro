@@ -7,8 +7,8 @@ import {
   staticFileIdEndpoint,
   staticFileSizedEndpoint,
 } from '@core/constant/servers';
-import SpinnerIcon from '@icon/bold/spinner-gap-bold.svg';
-import XIcon from '@icon/regular/x.svg';
+import SpinnerIcon from '@phosphor/spinner-gap.svg';
+import XIcon from '@phosphor/x.svg';
 import { cn } from '@ui';
 import {
   children,
@@ -71,7 +71,7 @@ function MediaAttachmentItem(props: {
     <RemoveButton
       attachment={props.attachment}
       onRemove={props.onRemove}
-      class="absolute -top-2 -right-2 z-10 rounded-full bg-menu border border-edge-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+      class="absolute -top-2 -right-2 z-10 rounded-full bg-surface border border-edge-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
     />
   );
 
@@ -87,7 +87,7 @@ function MediaAttachmentItem(props: {
     <div class="ph-no-capture relative group">
       <Switch
         fallback={
-          <div class="size-23 rounded-2xl border border-edge bg-menu" />
+          <div class="size-23 rounded-2xl border border-edge bg-surface" />
         }
       >
         <Match
@@ -113,7 +113,7 @@ function MediaAttachmentItem(props: {
 
         <Match when={props.attachment.kind === 'video' && !isPending()}>
           <button type="button" onClick={() => props.onOpen?.()}>
-            <MediaVideo.Root class="size-23 group overflow-hidden border border-edge bg-menu">
+            <MediaVideo.Root class="size-23 group overflow-hidden border border-edge bg-surface">
               <MediaVideo.Preview
                 src={mediaSrc()}
                 class="size-full object-cover"

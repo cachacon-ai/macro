@@ -1,9 +1,9 @@
-import { throwOnErr } from '@core/util/maybeResult';
+import { throwOnErr } from '@core/util/result';
 import { useLeaveCallMutation } from '@queries/call/call';
 import { queryClient } from '@queries/client';
 import { callServiceClient } from '@service-call/client';
 import { useMutation } from '@tanstack/solid-query';
-import { RoomEvent } from 'livekit-client';
+import { DisconnectReason, RoomEvent } from 'livekit-client';
 import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { useCallContext } from './CallContext';
 import { nativeCallSnapshot } from './native-call-state';
@@ -21,6 +21,32 @@ type JoinCallContext = {
 };
 
 const JOIN_TIMEOUT_MS = 15_000;
+const AUTO_REJOIN_DELAY_MS = 750;
+const MAX_AUTO_REJOIN_ATTEMPTS = 1;
+
+type ActiveJoinAttempt = {
+  channelId: string;
+  promise: Promise<void>;
+};
+
+function shouldAutoRejoin(reason?: DisconnectReason) {
+  switch (reason) {
+    case DisconnectReason.CLIENT_INITIATED:
+    case DisconnectReason.DUPLICATE_IDENTITY:
+    case DisconnectReason.PARTICIPANT_REMOVED:
+    case DisconnectReason.ROOM_DELETED:
+    case DisconnectReason.ROOM_CLOSED:
+      return false;
+    default:
+      return true;
+  }
+}
+
+// Module-level guard: only one join can be in flight at a time across all
+// useCall() instances. The call button, call tab, auto-join flow, and in-call
+// panel can all mount their own hook; without this, two components can race and
+// call room.connect() while LiveKit is already reconnecting.
+let activeJoinAttempt: ActiveJoinAttempt | null = null;
 
 // Module-level guard: only one leave can be in flight at a time across all
 // useCall() instances. Prevents a user-initiated leave and a concurrent
@@ -40,6 +66,35 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
 
   // Track the disconnect listener so we can swap it when the room changes.
   let cleanupDisconnectListener: (() => void) | null = null;
+  let autoRejoinAttempts = 0;
+  let autoRejoinTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+  function clearAutoRejoinTimer() {
+    if (!autoRejoinTimer) return;
+    globalThis.clearTimeout(autoRejoinTimer);
+    autoRejoinTimer = null;
+  }
+
+  function scheduleAutoRejoin(reason?: DisconnectReason) {
+    if (leaveInFlight) return;
+
+    if (!shouldAutoRejoin(reason)) {
+      options?.onLeave?.();
+      return;
+    }
+
+    if (autoRejoinAttempts >= MAX_AUTO_REJOIN_ATTEMPTS) {
+      options?.onLeave?.();
+      return;
+    }
+
+    autoRejoinAttempts += 1;
+    callCtx.setJoinError('Call disconnected. Reconnecting…');
+    autoRejoinTimer = globalThis.setTimeout(() => {
+      autoRejoinTimer = null;
+      joinCall().catch((e) => console.error('auto-rejoin call failed', e));
+    }, AUTO_REJOIN_DELAY_MS);
+  }
 
   function attachDisconnectListener() {
     cleanupDisconnectListener?.();
@@ -48,7 +103,14 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
     const room = callCtx.room();
     if (!room) return;
 
-    const handleDisconnect = () => options?.onLeave?.();
+    const handleDisconnect = (reason?: DisconnectReason) => {
+      // This listener is detached before explicit leave, so reaching this path
+      // means LiveKit gave up on recovery. Try one hard rejoin with a fresh
+      // token/Room instead of immediately dumping the user out of the call UI.
+      cleanupDisconnectListener?.();
+      cleanupDisconnectListener = null;
+      scheduleAutoRejoin(reason);
+    };
     room.on(RoomEvent.Disconnected, handleDisconnect);
     cleanupDisconnectListener = () =>
       room.off(RoomEvent.Disconnected, handleDisconnect);
@@ -61,7 +123,10 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
     attachDisconnectListener();
   }
 
-  onCleanup(() => cleanupDisconnectListener?.());
+  onCleanup(() => {
+    cleanupDisconnectListener?.();
+    clearAutoRejoinTimer();
+  });
 
   createEffect(() => {
     if (!callCtx.isInCall() || callCtx.activeChannelId() !== channelId())
@@ -126,6 +191,8 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
       return { channelId: id };
     },
     onSuccess: () => {
+      autoRejoinAttempts = 0;
+      clearAutoRejoinTimer();
       void queryClient.invalidateQueries({ queryKey: ['call', 'active'] });
       attachDisconnectListener();
     },
@@ -156,6 +223,18 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
   }));
 
   const joinCall = async () => {
+    clearAutoRejoinTimer();
+    const id = channelId();
+    const existing = activeJoinAttempt;
+    if (existing && existing.channelId !== id) {
+      throw new Error('Already joining another call');
+    }
+
+    const joinPromise = existing?.promise ?? joinCallMutation.mutateAsync(id);
+    if (!existing) {
+      activeJoinAttempt = { channelId: id, promise: joinPromise };
+    }
+
     setJoinUiPending(true);
     const safetyMs = JOIN_TIMEOUT_MS + 5_000;
     const safetyTimer = globalThis.setTimeout(
@@ -163,8 +242,11 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
       safetyMs
     );
     try {
-      await joinCallMutation.mutateAsync(channelId());
+      await joinPromise;
     } finally {
+      if (activeJoinAttempt?.promise === joinPromise) {
+        activeJoinAttempt = null;
+      }
       globalThis.clearTimeout(safetyTimer);
       setJoinUiPending(false);
     }
@@ -178,6 +260,7 @@ export function useCall(channelId: () => string, options?: UseCallOptions) {
     // doesn't double-fire onLeave.
     cleanupDisconnectListener?.();
     cleanupDisconnectListener = null;
+    clearAutoRejoinTimer();
     // Dismiss the native CallKit call sheet if the user left from within the app.
     // When the leave is initiated by CXEndCallAction, the native sheet is already
     // ending, so avoid sending a second native end request back to CallKit.

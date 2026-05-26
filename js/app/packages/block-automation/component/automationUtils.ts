@@ -1,7 +1,7 @@
 import { DEFAULT_MODEL } from '@core/component/AI/constant';
 import type { Model } from '@core/component/AI/types';
 import { blockNameToDefaultFile } from '@core/constant/allBlocks';
-import { MaybeResultError } from '@core/util/maybeResult';
+import { ThrownResultError } from '@core/util/result';
 import type {
   AgentTask,
   CreateScheduledAction,
@@ -11,7 +11,7 @@ import type {
 import type { ScheduleDraft, ScheduleFrequency } from './types';
 
 export const INPUT_CLASS =
-  'w-full border border-edge-muted rounded-sm bg-input px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink/30 focus:border-accent/20 cursor-default';
+  'w-full border border-edge-muted rounded-sm bg-surface px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink/30 focus:border-accent/20 cursor-default';
 export const DEFAULT_TIME = '09:00';
 
 export const FREQUENCY_OPTIONS: Array<{
@@ -324,7 +324,7 @@ export function formatDateTime(value: string | null | undefined) {
 }
 
 export function getErrorMessage(error: unknown) {
-  if (error instanceof MaybeResultError) {
+  if (error instanceof ThrownResultError) {
     return error.errors.map((item) => item.message).join(', ');
   }
 

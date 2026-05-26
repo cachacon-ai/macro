@@ -1,11 +1,11 @@
 import { DatePickerUI } from '@core/component/DatePicker/DatePickerUI';
-import { useSearchInputFocus } from '@core/component/Properties/utils';
 import { useDateSearch } from '@core/util/dateSearch/useDateSearch';
-import SearchIcon from '@icon/regular/magnifying-glass.svg';
 import {
   Combobox,
   type ComboboxRootItemComponentProps,
 } from '@kobalte/core/combobox';
+import SearchIcon from '@phosphor/magnifying-glass.svg';
+import { useSearchInputFocus } from '@property/utils';
 import { cn, Layer } from '@ui';
 import { format, setHours, setMinutes, startOfDay } from 'date-fns';
 import {
@@ -305,7 +305,7 @@ export const DateSelector = (props: DateSelectorProps) => {
       <DateSelectorPortalWrapper disabled={props.disablePortal}>
         <Layer depth={3}>
           <Combobox.Content
-            class="w-full max-w-sm bg-dialog text-ink border border-edge"
+            class="w-full max-w-sm bg-surface text-ink border border-edge"
             on:keydown={handleKeyDown}
           >
             <WithCustomDateMode
@@ -401,7 +401,7 @@ const CurrentValueDisplay = (props: CurrentValueDisplayProps) => {
   });
 
   return (
-    <div class="px-3 py-2 border-b border-edge-muted pattern pattern-edge-muted pattern-dot-4">
+    <div class="px-3 py-2 border-b border-edge-muted">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="text-xs text-ink-muted">Current:</span>

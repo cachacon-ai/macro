@@ -68,10 +68,15 @@ pub async fn build_tool_service_context(
     // Soup service
     let frecency_storage = FrecencyPgStorage::new(pool.clone());
     let frecency_service = FrecencyQueryServiceImpl::new(frecency_storage.clone());
+    let crm_service = crm::domain::service::CrmServiceImpl::new(
+        crm::outbound::companies_repo::CompaniesRepositoryImpl::new(pool.clone()),
+        crm::outbound::no_op_resolver::NoOpCompanyMetadataResolver,
+    );
     let email_service = EmailServiceImpl::new(
         EmailPgRepo::new(pool.clone()),
         frecency_service.clone(),
         email::domain::ports::NoOpEnqueuer,
+        crm_service.clone(),
         0,
     );
     let channels_service = ChannelServiceImpl::new(
@@ -126,6 +131,7 @@ pub async fn build_tool_service_context(
         document_service,
         (*entity_access_service).clone(),
         lexical_client,
+        sync_client.as_ref().clone(),
     );
 
     // Properties tool context
@@ -146,6 +152,7 @@ pub async fn build_tool_service_context(
             EmailPgRepo::new(pool.clone()),
             FrecencyQueryServiceImpl::new(FrecencyPgStorage::new(pool.clone())),
             sqs_client,
+            crm_service.clone(),
             0,
         )),
         Arc::new(email::domain::ports::NoOpGmailTokenProvider),
@@ -172,23 +179,24 @@ pub async fn build_tool_service_context(
         (*entity_access_service).clone(),
     );
 
-    let notification_reader_service = NotificationReaderService::new(
-        DbNotificationRepository::new(pool.clone()),
-        ToolNotificationQueue::NoOp,
-        NoOpSnsEndpointManager,
-        PlatformArnConfig {
+    let notification_reader_service = NotificationReaderService {
+        repository: DbNotificationRepository::new(pool.clone()),
+        queue: ToolNotificationQueue::NoOp,
+        sns_endpoint: NoOpSnsEndpointManager,
+        platform_config: PlatformArnConfig {
             apns_platform_arn: String::new(),
             fcm_platform_arn: String::new(),
             apns_voip_platform_arn: String::new(),
         },
-    );
+        realtime: notification::domain::ports::NoopNotificationRealtimePublisher,
+    };
     let notification_tool_context =
         notification::inbound::ai_tool::NotificationToolContext::new(notification_reader_service);
 
     let chat_tool_context = chat::inbound::toolset::ChatToolContext::new(
         chat::domain::service::ChatServiceImpl::new(
             chat::outbound::postgres::PgChatRepo::new(pool.clone()),
-            Arc::new(ai_toolset::AsyncToolSet::new()),
+            Arc::new(ai_toolset::AsyncToolCollection::new()),
             (),
             entity_access_management::domain::service::EntityAccessManagementServiceImpl::new(
                 entity_access_management::outbound::PgRepository::new(pool.clone()),
@@ -210,6 +218,7 @@ pub async fn build_tool_service_context(
         notification_tool_context,
         chat_tool_context,
         channel_tool_context: ai_tools::build_channel_tool_context(pool.clone()),
+        team_tool_context: ai_tools::build_team_tool_context(pool.clone()),
         schedule_tool_context: ai_tools::NoOpScheduleContext,
     })
 }

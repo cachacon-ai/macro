@@ -1,18 +1,21 @@
+import { SidePanel } from '@app/component/side-panel';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { URL_PARAMS } from '@block-call/constants';
 import { useBlockId } from '@core/block';
 import Unauthorized from '@core/component/AccessErrorViews/Unauthorized';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
-import { MaybeResultError } from '@core/util/maybeResult';
+import { ThrownResultError } from '@core/util/result';
 import { useCallRecordQuery } from '@queries/call/call';
 import { useSearchParams } from '@solidjs/router';
 import { createSignal, Match, Switch } from 'solid-js';
 import { CallRecordingBody } from './CallRecording/CallRecordingBody';
 import { CallRecordingSplitHeaderLoading } from './CallRecording/CallRecordingSplitHeader';
+import { ModalsProvider } from './ModalsProvider';
+import { CallSidePanelSections } from './sidepanel/CallSidePanelSections';
 
 function isUnauthorized(error: Error | null): boolean {
-  if (error instanceof MaybeResultError) {
+  if (error instanceof ThrownResultError) {
     return error.errors[0]?.code === 'UNAUTHORIZED';
   }
   return false;
@@ -58,35 +61,40 @@ export function CallBlockAdapter(props: CallBlockProps) {
   });
 
   return (
-    <div class="h-full flex flex-col @container">
-      <Switch>
-        <Match when={callRecord.data}>
-          {(data) => (
-            <CallRecordingBody
-              data={data}
-              transcriptTarget={transcriptTarget}
-            />
-          )}
-        </Match>
-        <Match when={callRecord.isLoading}>
-          <CallRecordingSplitHeaderLoading />
-          <div class="flex flex-1 min-h-0 items-center justify-center text-sm text-ink-faint">
-            Loading call...
-          </div>
-        </Match>
-        <Match when={callRecord.isError && isUnauthorized(callRecord.error)}>
-          <CallRecordingSplitHeaderLoading />
-          <div class="flex flex-1 min-h-0 overflow-hidden">
-            <Unauthorized />
-          </div>
-        </Match>
-        <Match when={callRecord.isError}>
-          <CallRecordingSplitHeaderLoading />
-          <div class="flex flex-1 min-h-0 items-center justify-center text-sm text-failure">
-            Failed to load call recording.
-          </div>
-        </Match>
-      </Switch>
-    </div>
+    <ModalsProvider>
+      <div class="h-full flex flex-col @container">
+        <Switch>
+          <Match when={callRecord.data}>
+            {(data) => (
+              <SidePanel.Layout>
+                <CallSidePanelSections record={data} />
+                <CallRecordingBody
+                  data={data}
+                  transcriptTarget={transcriptTarget}
+                />
+              </SidePanel.Layout>
+            )}
+          </Match>
+          <Match when={callRecord.isLoading}>
+            <CallRecordingSplitHeaderLoading />
+            <div class="flex flex-1 min-h-0 items-center justify-center text-sm text-ink-faint">
+              Loading call...
+            </div>
+          </Match>
+          <Match when={callRecord.isError && isUnauthorized(callRecord.error)}>
+            <CallRecordingSplitHeaderLoading />
+            <div class="flex flex-1 min-h-0 overflow-hidden">
+              <Unauthorized />
+            </div>
+          </Match>
+          <Match when={callRecord.isError}>
+            <CallRecordingSplitHeaderLoading />
+            <div class="flex flex-1 min-h-0 items-center justify-center text-sm text-failure">
+              Failed to load call recording.
+            </div>
+          </Match>
+        </Switch>
+      </div>
+    </ModalsProvider>
   );
 }

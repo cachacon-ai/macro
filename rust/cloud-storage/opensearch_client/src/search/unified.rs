@@ -4,7 +4,7 @@ use crate::{
     Result,
     error::{OpensearchClientError, ResponseExt},
     search::{
-        builder::{SearchQueryConfig, search_after, updated_at_sort},
+        builder::{SearchQueryConfig, updated_at_sort},
         call_records::{
             CallRecordIndex, CallRecordQueryBuilder, CallRecordSearchArgs, CallRecordSearchConfig,
         },
@@ -212,7 +212,7 @@ pub(crate) enum UnifiedSearchIndex {
     ChannelMessage(ChannelMessageIndex),
     Document(DocumentIndex),
     Chat(ChatIndex),
-    Email(EmailIndex),
+    Email(Box<EmailIndex>),
     CallRecord(CallRecordIndex),
 }
 
@@ -280,6 +280,62 @@ where
     }
 }
 
+/// Expand one OpenSearch hit into one or more `SearchHit`s.
+///
+/// For join-shape parents (documents, chats), OpenSearch returns one
+/// parent hit per matching root with the matching children nested
+/// under `inner_hits`. Each entity's search module knows how to unpack
+/// those into child-level hits; everything else (flat indices) takes
+/// the 1:1 conversion.
+fn expand_hit_into_search_hits(hit: Hit<UnifiedSearchIndex>) -> Vec<SearchHit> {
+    match &hit.source {
+        UnifiedSearchIndex::Document(parent) => {
+            let Some(inner) = hit.inner_hits.as_ref() else {
+                return vec![hit.into()];
+            };
+            let entity_id = parent.entity_id;
+            let updated_at = parent
+                .updated_at_seconds
+                .and_then(|s| DateTime::from_timestamp(s, 0));
+            let expanded = crate::search::documents::expand_inner_hits_to_search_hits(
+                entity_id, updated_at, inner,
+            );
+            if expanded.is_empty() {
+                return vec![hit.into()];
+            }
+            expanded
+        }
+        UnifiedSearchIndex::Chat(parent) => {
+            let Some(inner) = hit.inner_hits.as_ref() else {
+                return vec![hit.into()];
+            };
+            let entity_id = parent.entity_id;
+            let updated_at = parent
+                .updated_at_seconds
+                .and_then(|s| DateTime::from_timestamp(s, 0));
+            let expanded = crate::search::chats::expand_inner_hits_to_search_hits(
+                entity_id, updated_at, inner,
+            );
+            if expanded.is_empty() {
+                return vec![hit.into()];
+            }
+            expanded
+        }
+        UnifiedSearchIndex::CallRecord(parent) => {
+            let Some(inner) = hit.inner_hits.as_ref() else {
+                return vec![hit.into()];
+            };
+            let expanded =
+                crate::search::call_records::expand_inner_hits_to_search_hits(parent, inner);
+            if expanded.is_empty() {
+                return vec![hit.into()];
+            }
+            expanded
+        }
+        _ => vec![hit.into()],
+    }
+}
+
 impl From<Hit<UnifiedSearchIndex>> for SearchHit {
     fn from(index: Hit<UnifiedSearchIndex>) -> Self {
         match index.source {
@@ -301,7 +357,7 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     .unwrap_or_default(),
                 goto: Some(SearchGotoContent::Channels(SearchGotoChannel {
                     channel_message_id: a.message_id,
-                    thread_id: a.thread_id,
+                    thread_id: (a.thread_id != a.message_id).then_some(a.thread_id),
                     sender_id: a.sender_id,
                     created_at: DateTime::from_timestamp(a.created_at_seconds, 0)
                         .unwrap_or_default(),
@@ -327,44 +383,52 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     })
                     .unwrap_or_default(),
                 goto: Some(SearchGotoContent::Documents(SearchGotoDocument {
-                    node_id: a.node_id,
+                    // Parent hits in the join shape have no node_id on
+                    // `_source` (it lives on the matching chunk in
+                    // inner_hits). Fall back to empty for now; piping
+                    // the chunk's node_id through inner_hits is a
+                    // follow-up.
+                    node_id: a.node_id.unwrap_or_default(),
                     raw_content: a.raw_content,
                 })),
                 updated_at: a
                     .updated_at_seconds
                     .and_then(|s| DateTime::from_timestamp(s, 0)),
             },
-            UnifiedSearchIndex::Email(a) => SearchHit {
-                entity_id: a.entity_id,
-                entity_type: SearchEntityType::Emails,
-                score: index.score,
-                highlight: index
-                    .highlight
-                    .map(|h| {
-                        parse_highlight_hit(
-                            h,
-                            Keys {
-                                title_key: EmailSearchConfig::TITLE_KEY,
-                                content_key: EmailSearchConfig::CONTENT_KEY,
-                            },
-                        )
-                    })
-                    .unwrap_or_default(),
-                goto: Some(SearchGotoContent::Emails(SearchGotoEmail {
-                    email_message_id: a.message_id,
-                    bcc: a.bcc,
-                    cc: a.cc,
-                    labels: a.labels,
-                    sent_at: a
+            UnifiedSearchIndex::Email(a) => {
+                let a = *a;
+                SearchHit {
+                    entity_id: a.entity_id,
+                    entity_type: SearchEntityType::Emails,
+                    score: index.score,
+                    highlight: index
+                        .highlight
+                        .map(|h| {
+                            parse_highlight_hit(
+                                h,
+                                Keys {
+                                    title_key: EmailSearchConfig::TITLE_KEY,
+                                    content_key: EmailSearchConfig::CONTENT_KEY,
+                                },
+                            )
+                        })
+                        .unwrap_or_default(),
+                    goto: Some(SearchGotoContent::Emails(SearchGotoEmail {
+                        email_message_id: a.message_id,
+                        bcc: a.bcc,
+                        cc: a.cc,
+                        labels: a.labels,
+                        sent_at: a
+                            .sent_at_seconds
+                            .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                        sender: a.sender,
+                        recipients: a.recipients,
+                    })),
+                    updated_at: a
                         .sent_at_seconds
-                        .and_then(|ts| DateTime::from_timestamp(ts, 0)),
-                    sender: a.sender,
-                    recipients: a.recipients,
-                })),
-                updated_at: a
-                    .sent_at_seconds
-                    .and_then(|s| DateTime::from_timestamp(s, 0)),
-            },
+                        .and_then(|s| DateTime::from_timestamp(s, 0)),
+                }
+            }
             UnifiedSearchIndex::Chat(a) => SearchHit {
                 entity_id: a.entity_id,
                 entity_type: SearchEntityType::Chats,
@@ -382,8 +446,13 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     })
                     .unwrap_or_default(),
                 goto: Some(SearchGotoContent::Chats(SearchGotoChat {
-                    chat_message_id: a.chat_message_id,
-                    role: a.role,
+                    // Flat-shape docs always carry chat_message_id +
+                    // role; the join-shape parent fallback path can
+                    // arrive here only when inner_hits was empty, in
+                    // which case we have no message-level identifier
+                    // to navigate to.
+                    chat_message_id: a.chat_message_id.unwrap_or_default(),
+                    role: a.role.unwrap_or_default(),
                 })),
                 updated_at: a
                     .updated_at_seconds
@@ -407,9 +476,13 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     .unwrap_or_default(),
                 goto: Some(SearchGotoContent::CallRecords(SearchGotoCallRecord {
                     channel_id: a.channel_id,
-                    transcript_id: a.transcript_id,
-                    speaker_id: a.speaker_id,
-                    sequence_num: a.sequence_num,
+                    // Flat-shape docs always carry transcript/speaker/sequence;
+                    // the join-shape parent fallback path only arrives here
+                    // when inner_hits was empty, in which case we have no
+                    // segment-level identifier to navigate to.
+                    transcript_id: a.transcript_id.unwrap_or_default(),
+                    speaker_id: a.speaker_id.unwrap_or_default(),
+                    sequence_num: a.sequence_num.unwrap_or_default(),
                     started_at: DateTime::from_timestamp(a.started_at_seconds, 0)
                         .unwrap_or_default(),
                     ended_at: a
@@ -494,7 +567,7 @@ fn build_unified_search_request(args: &UnifiedSearchArgs) -> Result<SearchReques
     let mut search_request_builder = SearchRequestBuilder::new();
 
     if let Some(cursor) = cursor {
-        search_request_builder.set_search_after(search_after(cursor));
+        search_request_builder.set_search_after(cursor.search_after());
     }
 
     search_request_builder.size(args.page_size + 1);
@@ -503,10 +576,7 @@ fn build_unified_search_request(args: &UnifiedSearchArgs) -> Result<SearchReques
         search_request_builder.collapse(Collapse::new("entity_id"));
     }
 
-    // Build sort
-    let sort = updated_at_sort();
-
-    for sort in sort {
+    for sort in updated_at_sort() {
         search_request_builder.add_sort(sort);
     }
 
@@ -551,7 +621,22 @@ pub(crate) async fn search_unified(
 
     tracing::trace!("search request {:?}", search_request);
 
-    let search_indices: Vec<&str> = args.search_indices.iter().map(|i| i.index_name()).collect();
+    // Documents, chats, and call records reads can be redirected to a
+    // side alias via DOCUMENTS_INDEX_NAME / CHATS_INDEX_NAME /
+    // CALL_RECORDS_INDEX_NAME for local end-to-end testing; every other
+    // entity type keeps its default alias.
+    let search_indices: Vec<&str> = args
+        .search_indices
+        .iter()
+        .map(|i| match i {
+            OpenSearchEntityType::Documents => crate::documents_shape::documents_search_alias(),
+            OpenSearchEntityType::Chats => crate::chats_shape::chats_search_alias(),
+            OpenSearchEntityType::CallRecords => {
+                crate::call_records_shape::call_records_search_alias()
+            }
+            other => other.index_name(),
+        })
+        .collect();
 
     let response = async {
         client
@@ -594,7 +679,12 @@ pub(crate) async fn search_unified(
         "opensearch response"
     );
 
-    let mut results: Vec<SearchHit> = result.hits.hits.into_iter().map(|h| h.into()).collect();
+    let mut results: Vec<SearchHit> = result
+        .hits
+        .hits
+        .into_iter()
+        .flat_map(expand_hit_into_search_hits)
+        .collect();
 
     let has_more = results.len() > args.page_size as usize;
 
@@ -603,9 +693,9 @@ pub(crate) async fn search_unified(
     }
 
     let cursor = if has_more {
-        SearchCursorOption::NotDone(results.last().map(|last| SearchMethodCursor {
+        SearchCursorOption::NotDone(results.last().map(|last| SearchMethodCursor::UpdatedAt {
             entity_id: last.entity_id,
-            updated_at: last.updated_at.unwrap_or(Utc::now()),
+            updated_at: last.updated_at.unwrap_or_else(Utc::now),
         }))
     } else {
         SearchCursorOption::Done

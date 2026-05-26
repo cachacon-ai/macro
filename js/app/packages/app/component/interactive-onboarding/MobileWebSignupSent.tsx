@@ -2,7 +2,7 @@ import { useAnalytics } from '@app/component/analytics-context';
 import { MOBILE_WEB_SIGNUP_LEAD_VALUE } from '@app/lib/analytics/leadValues';
 import { PcNoiseGrid } from '@core/component/PcNoiseGrid';
 import { getWebOrigin } from '@core/util/webOrigin';
-import LogoIcon from '@macro-icons/macro-logo.svg';
+import LogoIcon from '@icon/macro-logo.svg';
 import { onMount } from 'solid-js';
 
 type Props = {
@@ -34,7 +34,7 @@ export default function MobileWebSignupSent(props: Props) {
 
   return (
     <div class="flex flex-col size-full p-6 overflow-hidden relative">
-      <div class="inset-0 absolute text-edge bg-panel opacity-10 -z-1">
+      <div class="inset-0 absolute text-edge bg-surface opacity-10 -z-1">
         <PcNoiseGrid
           cellSize={30}
           warp={0}
@@ -63,7 +63,7 @@ export default function MobileWebSignupSent(props: Props) {
           onClick={() => {
             window.location.href = getWebOrigin();
           }}
-          class="w-full px-3 py-2.5 text-lg font-bold rounded-xs bg-accent text-panel border-none mt-16"
+          class="w-full px-3 py-2.5 text-lg font-bold rounded-xs bg-accent text-surface border-none mt-16"
         >
           Back to Home
         </button>

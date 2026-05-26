@@ -1,14 +1,11 @@
+import IconClipboard from '@phosphor-icons/core/regular/clipboard.svg?component-solid';
+import IconTrash from '@phosphor-icons/core/regular/trash.svg?component-solid';
 import { deleteTheme, exportTheme } from '../utils/themeUtils';
 import { userThemes } from '../signals/themeSignals';
-import { Button } from '@ui';
-import { LabelAndHotKey } from '@core/component/Tooltip';
 import { createMemo, Show } from 'solid-js';
-import IconClipboard from '@macro-icons/macro-clipboard.svg';
-import IconTrash from '@macro-icons/macro-trash.svg';
+import { Button } from '@ui';
 
-interface ThemeCrudProps {
-  themeId: string;
-}
+interface ThemeCrudProps { themeId: string; }
 
 export function ThemeCrud(props: ThemeCrudProps) {
   const isUserTheme = createMemo(() =>
@@ -35,7 +32,7 @@ export function ThemeCrud(props: ThemeCrudProps) {
       onPointerDown={stop}
     >
       <Button
-        tooltip={<LabelAndHotKey label="Copy To Clipboard" />}
+        label="Copy To Clipboard"
         onPointerDown={() => exportTheme(props.themeId)}
         variant="ghost"
         size="icon-sm"
@@ -48,7 +45,7 @@ export function ThemeCrud(props: ThemeCrudProps) {
           onPointerDown={() => {
             deleteTheme(props.themeId);
           }}
-          tooltip={<LabelAndHotKey label="Delete Theme" />}
+          label="Delete Theme"
           variant="ghost"
           size="icon-sm"
         >

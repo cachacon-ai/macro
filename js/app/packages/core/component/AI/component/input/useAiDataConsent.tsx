@@ -1,6 +1,5 @@
-import { LabelAndHotKey } from '@core/component/Tooltip';
 import { useAiDataConsent } from '@core/context/user';
-import CloseIcon from '@icon/regular/x.svg';
+import CloseIcon from '@phosphor/x.svg';
 import { invalidateUserInfo } from '@queries/auth/user-info';
 import { authServiceClient } from '@service-auth/client';
 import { Button, Dialog, Surface } from '@ui';
@@ -38,16 +37,12 @@ export function useAiDataConsentGate() {
         onOpenChange={(isOpen) => !isOpen && denyConsent()}
         class="w-120"
       >
-        <Surface depth={2} active>
+        <Surface depth={2} active class="rounded-xl">
           <div class="*:max-h-[75vh]">
             <div class="flex flex-row items-center justify-between px-2 h-10 gap-2 border-b border-b-edge-muted">
               <div class="flex flex-row items-center gap-2">
                 <Dialog.CloseButton>
-                  <Button
-                    tooltip={<LabelAndHotKey label="Close" />}
-                    variant="ghost"
-                    size="icon-sm"
-                  >
+                  <Button label="Close" variant="ghost" size="icon-sm">
                     <CloseIcon />
                   </Button>
                 </Dialog.CloseButton>

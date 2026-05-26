@@ -1,12 +1,12 @@
 import { toast } from '@core/component/Toast/Toast';
 import { debouncedDependent } from '@core/util/debounce';
-import { isErr } from '@core/util/maybeResult';
-import VideoIcon from '@icon/regular/file-video.svg';
-import LoadingSpinner from '@icon/regular/spinner.svg';
-import XIcon from '@icon/regular/x.svg';
+
 import { Dialog } from '@kobalte/core/dialog';
 import { mergeRegister } from '@lexical/utils';
 import { $isVideoNode, type VideoDecoratorProps } from '@lexical-core';
+import VideoIcon from '@phosphor/file-video.svg';
+import LoadingSpinner from '@phosphor/spinner.svg';
+import XIcon from '@phosphor/x.svg';
 import { debounce } from '@solid-primitives/scheduled';
 import { Button, cn } from '@ui';
 import {
@@ -92,15 +92,24 @@ export function MarkdownVideo(props: VideoDecoratorProps) {
       id: props.id,
       url: props.url,
     }).then((maybeUrl) => {
-      if (isErr(maybeUrl)) {
+      if (maybeUrl.isErr()) {
         setState('error');
-        if (isErr(maybeUrl, 'UNAUTHORIZED')) setVideoError('UNAUTHORIZED');
-        else if (isErr(maybeUrl, 'MISSING')) setVideoError('MISSING');
-        else if (isErr(maybeUrl, 'GONE')) setVideoError('GONE');
+        if (
+          maybeUrl.isErr() &&
+          maybeUrl.error.some((error) => error.code === 'UNAUTHORIZED')
+        )
+          setVideoError('UNAUTHORIZED');
+        else if (maybeUrl.error.some((error) => error.code === 'NOT_FOUND'))
+          setVideoError('MISSING');
+        else if (
+          maybeUrl.isErr() &&
+          maybeUrl.error.some((error) => error.code === 'GONE')
+        )
+          setVideoError('GONE');
         else setVideoError('FALLBACK');
         return;
       }
-      const url = maybeUrl[1];
+      const url = maybeUrl.value;
       setVideoUrl(url);
       if (props.srcType === 'dss') {
         editor()?.update(
@@ -254,7 +263,8 @@ export function MarkdownVideo(props: VideoDecoratorProps) {
         class={cn(
           'relative max-w-full my-4 grid place-items-center mx-auto',
           isSelectedAsNode() && 'ring-3 ring-edge-muted',
-          state() === 'error' && 'media-error min-h-44'
+          state() === 'error' &&
+            'pattern-edge-muted pattern-diagonal-8 min-h-44'
         )}
         style={{
           'max-height': `${videoDims() ? videoDims()[1] * scale() : 640}px`,
@@ -336,7 +346,7 @@ export function MarkdownVideo(props: VideoDecoratorProps) {
             (state() === 'ok' || state() === 'error')
           }
         >
-          <div class="size-full absolute top-0 left-0 pointer-events-none bg-edge" />
+          <div class="size-full absolute top-0 left-0 pointer-events-none bg-edge/10" />
           <MediaButtons
             delete={interactable() ? deleteVideo : undefined}
             enlarge={state() === 'ok' ? viewFull : undefined}
@@ -356,7 +366,7 @@ export function MarkdownVideo(props: VideoDecoratorProps) {
         <Dialog.Overlay class="fixed inset-0 z-modal bg-modal-overlay items-center justify-center" />
         <div class="fixed inset-0 z-modal w-screen h-screen flex items-center justify-center bg-transparent">
           <Dialog.Content class="relative max-w-[65%] max-h-[80vh] flex items-center justify-center">
-            <div class="absolute bg-dialog top-2 right-2 flex flex-row z-10">
+            <div class="absolute bg-surface top-2 right-2 flex flex-row z-10">
               <Dialog.CloseButton>
                 <Button variant="ghost" size="icon-md">
                   <XIcon />

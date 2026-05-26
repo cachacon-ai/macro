@@ -1,6 +1,5 @@
-import { LabelAndHotKey } from '@core/component/Tooltip';
-import FormatIcon from '@icon/regular/text-aa.svg';
-import TrashIcon from '@icon/regular/trash.svg';
+import FormatIcon from '@phosphor/text-aa.svg';
+import TrashIcon from '@phosphor/trash.svg';
 import PaperclipIcon from '@phosphor-icons/core/regular/paperclip.svg?component-solid';
 import { Button, cn } from '@ui';
 import { children, type JSX, Show, splitProps } from 'solid-js';
@@ -18,7 +17,7 @@ export function InputActionButton(props: {
     <Button
       title={props.label}
       aria-label={props.label}
-      tooltip={<LabelAndHotKey label={props.label} />}
+      label={props.label}
       onClick={(event) => props.onClick?.(event)}
       classList={{ 'bg-active': props.active }}
     >

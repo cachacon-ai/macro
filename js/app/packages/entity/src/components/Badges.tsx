@@ -1,5 +1,7 @@
 import { UserIcon } from '@core/component/UserIcon';
-import { cn } from '@ui';
+import { tryMacroId, useDisplayName } from '@core/user';
+import UserPlus from '@phosphor/user-plus.svg';
+import { cn, HoverCard } from '@ui';
 import type { ParentProps } from 'solid-js';
 
 function Badge(props: ParentProps<{ class?: string }>) {
@@ -25,11 +27,75 @@ export function SharedBadge(props: { ownerId: string }) {
   );
 }
 
+export function SharedBadgeSmall(props: { ownerId: string }) {
+  const id = () => tryMacroId(props.ownerId);
+  const name = () => {
+    const currentId = id();
+    if (currentId) {
+      let [name] = useDisplayName(currentId);
+      return name;
+    }
+    return () => undefined;
+  };
+
+  return (
+    <HoverCard
+      content={
+        <div class="flex items-center gap-1.5 text-xs">
+          <UserIcon
+            id={props.ownerId}
+            size="sm"
+            suppressClick
+            showTooltip={false}
+          />
+          <span>{name()()} shared this with you</span>
+        </div>
+      }
+    >
+      <div class="text-ink-extra-muted/50 p-1">
+        <UserPlus class="size-4" />
+      </div>
+    </HoverCard>
+  );
+}
+
+export function CreatedByBadgeSmall(props: { ownerId: string }) {
+  const id = () => tryMacroId(props.ownerId);
+  const name = () => {
+    const currentId = id();
+    if (currentId) {
+      let [name] = useDisplayName(currentId);
+      return name;
+    }
+    return () => undefined;
+  };
+
+  return (
+    <HoverCard
+      content={
+        <div class="flex items-center gap-1.5 text-xs">
+          <UserIcon
+            id={props.ownerId}
+            size="sm"
+            suppressClick
+            showTooltip={false}
+          />
+          <span>Created by {name()()}</span>
+        </div>
+      }
+    >
+      <div class="text-ink-extra-muted/50 p-1">
+        <UserPlus class="size-4" />
+      </div>
+    </HoverCard>
+  );
+}
+
 export function DraftBadge() {
   return <Badge class="text-accent-30 border-edge-muted px-2">draft</Badge>;
 }
 
-export function ImportantBadge() {
+function _ImportantBadge() {
   return (
     <Badge class="text-accent bg-accent/10 px-2 border-accent/10">
       important

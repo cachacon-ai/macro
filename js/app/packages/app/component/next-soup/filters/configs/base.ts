@@ -15,13 +15,29 @@ export const IMAGE_EXTENSIONS = [
   'webp',
 ] as const;
 
+// NOTE: inlined from the block-video definition to avoid circular dependency
+export const VIDEO_EXTENSIONS = [
+  'mp4',
+  'mkv',
+  'webm',
+  'avi',
+  'mov',
+  'wmv',
+  'mpg',
+  'mpeg',
+  'm4v',
+  'flv',
+  'f4v',
+  'threegp',
+] as const;
+
 export const isEmail = { exclude: { threadId: [NIL_UUID] } };
 export const isAgent = { exclude: { chatId: [NIL_UUID] } };
 export const isTask = { include: { subType: ['task'] } };
 export const isNotTask = { exclude: { subType: ['task'] } };
 export const isEmailAttachment = { include: { isEmailAttachment: true } };
-export const isChannel = { exclude: { channelId: [NIL_UUID] } };
-export const isFolder = { exclude: { folderId: [NIL_UUID] } };
+const _isChannel = { exclude: { channelId: [NIL_UUID] } };
+const _isFolder = { exclude: { folderId: [NIL_UUID] } };
 
 export type FilterContext = {
   userId?: string;
@@ -31,10 +47,10 @@ export type FilterContext = {
 
 export type Predicate = (entity: EntityData, ctx: FilterContext) => boolean;
 
-export type QueryInput = Query;
-export type QueryFn = (ctx: FilterContext) => QueryInput;
+type QueryInput = Query;
+type QueryFn = (ctx: FilterContext) => QueryInput;
 
-export type FilterDefinition<TId extends string = string> = {
+type FilterDefinition<TId extends string = string> = {
   id: TId;
   group?: string;
   predicate: Predicate;

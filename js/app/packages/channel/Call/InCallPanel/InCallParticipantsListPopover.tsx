@@ -1,18 +1,14 @@
 import { useSplitLayout } from '@app/component/split-layout/layout';
 import { toast } from '@core/component/Toast/Toast';
 import { tryMacroId, useDisplayName } from '@core/user';
-import UserCircle from '@icon/regular/user-circle.svg';
 import { Popover } from '@kobalte/core/popover';
+import UsersThree from '@phosphor/users-three.svg';
 import { useGetOrCreateDirectMessageMutation } from '@queries/channel/get-or-create-dm';
-import { cn } from '@ui';
+import { cn, Surface } from '@ui';
 import { createMemo, createSignal, For, Show } from 'solid-js';
 import { InCallParticipantAvatar } from './InCallParticipantAvatar';
 import { profilePictureIdForMember } from './profile-picture-id-for-member';
 import type { InCallPanelMember, UseInCallPanelResult } from './types';
-
-/** Shared shell for “In this call” (popover content + +N tooltip). */
-export const IN_CALL_ROSTER_CARD_CLASS =
-  'z-modal min-w-[12rem] max-w-[18rem] rounded-md border border-edge-muted bg-panel shadow-lg';
 
 export function InCallRosterListSection(props: {
   panel: UseInCallPanelResult;
@@ -147,23 +143,25 @@ export function InCallParticipantsListPopover(
         as="button"
         type="button"
         class={cn(
-          'inline-flex items-center justify-center rounded-full bg-transparent p-0 transition-colors hover:bg-accent/15 text-accent',
+          'inline-flex items-center justify-center rounded-md bg-transparent p-0.5 transition-colors text-ink-muted hover:text-ink hover:bg-ink-muted/[0.06]',
           props.class
         )}
         aria-haspopup="dialog"
         aria-expanded={open()}
         aria-label="Everyone in call"
       >
-        <UserCircle class="block size-4" />
+        <UsersThree class="block size-4" />
       </Popover.Trigger>
 
       <Popover.Portal>
-        <Popover.Content class={IN_CALL_ROSTER_CARD_CLASS}>
-          <InCallRosterListSection
-            panel={props.panel}
-            members={members()}
-            onClose={() => setOpen(false)}
-          />
+        <Popover.Content class="z-modal">
+          <Surface depth={3} class="min-w-48 max-w-72">
+            <InCallRosterListSection
+              panel={props.panel}
+              members={members()}
+              onClose={() => setOpen(false)}
+            />
+          </Surface>
         </Popover.Content>
       </Popover.Portal>
     </Popover>

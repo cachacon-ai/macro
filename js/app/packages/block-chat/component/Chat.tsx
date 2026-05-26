@@ -40,8 +40,8 @@ import {
 } from '@core/signal/blockElement';
 import { blockHandleSignal } from '@core/signal/load';
 import { useCanEdit } from '@core/signal/permissions';
-import ChatDebugIcon from '@icon/regular/chat-text.svg';
 import { createRenameDssEntityMutation } from '@macro-entity';
+import ChatDebugIcon from '@phosphor/chat-text.svg';
 import { invalidateUserQuota } from '@queries/auth';
 import { cognitionApiServiceClient } from '@service-cognition/client';
 import { createCallback } from '@solid-primitives/rootless';
@@ -252,7 +252,7 @@ function ChatInner(props: {
 
   return (
     <DragDropWrapper
-      class="size-full bg-panel overscroll-none overflow-hidden flex flex-col"
+      class="size-full bg-surface overscroll-none overflow-hidden flex flex-col"
       isEntityDraggingOver={isDraggingOver}
     >
       <Show when={!isNestedBlock}>
@@ -271,12 +271,11 @@ function ChatInner(props: {
             }
           >
             <ChatDebugIcon />
-            {/*{showStreamDebug() ? 'Hide' : 'Show'} Stream Debug*/}
           </Button>
         </Show>
       </SplitToolbarLeft>
       <Show when={showStreamDebug()}>
-        <div class="px-2 py-1 bg-menu border-b border-edge text-ink font-mono text-sm">
+        <div class="px-2 py-1 bg-surface border-b border-edge text-ink font-mono text-sm">
           <Show when={chat.stream()} fallback={<div>No active stream</div>}>
             {(stream) => (
               <div class="flex gap-x-4">

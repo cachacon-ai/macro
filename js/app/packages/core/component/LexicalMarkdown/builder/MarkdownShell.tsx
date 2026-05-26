@@ -188,7 +188,10 @@ export const MarkdownShell: Component<
   return (
     <LexicalWrapperContext.Provider value={lexicalWrapper}>
       <div
-        class={cn('relative h-full overflow-y-auto min-h-8', props.class)}
+        class={cn(
+          'relative h-full overflow-y-auto min-h-8 scrollbar-hidden',
+          props.class
+        )}
         on:keydown={(e) => e.stopPropagation()}
         on:click={(e) => {
           e.stopPropagation();
@@ -225,7 +228,7 @@ export const MarkdownShell: Component<
         </Show>
 
         <Show when={showPlaceholder()}>
-          <div class="pointer-events-none text-ink-placeholder/50 absolute top-0">
+          <div class="pointer-events-none text-ink-placeholder absolute top-0">
             <p class="my-1.5 pointer-events-none">
               {props.placeholder ?? '...'}
             </p>

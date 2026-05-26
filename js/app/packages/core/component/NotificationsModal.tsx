@@ -2,19 +2,19 @@ import { SplitDrawer } from '@app/component/split-layout/components/SplitDrawer'
 import { useDrawerControl } from '@app/component/split-layout/components/SplitDrawerContext';
 import clickOutside from '@core/directive/clickOutside';
 import type { Entity } from '@core/types';
-import Bell from '@icon/regular/bell.svg';
 import {
   type NotificationSource,
   useNotificationsForEntity,
 } from '@notifications';
+import Bell from '@phosphor/bell.svg';
 import { Button, cn } from '@ui';
 import { createMemo, Show, Suspense } from 'solid-js';
 import { Notifications } from './Notifications';
 
 false && clickOutside;
-export const NOTIFICATIONS_DRAWER_ID = 'notifications';
+const NOTIFICATIONS_DRAWER_ID = 'notifications';
 
-export function NotificationsButton(props: {
+function _NotificationsButton(props: {
   entity: Entity;
   notificationSource: NotificationSource;
   buttonSize?: 'sm';
@@ -29,12 +29,12 @@ export function NotificationsButton(props: {
     () => notifications().filter((n) => !n.viewed_at).length
   );
   return (
-    <div class="relative" tabIndex={-1}>
+    <div class="relative p-0 flex" tabIndex={-1}>
       <Button
         class={cn(
           'px-1',
           drawerControl.isOpen() &&
-            'bg-accent/20 hover:bg-accent/30 text-accent-ink'
+            'bg-accent/20 hover:bg-accent/30 text-accent'
         )}
         tooltip="View notifications"
         onClick={() => {
@@ -47,7 +47,7 @@ export function NotificationsButton(props: {
       </Button>
       <Suspense fallback={null}>
         <Show when={unreadCount() > 0}>
-          <div class="text-[6pt] bg-accent text-page font-semibold rounded-full absolute top-0 right-0 px-1 pointer-events-none">
+          <div class="text-[6pt] bg-accent text-surface font-semibold rounded-full absolute top-0 right-0 px-1 pointer-events-none">
             {unreadCount()}
           </div>
         </Show>

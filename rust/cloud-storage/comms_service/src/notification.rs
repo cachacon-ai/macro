@@ -32,6 +32,7 @@ struct ChannelMessageEvent<'a> {
     participants: &'a [ChannelParticipant],
     thread_participants: &'a [MacroUserIdStr<'static>],
     thread_parent_sender_id: Option<MacroUserIdStr<'static>>,
+    has_attachments: bool,
     sender_profile_picture_url: Option<String>,
     /// Pre-computed set of existing user IDs; used by the `(0, None)` invite
     /// branch to split recipients into push vs email delivery.
@@ -64,6 +65,7 @@ impl ChannelMessageEvent<'_> {
                         notification: ChannelMentionMetadata {
                             message_content: self.message.content.clone(),
                             message_id: self.message.id.to_string(),
+                            has_attachments: self.has_attachments,
                             thread_id: self.message.thread_id.map(|t| t.to_string()),
                             common: self.channel_metadata.clone(),
                             sender_profile_picture_url: self.sender_profile_picture_url.clone(),
@@ -104,7 +106,16 @@ impl ChannelMessageEvent<'_> {
                                     Some("task") => Some(NotificationDocumentSubType::Task),
                                     _ => None,
                                 },
-                                sender_profile_picture_url: self.sender_profile_picture_url.clone(),
+                                channel: ChannelMentionMetadata {
+                                    message_content: self.message.content.clone(),
+                                    message_id: self.message.id.to_string(),
+                                    has_attachments: self.has_attachments,
+                                    thread_id: self.message.thread_id.map(|t| t.to_string()),
+                                    common: self.channel_metadata.clone(),
+                                    sender_profile_picture_url: self
+                                        .sender_profile_picture_url
+                                        .clone(),
+                                },
                             },
                             sender_id: sender(),
                             recipient_ids: doc_recipients.clone(),
@@ -143,6 +154,7 @@ impl ChannelMessageEvent<'_> {
                                     message_id: self.message.id.to_string(),
                                     user_id: self.message.sender_id.clone(),
                                     message_content: self.message.content.clone(),
+                                    has_attachments: self.has_attachments,
                                     thread_parent_sender_id: self.thread_parent_sender_id.clone(),
                                     common: self.channel_metadata.clone(),
                                     sender_profile_picture_url: self
@@ -178,6 +190,7 @@ impl ChannelMessageEvent<'_> {
                     recipients_without_sender_and_mentions.into_iter().collect(),
                     self.existing_user_ids.clone(),
                     self.sender_profile_picture_url.clone(),
+                    Some(self.message.content.clone()),
                     self.channel_metadata.clone(),
                 )
                 .await?;
@@ -192,6 +205,7 @@ impl ChannelMessageEvent<'_> {
                                 message_id: self.message.id.to_string(),
                                 sender: self.message.sender_id.clone(),
                                 message_content: self.message.content.to_string(),
+                                has_attachments: self.has_attachments,
                                 common: self.channel_metadata.clone(),
                                 sender_profile_picture_url: self.sender_profile_picture_url.clone(),
                             },
@@ -211,6 +225,7 @@ impl ChannelMessageEvent<'_> {
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 pub async fn dispatch_notifications_for_invite(
     ingres: &impl NotificationIngress,
     channel_id: &Uuid,
@@ -218,6 +233,7 @@ pub async fn dispatch_notifications_for_invite(
     recipient_user_ids: Vec<MacroUserIdStr<'_>>,
     existing_user_ids: HashSet<String>,
     sender_profile_picture_url: Option<String>,
+    message_content: Option<String>,
     common: CommonChannelMetadata,
 ) -> anyhow::Result<()> {
     let (existing_users, not_existing_users): (HashSet<_>, HashSet<_>) = recipient_user_ids
@@ -231,6 +247,7 @@ pub async fn dispatch_notifications_for_invite(
                 notification: ChannelInviteMetadata {
                     invited_by: invited_by_user_id.clone(),
                     channel_name: common.channel_name.clone(),
+                    message_content: message_content.clone(),
                     sender_profile_picture_url: sender_profile_picture_url.clone(),
                 },
                 sender_id: Some(invited_by_user_id.copied().into_owned()),
@@ -246,6 +263,7 @@ pub async fn dispatch_notifications_for_invite(
                 notification: ChannelInviteMetadata {
                     invited_by: invited_by_user_id.clone(),
                     channel_name: common.channel_name.clone(),
+                    message_content,
                     sender_profile_picture_url,
                 },
                 sender_id: Some(invited_by_user_id.copied().into_owned()),
@@ -267,6 +285,7 @@ pub async fn dispatch_notifications_for_message(
     participants: Vec<ChannelParticipant>,
     message: Message,
     mentions: Vec<SimpleMention>,
+    has_attachments: bool,
 ) -> anyhow::Result<()> {
     // The message is already persisted before this task runs, so the row
     // count includes the message we just created — the first message in a
@@ -343,6 +362,7 @@ pub async fn dispatch_notifications_for_message(
         participants: &participants,
         thread_participants: &thread_participants,
         thread_parent_sender_id,
+        has_attachments,
         sender_profile_picture_url,
         existing_user_ids,
     }

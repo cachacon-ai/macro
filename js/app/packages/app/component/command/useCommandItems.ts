@@ -1,7 +1,5 @@
 import { GO_TO_COMMAND_SCOPE, GO_TO_LEADER_KEY } from '@app/constants/hotkeys';
-import type { HotkeySequenceStep } from '@core/component/Tooltip';
 import {
-  type Bucket,
   type EntityItem,
   exclude,
   type QuickAccessItem,
@@ -24,7 +22,7 @@ import { mergeSortedArrays } from '@core/util/list';
 import { createMemo } from 'solid-js';
 import { getCommandLastUsedAt } from './recency';
 import { CommandState } from './state';
-import type { CategoryFilter } from './types';
+import type { CategoryFilter, DisplayHotkeyStep } from './types';
 
 /** Command item type - local to command menu, not part of quickAccess */
 type CommandItem = {
@@ -36,7 +34,7 @@ type CommandItem = {
   timestamps: TimestampedItem;
   data: HotkeyCommand;
   displayHotkey?: string;
-  displayHotkeySequence?: HotkeySequenceStep[];
+  displayHotkeySequence?: DisplayHotkeyStep[];
 };
 
 /** Search item: triggers full-text search in the sidebar Search view */
@@ -62,7 +60,7 @@ function isEntityItem(item: CommandMenuItem): item is EntityItem {
   return item.kind === 'entity';
 }
 
-function isUserItem(item: CommandMenuItem): item is UserItem {
+function _isUserItem(item: CommandMenuItem): item is UserItem {
   return item.kind === 'user';
 }
 
@@ -116,7 +114,7 @@ function commandsToItems(
     displayHotkey?: (command: CommandWithInfo) => string | undefined;
     displayHotkeySequence?: (
       command: CommandWithInfo
-    ) => HotkeySequenceStep[] | undefined;
+    ) => DisplayHotkeyStep[] | undefined;
   }
 ): CommandItem[] {
   const seen = new Set<string>();
@@ -298,11 +296,5 @@ export function useCommandItems(
   return filteredItems;
 }
 
-export type {
-  Bucket,
-  CommandItem,
-  CommandMenuItem,
-  QuickAccessItem,
-  SearchItem,
-};
-export { isCommandItem, isEntityItem, isSearchItem, isUserItem };
+export type { CommandMenuItem, SearchItem };
+export { isCommandItem, isEntityItem, isSearchItem };

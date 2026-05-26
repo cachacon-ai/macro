@@ -1,5 +1,5 @@
-import Subtitles from '@phosphor-icons/core/assets/regular/subtitles.svg';
-import UsersThree from '@phosphor-icons/core/assets/regular/users-three.svg';
+import Subtitles from '@phosphor/subtitles.svg';
+import UsersThree from '@phosphor/users-three.svg';
 import type { CallRecord } from '@service-storage/generated/schemas/callRecord';
 import { cn } from '@ui';
 import type { Accessor } from 'solid-js';
@@ -47,6 +47,19 @@ export function CallRecordingTranscriptColumn(props: {
               : 'flex min-h-0 flex-1 flex-col @[860px]:h-full @[860px]:min-h-0 @[860px]:min-w-[40cqw]'
           )}
         >
+          <Show when={props.isStacked()}>
+            <CallRecordingSectionShell
+              title="Participants"
+              icon={<UsersThree class="size-4 text-ink shrink-0" />}
+              open={props.participantsOpen()}
+              accordion
+              accordionOpenMaxVh={38}
+              onToggle={props.onToggleParticipants}
+            >
+              <CallRecordingParticipantsSection record={props.record} />
+            </CallRecordingSectionShell>
+          </Show>
+
           <CallRecordingSectionShell
             title="Transcript"
             icon={<Subtitles class="size-4 text-ink shrink-0" />}
@@ -66,22 +79,6 @@ export function CallRecordingTranscriptColumn(props: {
               hideHeader
             />
           </CallRecordingSectionShell>
-
-          <Show when={props.isStacked()}>
-            <CallRecordingSectionShell
-              title="Participants"
-              icon={<UsersThree class="size-4 text-ink shrink-0" />}
-              open={props.participantsOpen()}
-              accordion
-              accordionOpenMaxVh={38}
-              onToggle={props.onToggleParticipants}
-            >
-              <CallRecordingParticipantsSection
-                record={props.record}
-                withShell={false}
-              />
-            </CallRecordingSectionShell>
-          </Show>
         </div>
       </Show>
     </div>

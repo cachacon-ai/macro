@@ -10,7 +10,7 @@ mod handle_pr;
 use crate::domain::{
     models::{
         GithubError, GithubInstallationAccessToken, GithubKey, GithubWebhookEventType, MacroTaskId,
-        ValidatedGithubWebhookEvent,
+        TeamTaskReference, ValidatedGithubWebhookEvent,
     },
     ports::{GithubSyncClient, GithubSyncRepo, GithubSyncService},
 };
@@ -18,7 +18,7 @@ use documents::domain::{models::DocumentError, ports::DocumentService};
 use entity_access::domain::models::{EditAccessLevel, ViewAccessLevel};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -132,6 +132,61 @@ impl<D: DocumentService, R: GithubSyncRepo, C: GithubSyncClient> GithubSyncServi
         }
     }
 
+    /// Extract both legacy `MACRO-{short_uuid}` IDs and team-scoped
+    /// `{team_slug}-{team_task_id}` references from text.
+    #[tracing::instrument(skip(self, event, text))]
+    async fn extract_task_ids_from_text(
+        &self,
+        event: &ValidatedGithubWebhookEvent,
+        text: &str,
+    ) -> Vec<MacroTaskId> {
+        let mut task_ids = MacroTaskId::extract_from_text(text);
+        let legacy_task_id_count = task_ids.len();
+        let team_task_refs = TeamTaskReference::extract_from_text(text);
+
+        if !team_task_refs.is_empty() {
+            if let Some(installation_id) = event.installation_id() {
+                let installation_id = installation_id.to_string();
+                match self
+                    .repo
+                    .resolve_team_task_references(&installation_id, &team_task_refs)
+                    .await
+                {
+                    Ok(mut resolved_team_task_ids) => {
+                        tracing::trace!(
+                            team_task_ref_count = team_task_refs.len(),
+                            resolved_team_task_id_count = resolved_team_task_ids.len(),
+                            "resolved team task references from webhook text"
+                        );
+                        task_ids.append(&mut resolved_team_task_ids);
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error=?e,
+                            team_task_ref_count = team_task_refs.len(),
+                            "failed to resolve team task references"
+                        );
+                    }
+                }
+            } else {
+                tracing::debug!(
+                    team_task_ref_count = team_task_refs.len(),
+                    "found team task references but webhook payload has no installation id"
+                );
+            }
+        }
+
+        let task_ids = dedupe_task_ids(task_ids);
+        tracing::trace!(
+            legacy_task_id_count,
+            team_task_ref_count = team_task_refs.len(),
+            total_task_id_count = task_ids.len(),
+            task_ids = ?task_ids.iter().map(|t| t.to_task_id_string()).collect::<Vec<_>>(),
+            "extracted task IDs from webhook text"
+        );
+        task_ids
+    }
+
     /// Resolve task IDs to documents, returning doc IDs and markdown links
     /// for all tasks that are actually task-type documents.
     #[tracing::instrument(skip(self, task_ids))]
@@ -171,11 +226,11 @@ impl<D: DocumentService, R: GithubSyncRepo, C: GithubSyncClient> GithubSyncServi
 
             match self.document_service.get_document(entity_access).await {
                 Ok(document) => {
-                    if let Some(sub_type) = document.document_metadata.sub_type
+                    if let Some(sub_type) = document.document_metadata.metadata.sub_type
                         && sub_type.to_string() == "task"
                     {
-                        let doc_name = &document.document_metadata.document_name;
-                        let doc_id = &document.document_metadata.document_id;
+                        let doc_name = &document.document_metadata.metadata.document_name;
+                        let doc_id = &document.document_metadata.metadata.document_id;
                         tracing::trace!(task_id=%uuid, doc_id, doc_name, "resolved task document");
 
                         doc_ids.push(doc_id.clone());
@@ -367,6 +422,19 @@ impl<D: DocumentService, R: GithubSyncRepo, C: GithubSyncClient> GithubSyncServi
             .generate_installation_access_token(&jwt, installation_id)
             .await
     }
+}
+
+fn dedupe_task_ids(task_ids: Vec<MacroTaskId>) -> Vec<MacroTaskId> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+
+    for task_id in task_ids {
+        if seen.insert(task_id.short_uuid.clone()) {
+            deduped.push(task_id);
+        }
+    }
+
+    deduped
 }
 
 /// Creates a macro task comment given the document name and id

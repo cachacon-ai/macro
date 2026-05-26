@@ -10,19 +10,16 @@ import {
 import { useGetChatAttachmentInfo } from '@core/component/AI/signal/attachment';
 import { setPendingSendData } from '@core/component/AI/signal/pendingSend';
 import { deriveChatName } from '@core/component/AI/util/deriveName';
-import { Hotkey } from '@core/component/Hotkey';
-import { Tooltip } from '@core/component/Tooltip';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
-import { pressedKeys } from '@core/hotkey/state';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isPaymentError } from '@core/util/handlePaymentError';
-import { isErr } from '@core/util/maybeResult';
+
 import { createRenameDssEntityMutation } from '@macro-entity';
 import { invalidateAllSoup } from '@queries/soup/cache';
 import { cognitionApiServiceClient } from '@service-cognition/client';
 import { ChatInput } from 'core/component/AI/component/input/ChatInput';
 import { registerHotkey, useHotkeyDOMScope } from 'core/hotkey/hotkeys';
-import { createSignal, onCleanup, onMount } from 'solid-js';
+import { onMount } from 'solid-js';
 import { useSplitPanelOrThrow } from './split-layout/layoutUtils';
 
 function SoupChatInputInner() {
@@ -46,21 +43,10 @@ function SoupChatInputInner() {
 
   const [attachHotkeys] = useHotkeyDOMScope('soup.chatInput');
 
-  const [chatHasFocus, setChatHasFocus] = createSignal(false);
-  const metaHeld = () => chatHasFocus() && pressedKeys().has('cmd');
-
   let containerRef!: HTMLDivElement;
 
   onMount(() => {
     attachHotkeys(containerRef);
-    const focusIn = () => setChatHasFocus(true);
-    const focusOut = () => setChatHasFocus(false);
-    containerRef.addEventListener('focusin', focusIn);
-    containerRef.addEventListener('focusout', focusOut);
-    onCleanup(() => {
-      containerRef.removeEventListener('focusin', focusIn);
-      containerRef.removeEventListener('focusout', focusOut);
-    });
   });
 
   // cmd+j - Focus AI chat
@@ -88,14 +74,14 @@ function SoupChatInputInner() {
 
     // Create a new persistent chat
     const response = await cognitionApiServiceClient.createChat({});
-    if (isErr(response)) {
+    if (response.isErr()) {
       if (isPaymentError(response)) {
         const { showPaywall } = usePaywallState();
         showPaywall(PaywallKey.CHAT_LIMIT);
       }
       return;
     }
-    const [, { id: chatId }] = response;
+    const { id: chatId } = response.value;
 
     // Rename via mutation for optimistic cache updates (history, preview, soup)
     const name = deriveChatName(request.content);
@@ -138,7 +124,7 @@ function SoupChatInputInner() {
       class="absolute bottom-0 inset-x-px pb-2 px-2 flex justify-center pointer-events-none"
       classList={{ hidden: !!soup.previewEntity() }}
       style={{
-        'background-image': `linear-gradient(transparent, var(--color-panel) 85%)`,
+        'background-image': `linear-gradient(transparent, var(--color-surface) 85%)`,
       }}
     >
       <div class="w-full max-w-3xl">
@@ -152,27 +138,6 @@ function SoupChatInputInner() {
             }}
             isPersistent={true}
             autoFocusOnMount={false}
-            extraRightControls={() => (
-              <Tooltip tooltip="⌘ Enter to send in background" placement="top">
-                <div
-                  class="flex items-center gap-1"
-                  classList={{
-                    'text-accent': metaHeld(),
-                  }}
-                >
-                  <div
-                    class="flex border text-xxs rounded-xs items-center px-1 py-0.5"
-                    classList={{
-                      'border-accent text-accent': metaHeld(),
-                      'border-edge-muted': !metaHeld(),
-                    }}
-                  >
-                    <Hotkey shortcut="cmd+Enter" />
-                  </div>
-                  <span>Background</span>
-                </div>
-              </Tooltip>
-            )}
           />
         </div>
       </div>

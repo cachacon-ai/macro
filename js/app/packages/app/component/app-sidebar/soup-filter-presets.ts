@@ -5,16 +5,20 @@ import {
   type Query,
 } from '@app/component/next-soup/filters/filter-store';
 import type { ListView } from '@app/constants/list-views';
-import {
-  PROPERTY_OPTION_IDS,
-  SYSTEM_PROPERTY_IDS,
-} from '@core/component/Properties/constants';
+import { PROPERTY_OPTION_IDS, SYSTEM_PROPERTY_IDS } from '@property/constants';
+import { subWeeks } from 'date-fns';
 
-export type SoupFiltersPreset = {
+type SoupFiltersPreset = {
   /** Filter data for server query */
   filters: Query;
   /** Client filters to apply */
   clientFilters: { and?: FilterID[]; or?: FilterID[] };
+  /**
+   * Initial group-by to apply when this tab is selected. Uses the same id
+   * format consumed by `soup.grouping.setActiveGroupId` (e.g. `date`,
+   * `entity_type`, `project`, or `property:<definition-id>`).
+   */
+  groupBy?: string;
 };
 
 // Tab preset configuration types
@@ -23,30 +27,35 @@ export type PresetContext = {
   email: string | undefined;
 };
 
-export type TabPresetResolver = (
-  ctx: PresetContext
-) => SoupFiltersPreset | undefined;
+type TabPresetResolver = (ctx: PresetContext) => SoupFiltersPreset | undefined;
 
-export type TabConfig = Record<string, TabPresetResolver>;
+type TabConfig = Record<string, TabPresetResolver>;
 
-export type ViewTabConfig = {
+type ViewTabConfig = {
   default: string;
   tabs: TabConfig;
 };
 
-/** Filters for inbox/signal: not done, importance=true for emails */
-const INBOX_SIGNAL_FILTERS = defineQueryFilters({
-  include: {
-    documentDone: false,
-    emailDone: false,
-    emailImportance: true,
-    channelDone: false,
-    chatDone: false,
-    folderDone: false,
-    emailShared: 'exclude',
-  },
-  emailView: 'inbox',
-});
+/** Filters for inbox/signal: not done, importance=true for emails, 2-week window */
+const getInboxSignalFilters = () => {
+  const twoWeeksAgo = subWeeks(new Date(), 2).toISOString();
+  return defineQueryFilters({
+    include: {
+      documentDone: false,
+      documentUpdatedAt: { gte: twoWeeksAgo },
+      emailDone: false,
+      emailImportance: true,
+      emailUpdatedAt: { gte: twoWeeksAgo },
+      channelDone: false,
+      chatDone: false,
+      chatUpdatedAt: { gte: twoWeeksAgo },
+      folderDone: false,
+      folderUpdatedAt: { gte: twoWeeksAgo },
+      emailShared: 'exclude',
+    },
+    emailView: 'inbox',
+  });
+};
 
 /** Filters for inbox/noise: not done, importance=false for emails */
 const INBOX_NOISE_FILTERS = defineQueryFilters({
@@ -67,7 +76,7 @@ export const VIEW_TAB_PRESETS: Record<ListView, ViewTabConfig> = {
     default: 'signal',
     tabs: {
       signal: () => ({
-        filters: INBOX_SIGNAL_FILTERS,
+        filters: getInboxSignalFilters(),
         clientFilters: { and: ['inbox'] },
       }),
       noise: () => ({
@@ -265,6 +274,7 @@ export const VIEW_TAB_PRESETS: Record<ListView, ViewTabConfig> = {
             },
           }),
           clientFilters: { and: ['task', 'assigned-to', 'active-task'] },
+          groupBy: `property:${SYSTEM_PROPERTY_IDS.PRIORITY}`,
         };
       },
       'created-by-me': (ctx) => {
@@ -274,6 +284,7 @@ export const VIEW_TAB_PRESETS: Record<ListView, ViewTabConfig> = {
             include: { subType: ['task'], documentOwnerId: [ctx.userId] },
           }),
           clientFilters: { and: ['task', 'active-task', 'owned-entity'] },
+          groupBy: `property:${SYSTEM_PROPERTY_IDS.STATUS}`,
         };
       },
       all: () => ({
@@ -281,6 +292,7 @@ export const VIEW_TAB_PRESETS: Record<ListView, ViewTabConfig> = {
           include: { subType: ['task'] },
         }),
         clientFilters: { and: ['task'] },
+        groupBy: `property:${SYSTEM_PROPERTY_IDS.ASSIGNEES}`,
       }),
     },
   },

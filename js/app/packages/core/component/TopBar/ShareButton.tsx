@@ -13,8 +13,6 @@ import {
   useBlockName,
 } from '@core/block';
 import { EntityIcon } from '@core/component/EntityIcon';
-import { MiniToggleSwitch } from '@core/component/FormControls/MiniToggleSwitch';
-import { DropdownMenuContent } from '@core/component/Menu';
 import { type TabItem, Tabs } from '@core/component/Tabs';
 import { UserIcon } from '@core/component/UserIcon';
 import { ENABLE_MARKDOWN_COMMENTS } from '@core/constant/featureFlags';
@@ -34,26 +32,20 @@ import {
 } from '@core/signal/permissions';
 import { idToEmail } from '@core/user';
 import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
-import {
-  isErr,
-  isOk,
-  type MaybeError,
-  type MaybeResult,
-} from '@core/util/maybeResult';
+import type { ResultError } from '@core/util/result';
 import { buildSimpleEntityUrl } from '@core/util/url';
-import CheckIcon from '@icon/bold/check-bold.svg';
-import IconX from '@icon/bold/x-bold.svg';
-import ChevronDownIcon from '@icon/regular/caret-down.svg';
-import IconLink from '@icon/regular/link.svg';
+import IconComment from '@icon/wide-comment.svg';
+import WideCopy from '@icon/wide-copy.svg';
+import IconEdit from '@icon/wide-edit.svg';
+import IconEye from '@icon/wide-eye.svg';
+import UserCircle from '@icon/wide-user-circle.svg';
+import WideUsers from '@icon/wide-users.svg';
 import { Dialog } from '@kobalte/core/dialog';
-import { DropdownMenu } from '@kobalte/core/dropdown-menu';
-import IconComment from '@macro-icons/wide/comment.svg';
-import WideCopy from '@macro-icons/wide/copy.svg';
-import IconEdit from '@macro-icons/wide/edit.svg';
-import IconEye from '@macro-icons/wide/eye.svg';
-import IconShared from '@macro-icons/wide/share.svg';
-import UserCircle from '@macro-icons/wide/user-circle.svg';
-import WideUsers from '@macro-icons/wide/users.svg';
+import ChevronDownIcon from '@phosphor/caret-down.svg';
+import CheckIcon from '@phosphor/check.svg';
+import IconLink from '@phosphor/link.svg';
+import IconShared from '@phosphor/share.svg';
+import IconX from '@phosphor/x.svg';
 import { cognitionApiServiceClient } from '@service-cognition/client';
 import { commsServiceClient } from '@service-comms/client';
 import {
@@ -65,7 +57,16 @@ import type { AccessLevel } from '@service-storage/generated/schemas/accessLevel
 import type { SharePermissionV2ChannelSharePermissions } from '@service-storage/generated/schemas/sharePermissionV2ChannelSharePermissions';
 import { createCallback } from '@solid-primitives/rootless';
 import { useNavigate } from '@solidjs/router';
-import { Button, cn, Panel } from '@ui';
+import {
+  Button,
+  ButtonGroup,
+  cn,
+  Dropdown,
+  Panel,
+  ToggleSwitch,
+  Tooltip,
+} from '@ui';
+import type { Result } from 'neverthrow';
 import {
   type Accessor,
   createContext,
@@ -87,7 +88,6 @@ import { CustomScrollbar } from '../CustomScrollbar';
 import { ForwardToChannel } from '../ForwardToChannel';
 import { Permissions } from '../SharePermissions';
 import { toast } from '../Toast/Toast';
-import { Tooltip } from '../Tooltip';
 import { ScrollIndicators } from '../VerticalScrollIndicators';
 import { openLoginModal } from './LoginButton';
 
@@ -248,10 +248,7 @@ function GroupChannelLabel(props: { channelId: string; fallbackName: string }) {
 
   return (
     <Show when={others().length > 0} fallback={props.fallbackName}>
-      <Tooltip
-        placement="bottom"
-        tooltip={<div class="text-xs whitespace-pre">{tooltipContent()}</div>}
-      >
+      <Tooltip placement="bottom" label={tooltipContent()}>
         <span>{label()}</span>
       </Tooltip>
     </Show>
@@ -487,7 +484,7 @@ function MobileShareDrawer(props: MobileShareDrawerProps) {
                       class={cn(
                         'text-xs font-medium whitespace-nowrap',
                         props.publicAccessLevel != null
-                          ? 'text-accent-ink'
+                          ? 'text-accent'
                           : 'text-ink-extra-muted'
                       )}
                     >
@@ -495,13 +492,13 @@ function MobileShareDrawer(props: MobileShareDrawerProps) {
                     </span>
                   </div>
                 </div>
-                <MiniToggleSwitch
-                  size="Base"
-                  label="Enable public link"
-                  checked={props.publicAccessLevel != null}
+                <ToggleSwitch
                   onChange={(checked) =>
                     props.setPublicPermissions(checked ? 'view' : null)
                   }
+                  checked={props.publicAccessLevel != null}
+                  labelClass="whitespace-nowrap"
+                  label="Enable public link"
                 />
               </div>
               <Show when={props.publicAccessLevel != null}>
@@ -588,19 +585,19 @@ export function ShareModal(props: ShareModalProps) {
       params
     );
     navigator.clipboard.writeText(url);
-    toast.success(
-      'Link copied to clipboard.',
-      'Sending this link in a Macro message will automatically update permissions to include recipients.'
-    );
+    toast.success('Link copied to clipboard.', {
+      subtext:
+        'Sending this link in a Macro message will automatically update permissions to include recipients.',
+    });
   });
 
   const [channelNamesResource] = createResource(
     () => {
       const result = permissionsResource.latest;
-      if (!result || isErr(result)) {
+      if (!result || result.isErr()) {
         return;
       }
-      const [, sharePermission] = result;
+      const sharePermission = result.value;
       if (!sharePermission?.channelSharePermissions?.length) {
         return;
       }
@@ -616,11 +613,11 @@ export function ShareModal(props: ShareModalProps) {
   // Create a map of channel IDs to channel names
   const channelNameMap = createMemo(() => {
     const result = channelNamesResource.latest;
-    if (!result || isErr(result)) {
+    if (!result || result.isErr()) {
       return new Map();
     }
 
-    const [, data] = result;
+    const data = result.value;
     const map = new Map();
 
     data.previews.forEach((preview) => {
@@ -636,10 +633,10 @@ export function ShareModal(props: ShareModalProps) {
   });
 
   const recipients = createMemo(() => {
-    const maybeResult = permissionsResource.latest;
-    if (!maybeResult || isErr(maybeResult)) return;
+    const result = permissionsResource.latest;
+    if (!result || result.isErr()) return;
 
-    const [, sharePermission] = maybeResult;
+    const sharePermission = result.value;
     return sharePermission.channelSharePermissions;
   });
 
@@ -662,14 +659,15 @@ export function ShareModal(props: ShareModalProps) {
           ],
         },
       });
-      if (!isErr(result)) {
+      if (!result.isErr()) {
         refetch();
-        toast.success(
-          'Removed channel access',
-          'Channel no longer has access to this chat'
-        );
+        toast.success('Removed channel access', {
+          subtext: 'Channel no longer has access to this chat',
+        });
       } else {
-        toast.alert('Failed to remove channel access', 'Please try again');
+        toast.alert('Failed to remove channel access', {
+          subtext: 'Please try again',
+        });
         console.error(result);
       }
     } else if (props.itemType === 'document') {
@@ -684,14 +682,15 @@ export function ShareModal(props: ShareModalProps) {
           ],
         },
       });
-      if (!isErr(result)) {
+      if (!result.isErr()) {
         refetch();
-        toast.success(
-          'Removed channel access',
-          'Channel no longer has access to this document'
-        );
+        toast.success('Removed channel access', {
+          subtext: 'Channel no longer has access to this document',
+        });
       } else {
-        toast.alert('Failed to remove channel access', 'Please try again');
+        toast.alert('Failed to remove channel access', {
+          subtext: 'Please try again',
+        });
         console.error(result);
       }
     } else if (props.itemType === 'project') {
@@ -706,11 +705,13 @@ export function ShareModal(props: ShareModalProps) {
           ],
         },
       });
-      if (!isErr(result)) {
+      if (!result.isErr()) {
         refetch();
         toast.success('Removed folder access');
       } else {
-        toast.alert('Failed to remove folder access', 'Please try again');
+        toast.alert('Failed to remove folder access', {
+          subtext: 'Please try again',
+        });
         console.error(result);
       }
     }
@@ -724,7 +725,10 @@ export function ShareModal(props: ShareModalProps) {
     ) => {
       if (props.userPermissions !== Permissions.OWNER) return;
 
-      let result: MaybeResult<any, any> | MaybeError<any> | null = null;
+      let result:
+        | Result<any, ResultError<any>[]>
+        | Result<void, ResultError<any>[]>
+        | null = null;
       if (props.itemType === 'chat') {
         result = await cognitionApiServiceClient.updateChatPermissions({
           sharePermission: {
@@ -779,16 +783,17 @@ export function ShareModal(props: ShareModalProps) {
         });
       }
 
-      if (result && isOk(result)) {
+      if (result && result.isOk()) {
         refetch();
         if (!hideSuccessToast) {
-          toast.success(
-            'Changed channel access level',
-            accessLevelText(accessLevel)
-          );
+          toast.success('Changed channel access level', {
+            subtext: accessLevelText(accessLevel),
+          });
         }
       } else {
-        toast.alert('Failed to change channel access', 'Please try again');
+        toast.alert('Failed to change channel access', {
+          subtext: 'Please try again',
+        });
         console.error(result);
       }
     }
@@ -796,11 +801,11 @@ export function ShareModal(props: ShareModalProps) {
 
   const publicAccessLevel = createMemo(() => {
     const currentPermissions = permissionsResource.latest;
-    if (!currentPermissions || isErr(currentPermissions)) {
+    if (!currentPermissions || currentPermissions.isErr()) {
       return;
     }
 
-    const [, sharePermission] = currentPermissions;
+    const sharePermission = currentPermissions.value;
     return sharePermission.publicAccessLevel;
   });
 
@@ -814,19 +819,17 @@ export function ShareModal(props: ShareModalProps) {
           },
           chat_id: props.id,
         });
-        if (!isErr(result)) {
+        if (!result.isErr()) {
           refetch();
 
           if (accessLevel === null) {
-            toast.success(
-              'Made chat private',
-              'Only shared users can access this chat'
-            );
+            toast.success('Made chat private', {
+              subtext: 'Only shared users can access this chat',
+            });
           } else {
-            toast.success(
-              'Updated public link sharing',
-              `Anyone with the link can ${accessLevel} this chat`
-            );
+            toast.success('Updated public link sharing', {
+              subtext: `Anyone with the link can ${accessLevel} this chat`,
+            });
 
             analytics.track('share_entity', {
               entityType: 'chat',
@@ -835,7 +838,9 @@ export function ShareModal(props: ShareModalProps) {
             });
           }
         } else {
-          toast.alert('Failed to change chat access', 'Please try again');
+          toast.alert('Failed to change chat access', {
+            subtext: 'Please try again',
+          });
           console.error(result);
         }
       } else if (props.itemType === 'document') {
@@ -846,18 +851,16 @@ export function ShareModal(props: ShareModalProps) {
           },
           documentId: props.id,
         });
-        if (!isErr(result)) {
+        if (!result.isErr()) {
           refetch();
           if (accessLevel === null) {
-            toast.success(
-              'Made document private',
-              'Only shared users can access this document'
-            );
+            toast.success('Made document private', {
+              subtext: 'Only shared users can access this document',
+            });
           } else {
-            toast.success(
-              'Updated public link sharing',
-              `Anyone with the link can ${accessLevel} this document`
-            );
+            toast.success('Updated public link sharing', {
+              subtext: `Anyone with the link can ${accessLevel} this document`,
+            });
 
             analytics.track('share_entity', {
               entityType: 'document',
@@ -866,7 +869,9 @@ export function ShareModal(props: ShareModalProps) {
             });
           }
         } else {
-          toast.alert('Failed to change document access', 'Please try again');
+          toast.alert('Failed to change document access', {
+            subtext: 'Please try again',
+          });
           console.error(result);
         }
       } else if (props.itemType === 'project') {
@@ -877,18 +882,16 @@ export function ShareModal(props: ShareModalProps) {
           },
           id: props.id,
         });
-        if (!isErr(result)) {
+        if (!result.isErr()) {
           refetch();
           if (accessLevel === null) {
-            toast.success(
-              'Made folder private',
-              'Only shared users can access this folder'
-            );
+            toast.success('Made folder private', {
+              subtext: 'Only shared users can access this folder',
+            });
           } else {
-            toast.success(
-              'Updated public link sharing',
-              `Anyone with the link can ${accessLevel} this folder`
-            );
+            toast.success('Updated public link sharing', {
+              subtext: `Anyone with the link can ${accessLevel} this folder`,
+            });
 
             analytics.track('share_entity', {
               entityType: 'project',
@@ -897,7 +900,9 @@ export function ShareModal(props: ShareModalProps) {
             });
           }
         } else {
-          toast.alert('Failed to change folder access', 'Please try again');
+          toast.alert('Failed to change folder access', {
+            subtext: 'Please try again',
+          });
           console.error(result);
         }
       }
@@ -950,7 +955,7 @@ export function ShareModal(props: ShareModalProps) {
               style={{ width: '800px' }}
             >
               {/* Card 1: Share form — gradient border */}
-              <Panel active>
+              <Panel active depth={2}>
                 <Panel.Header class="px-3">
                   <Dialog.Title class="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap w-full text-sm font-medium">
                     <span class="shrink-0">Share:</span>
@@ -986,7 +991,7 @@ export function ShareModal(props: ShareModalProps) {
 
               {/* Card 2: Recipients — plain border */}
               <Show when={(recipients()?.length ?? 0) > 0 || !!props.owner}>
-                <Panel>
+                <Panel depth={2}>
                   <Panel.Header class="px-3">
                     <span class="text-sm font-medium">
                       People with access to this{' '}
@@ -1120,7 +1125,7 @@ export function ShareModal(props: ShareModalProps) {
                   props.itemType !== 'email'
                 }
               >
-                <Panel>
+                <Panel depth={2}>
                   <Panel.Header class="justify-between px-3">
                     <div class="flex items-center gap-2">
                       <span class="text-sm font-medium">Public link</span>
@@ -1136,7 +1141,7 @@ export function ShareModal(props: ShareModalProps) {
                           class={cn(
                             'text-xs font-medium whitespace-nowrap',
                             publicAccessLevel() != null
-                              ? 'text-accent-ink'
+                              ? 'text-accent'
                               : 'text-ink-extra-muted'
                           )}
                         >
@@ -1144,9 +1149,9 @@ export function ShareModal(props: ShareModalProps) {
                         </span>
                       </div>
                     </div>
-                    <MiniToggleSwitch
-                      size="Base"
+                    <ToggleSwitch
                       label="Enable public link"
+                      labelClass="whitespace-nowrap"
                       checked={publicAccessLevel() != null}
                       onChange={(on) =>
                         setPublicPermissions(on ? 'view' : null)
@@ -1231,10 +1236,10 @@ export function ShareTrigger(props: { copyLink?: () => void }) {
     if (props.copyLink) return props.copyLink();
     navigator.clipboard.writeText(defaultUrl());
     analytics.track('copy_share_link', { blockType });
-    toast.success(
-      'Link copied to clipboard.',
-      'Sending this link in a Macro message will automatically update permissions to include recipients.'
-    );
+    toast.success('Link copied to clipboard.', {
+      subtext:
+        'Sending this link in a Macro message will automatically update permissions to include recipients.',
+    });
   });
 
   const ShareLinkAction = createMemo(() => ({
@@ -1246,38 +1251,34 @@ export function ShareTrigger(props: { copyLink?: () => void }) {
   }));
 
   const shareAccessLevelText = createMemo(() => {
-    const maybeResult = permissionsBlockResource[0].latest;
-    if (!maybeResult || isErr(maybeResult)) return '';
-    const [, sharePermission] = maybeResult;
+    const result = permissionsBlockResource[0].latest;
+    if (!result || result.isErr()) return '';
+    const sharePermission = result.value;
     if (sharePermission.isPublic) return 'Public';
     if (sharePermission.channelSharePermissions?.length) return 'Shared';
     return 'Just me';
   });
 
+  const shareAccessTooltip = () =>
+    match(shareAccessLevelText())
+      .when(
+        (level) => level === 'Public',
+        () => 'Anyone with the link can access this item'
+      )
+      .when(
+        (level) => level === 'Shared',
+        () => 'Shared with specific people or channels'
+      )
+      .when(
+        (level) => level === 'Just me',
+        () => 'Only you can access this item'
+      )
+      .otherwise(() => 'This item has been shared with you');
+
   return (
-    <div class="border border-edge-muted flex ml-1 items-stretch rounded-xs">
-      <Tooltip
-        tooltip={
-          <div>
-            {match(shareAccessLevelText())
-              .when(
-                (level) => level === 'Public',
-                () => 'Anyone with the link can access this item'
-              )
-              .when(
-                (level) => level === 'Shared',
-                () => 'Shared with specific people or channels'
-              )
-              .when(
-                (level) => level === 'Just me',
-                () => 'Only you can access this item'
-              )
-              .otherwise(() => 'This item has been shared with you')}
-          </div>
-        }
-      >
-        <button
-          class="text-xs hover:bg-hover text-ink px-2 flex items-center gap-1 h-full"
+    <ButtonGroup variant="base" size="sm" class="bg-surface" depth={2}>
+      <Tooltip label={shareAccessTooltip()}>
+        <Button
           onClick={() => {
             if (!isAuthenticated()) {
               openLoginModal();
@@ -1287,23 +1288,21 @@ export function ShareTrigger(props: { copyLink?: () => void }) {
             }
           }}
         >
-          <IconShared class="size-3.5" />
+          <IconShared />
           Share
-        </button>
+        </Button>
       </Tooltip>
 
-      <div class="w-px bg-edge-muted" />
+      <ButtonGroup.Divider />
 
       <Button
         tooltip="Copy Share Link"
-        onClick={ShareLinkAction().action}
-        variant="ghost"
         size="icon-sm"
-        class="p-1"
+        onClick={ShareLinkAction().action}
       >
-        <Dynamic component={ShareLinkAction().icon} />
+        <Dynamic component={ShareLinkAction().icon} class="size-3.5!" />
       </Button>
-    </div>
+    </ButtonGroup>
   );
 }
 
@@ -1405,9 +1404,11 @@ export function ShareOptions(props: {
   };
 
   return (
-    <DropdownMenu open={isOpen()} onOpenChange={setIsOpen}>
-      <DropdownMenu.Trigger
+    <Dropdown open={isOpen()} onOpenChange={setIsOpen}>
+      <Dropdown.Trigger
+        variant="ghost"
         disabled={props.disabled}
+        class={`min-w-16.75 py-1 pl-2 pr-1 rounded-xs flex items-center gap-1 ${props.noBorder ? 'border-0 sm:border' : ''}`}
         on:keydown={(e: KeyboardEvent) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.stopPropagation();
@@ -1416,21 +1417,12 @@ export function ShareOptions(props: {
           }
         }}
       >
-        <Button
-          disabled={props.disabled}
-          class={`min-w-16.75 py-1 pl-2 pr-1 rounded-xs flex items-center gap-1 ${props.noBorder ? 'border-0 sm:border' : ''}`}
-          variant="base"
-        >
-          {currentValueText()}
-          <ChevronDownIcon class="size-4 text-ink-extra-muted/50" />
-        </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenuContent>
-          <DropdownMenu.RadioGroup
-            value={currentValue()}
-            onChange={handleChange}
-          >
+        {currentValueText()}
+        <ChevronDownIcon class="size-4 text-ink-extra-muted/50" />
+      </Dropdown.Trigger>
+      <Dropdown.Content>
+        <Dropdown.RadioGroup value={currentValue()} onChange={handleChange}>
+          <Dropdown.Group>
             <For each={options().filter((o) => o.value !== 'none')}>
               {(option) => {
                 const Icon =
@@ -1438,39 +1430,34 @@ export function ShareOptions(props: {
                     option.value as keyof typeof PERMISSION_ICONS
                   ];
                 return (
-                  <DropdownMenu.RadioItem
-                    value={option.value}
-                    class="flex items-center gap-2 w-full py-1 px-2 text-sm font-medium rounded-xs hover:bg-hover hover-transition-bg outline-none focus:bg-active data-highlighted:bg-active"
-                  >
+                  <Dropdown.RadioItem value={option.value}>
                     <div class="size-4 shrink-0">
                       {Icon && <Icon class="size-full" />}
                     </div>
-                    <div class="flex-1 truncate">{option.label}</div>
-                    <Show when={currentValue() === option.value}>
-                      <CheckIcon class="size-3 text-accent" />
-                    </Show>
-                  </DropdownMenu.RadioItem>
+                    <span class="flex-1 truncate">{option.label}</span>
+                    <Dropdown.ItemIndicator>
+                      <CheckIcon class="size-3.5 text-accent" />
+                    </Dropdown.ItemIndicator>
+                  </Dropdown.RadioItem>
                 );
               }}
             </For>
-            <Show when={!props.hideNoAccess}>
-              <div class="my-1 border-t border-edge-muted w-full" />
-              <DropdownMenu.RadioItem
-                value="none"
-                class="flex items-center gap-2 w-full py-1 px-2 text-sm font-medium rounded-xs hover:bg-hover hover-transition-bg outline-none focus:bg-active data-highlighted:bg-active"
-              >
+          </Dropdown.Group>
+          <Show when={!props.hideNoAccess}>
+            <Dropdown.Group>
+              <Dropdown.RadioItem value="none">
                 <div class="size-4 shrink-0">
                   <IconX class="size-full" />
                 </div>
-                <div class="flex-1 truncate">{accessLevelText(null)}</div>
-                <Show when={currentValue() === 'none'}>
-                  <CheckIcon class="size-3 text-accent" />
-                </Show>
-              </DropdownMenu.RadioItem>
-            </Show>
-          </DropdownMenu.RadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu.Portal>
-    </DropdownMenu>
+                <span class="flex-1 truncate">{accessLevelText(null)}</span>
+                <Dropdown.ItemIndicator>
+                  <CheckIcon class="size-3.5 text-accent" />
+                </Dropdown.ItemIndicator>
+              </Dropdown.RadioItem>
+            </Dropdown.Group>
+          </Show>
+        </Dropdown.RadioGroup>
+      </Dropdown.Content>
+    </Dropdown>
   );
 }
