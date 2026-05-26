@@ -454,11 +454,14 @@ impl<
                 let call_id = Uuid::now_v7();
                 let room_name = channel_id.to_string();
 
+                // Create RTC room (idempotent in LiveKit).
                 self.rtc_client
                     .create_room(&room_name)
                     .await
                     .map_err(CallError::Internal)?;
 
+                // Try to create call record; if another request won the race
+                // the ON CONFLICT returns None — re-read the existing call.
                 match self
                     .repo
                     .create_call(&call_id, channel_id, &room_name, user_id.copied())
@@ -466,6 +469,7 @@ impl<
                     .map_err(|e| CallError::Internal(e.into()))?
                 {
                     Some(call) => {
+                        // We are the creator — dispatch transcription agent (best-effort).
                         self.rtc_client
                             .dispatch_transcription_agent(&room_name)
                             .await
@@ -474,6 +478,7 @@ impl<
                             })
                             .ok();
 
+                        // Start recording if configured.
                         if let Some(s3_config) = &self.egress_s3_config {
                             match self
                                 .rtc_client
@@ -492,6 +497,7 @@ impl<
                             }
                         }
 
+                        // Notify channel members about the new call (best-effort).
                         self.send_call_event(
                             channel_id,
                             "call_started",
@@ -504,6 +510,7 @@ impl<
                         )
                         .await;
 
+                        // Send push notification and VoIP push to channel members (best-effort).
                         let _: Result<(), anyhow::Error> = async {
                             let channel_name = self
                                 .repo
@@ -535,13 +542,20 @@ impl<
                                 .flatten()
                                 .unwrap_or_else(|| user_id.email_str().to_string());
 
+                            // Send VoIP push for the native iOS incoming-call sheet first.
+                            // Recipients with successful VoIP delivery do not need the regular
+                            // APNS alert banner as well.
                             let recipient_vec: Vec<MacroUserIdStr<'static>> = recipient_ids
                                 .iter()
                                 .cloned()
                                 .map(CowLike::into_owned)
                                 .collect();
 
-                            // Batch first so users without VoIP endpoints do not get LiveKit tokens.
+                            // Resolve VoIP endpoints before minting tokens:
+                            // users without PushKit endpoints should not get
+                            // LiveKit tokens minted for them. If endpoint
+                            // resolution fails, fall back to normal APNS for
+                            // everyone rather than dropping the notification.
                             let voip_targets = match self
                                 .voip_push_sender
                                 .get_voip_push_targets(&recipient_vec)
@@ -556,6 +570,9 @@ impl<
                                     Vec::new()
                                 }
                             };
+                            // Token minting is bounded inside
+                            // build_voip_push_payloads so a large channel does
+                            // not fan out unbounded LiveKit requests.
                             let voip_target_recipient_ids: Vec<MacroUserIdStr<'static>> =
                                 voip_targets
                                     .iter()
@@ -578,6 +595,9 @@ impl<
                                 MacroUserIdStr<'static>,
                                 VoipPushPayload,
                             > = payloads.into_iter().collect();
+                            // Rejoin resolved endpoints with successfully
+                            // minted payloads. A failed token mint skips only
+                            // that recipient's VoIP push.
                             let pushes = voip_targets
                                 .into_iter()
                                 .filter_map(|target| {
@@ -593,6 +613,9 @@ impl<
                             let apns_recipient_ids =
                                 exclude_voip_recipients(recipient_ids, &voip_recipient_ids);
 
+                            // APNS is the fallback/default path. Recipients
+                            // with a successful VoIP delivery skip the regular
+                            // alert to avoid duplicate incoming-call UI.
                             if !apns_recipient_ids.is_empty() {
                                 let req = SendNotificationRequestBuilder {
                                     notification_entity: EntityType::Channel
