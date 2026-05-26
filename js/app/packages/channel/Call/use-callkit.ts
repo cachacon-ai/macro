@@ -1,16 +1,16 @@
+import { whenSplitManagerReady } from '@app/signal/splitLayout';
 import { ENABLE_CALLKIT } from '@core/constant/featureFlags';
 import { isPlatform, isTauri } from '@core/util/platform';
 import { notificationServiceClient } from '@service-notification/client';
 import type { DeviceType } from '@service-notification/generated/schemas/deviceType';
-import { whenSplitManagerReady } from '@app/signal/splitLayout';
-import { Channel, addPluginListener, invoke } from '@tauri-apps/api/core';
+import { addPluginListener, Channel, invoke } from '@tauri-apps/api/core';
 import { onCleanup, onMount } from 'solid-js';
 import { joinChannelCall } from './join-channel-call';
 import {
-  nativeCallSnapshot,
-  setNativeCallSnapshot,
   type NativeCallConnectionState,
   type NativeCallSnapshot,
+  nativeCallSnapshot,
+  setNativeCallSnapshot,
 } from './native-call-state';
 
 // The 'iosvoip' variant exists in the backend but the generated schema has not been

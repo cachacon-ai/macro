@@ -568,10 +568,7 @@ impl<
                             let mut payloads_by_recipient: HashMap<
                                 MacroUserIdStr<'static>,
                                 VoipPushPayload,
-                            > = payloads
-                                .into_iter()
-                                .map(|(id, payload)| (id, payload))
-                                .collect();
+                            > = payloads.into_iter().collect();
                             let pushes = voip_targets
                                 .into_iter()
                                 .filter_map(|target| {
