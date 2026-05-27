@@ -1,4 +1,4 @@
-use agent::AgentModel;
+use ai::types::Model;
 use std::time::Duration;
 use strum::{Display, EnumString};
 
@@ -9,7 +9,7 @@ pub enum LatencyMetric {
     TimeToFirstToken,
 }
 
-pub fn log_timing(metric: LatencyMetric, model: AgentModel, duration: Duration) {
+pub fn log_timing(metric: LatencyMetric, model: Model, duration: Duration) {
     tracing::info!(
         metric = %metric,
         model_name = %model,

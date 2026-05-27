@@ -9,8 +9,7 @@ use crate::domain::models::{
     Result, WebCitation,
 };
 use crate::domain::ports::{ChatRepo, MessageRepo};
-use agent::AgentModel;
-use agent::types::ChatMessageContent;
+use ai::types::{ChatMessageContent, Model};
 use attachment::FormattedParts;
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -21,7 +20,7 @@ use models_permissions::share_permission::access_level::AccessLevel;
 use sqlx::PgPool;
 
 /// The default model used when no model is set on a chat.
-const FALLBACK_MODEL: AgentModel = AgentModel::Haiku4_5;
+const FALLBACK_MODEL: Model = Model::Claude45Haiku;
 
 /// Convert an [`anyhow::Error`] to a [`ChatErr`], detecting `sqlx::RowNotFound`.
 fn to_chat_err(e: anyhow::Error) -> ChatErr {
@@ -123,7 +122,7 @@ impl ChatRepo for PgChatRepo {
     async fn get_chat(&self, chat_id: &str) -> Result<ChatResponse> {
         let chat = self.get_metadata(chat_id).await?;
         let mut messages = self.get_messages(chat_id).await.map_err(to_chat_err)?;
-        messages.retain(|m| m.role != agent::types::Role::System);
+        messages.retain(|m| m.role != ai::types::Role::System);
         Ok(ChatResponse {
             id: chat.id,
             user_id: chat.user_id,

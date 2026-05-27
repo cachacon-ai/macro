@@ -10,45 +10,18 @@ mod service;
 pub use config::Config;
 
 use crate::core::model::CHAT_MODELS;
-use agent::AgentModel;
-use serde::Serialize;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ModelSchema {
-    pub name: String,
-    pub provider: &'static str,
-    pub metadata: ModelMetadata,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ModelMetadata {
-    pub context_window: u64,
-}
-
-#[derive(Serialize)]
-struct ModelsResponse {
-    pub models: Vec<ModelSchema>,
-}
-
-impl From<AgentModel> for ModelSchema {
-    fn from(m: AgentModel) -> Self {
-        Self {
-            name: m.api_id().to_owned(),
-            provider: m.provider(),
-            metadata: ModelMetadata {
-                context_window: m.context_window(),
-            },
-        }
-    }
-}
+use crate::model::response::models::{AIModel, GetModelsResponse};
+use ai::types::ModelWithMetadataAndProvider;
 
 fn main() {
     let models = CHAT_MODELS
         .iter()
-        .map(|m| ModelSchema::from(*m))
-        .collect::<Vec<_>>();
-    let data = ModelsResponse { models };
+        .map(|m| AIModel {
+            name: m.to_string(),
+            provider: m.provider(),
+            metadata: m.metadata(),
+        })
+        .collect::<Vec<AIModel>>();
+    let data = GetModelsResponse { models };
     println!("{}", serde_json::to_string_pretty(&data).unwrap());
 }

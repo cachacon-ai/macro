@@ -1,6 +1,5 @@
 use super::NewAttachment;
-use agent::AgentModel;
-use agent::types::{ChatMessageContent, Role};
+use ai::types::{ChatMessageContent, Model, Role};
 use chrono::{DateTime, Utc};
 use model_entity::Entity;
 use serde::{self, Deserialize, Serialize};
@@ -45,7 +44,7 @@ pub struct NewChatMessage {
     /// The ids of the attachments used to generate the message
     pub attachments: Option<Vec<NewAttachment>>,
     /// The model used to generate the chat
-    pub model: AgentModel,
+    pub model: Model,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

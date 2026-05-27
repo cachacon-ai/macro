@@ -10,7 +10,7 @@ default = ["account_merge_request", "team"]
 team = ["dep:models_team"]
 
 [dependencies]
-agent = { path = "../agent" }
+ai = { path = "../ai" }
 anyhow = { workspace = true }
 async-recursion = "1.1.1"
 async-trait = { workspace = true }

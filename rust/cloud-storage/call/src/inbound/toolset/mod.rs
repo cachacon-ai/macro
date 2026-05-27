@@ -7,7 +7,7 @@ mod read_call_record;
 mod test;
 
 use crate::domain::ports::{CallRecordQueryService, CallService};
-use ai_toolset::AsyncToolCollection;
+use ai::tool::AsyncToolCollection;
 use entity_access::domain::ports::EntityAccessService;
 use std::sync::Arc;
 

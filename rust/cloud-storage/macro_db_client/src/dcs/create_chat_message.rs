@@ -1,4 +1,4 @@
-use agent::types::Role;
+use ai::types::Role;
 use anyhow::Context;
 use model::chat::{AttachmentType, NewChatMessage};
 use model_entity::EntityType;

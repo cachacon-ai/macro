@@ -1,38 +1,68 @@
-use crate::model::stream::SendChatMessagePayload;
+use crate::{core::constants::DEFAULT_MAX_TOKENS, model::stream::SendChatMessagePayload};
 
 use crate::model::chats::ChatResponse;
 
-use agent::types::{ChatMessage, ChatMessageContent, Role};
+use ai::types::{ChatCompletionRequest, MessageBuilder, RequestBuilder};
 use anyhow::Result;
 use attachment::{AttachmentContent, AttachmentPart, Attachments, FormattedParts, TextOrImage};
 use model_entity::EntityType;
 use non_empty::NonEmpty;
 
-#[tracing::instrument(skip(chat, incoming_message, resolved_parts), err)]
-pub fn build_chat_messages(
+#[tracing::instrument(
+    skip(chat, incoming_message, static_system_prompt, resolved_parts),
+    err
+)]
+pub fn build_chat_completion_request(
     chat: &ChatResponse,
     incoming_message: &SendChatMessagePayload,
+    static_system_prompt: &str,
+    user_memory: Option<&str>,
     resolved_parts: Vec<FormattedParts>,
-) -> Result<Vec<ChatMessage>> {
+) -> Result<ChatCompletionRequest> {
     let attachments = merge_formatted_parts_to_attachments(resolved_parts);
 
-    let mut messages: Vec<ChatMessage> = chat
+    let mut messages = chat
         .messages
         .iter()
-        .map(|message| ChatMessage {
-            role: message.role,
-            content: message.content.clone(),
-            attachments: None,
+        .map(|message| {
+            MessageBuilder::new()
+                .content(message.content.clone())
+                .role(message.role)
+                .build()
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    messages.push(ChatMessage {
-        role: Role::User,
-        content: ChatMessageContent::Text(incoming_message.content.clone()),
-        attachments,
-    });
+    messages.push(
+        MessageBuilder::new()
+            .user()
+            .content(incoming_message.content.clone())
+            .build(),
+    );
 
-    Ok(messages)
+    let additional_instructions = incoming_message
+        .additional_instructions
+        .as_deref()
+        .unwrap_or_default();
+
+    let mut system_prompt = format!("{}\n{}", static_system_prompt, additional_instructions);
+
+    if let Some(memory) = user_memory {
+        system_prompt.push_str("\n\n<user_memory>\n");
+        system_prompt.push_str(memory);
+        system_prompt.push_str("\n</user_memory>");
+    }
+
+    let mut builder = RequestBuilder::new()
+        .model(incoming_message.model)
+        .messages(messages)
+        .system_prompt(system_prompt)
+        .max_tokens(DEFAULT_MAX_TOKENS);
+
+    if let Some(attachments) = attachments {
+        builder = builder.attachments(attachments);
+    }
+
+    Ok(builder.build())
 }
 
 fn merge_formatted_parts_to_attachments(

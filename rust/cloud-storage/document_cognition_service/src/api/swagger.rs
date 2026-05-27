@@ -2,6 +2,7 @@ use crate::api::{
     attachments::get_chats_for_attachment,
     chats::{chat_history, chat_history_batch_messages},
     citations, health,
+    models::get_models,
     preview::get_batch_preview,
     stream::chat_message::{
         self, ChatMessageError, HttpSendChatMessageRequest, SendChatMessageResponse,
@@ -14,10 +15,11 @@ use crate::api::{
     },
 };
 use crate::model::{
-    response::attachments::GetChatsForAttachmentResponse,
+    response::{
+        attachments::GetChatsForAttachmentResponse, models::AIModel, models::GetModelsResponse,
+    },
     stream::{ChatStream, SendChatMessagePayload, StreamError, ToolSet},
 };
-use agent::AgentModel;
 use mcp_client::inbound::axum_router::{
     self as mcp_api, AddServerRequest, ServerResponse, StartAuthRequest, StartAuthResponse,
     UpdateServerRequest,
@@ -25,6 +27,8 @@ use mcp_client::inbound::axum_router::{
 use memory::inbound::axum_router::{self as memory_api, MemoryErrorBody, MemoryResponse};
 
 use crate::api::preview::get_batch_preview::{GetBatchPreviewRequest, GetBatchPreviewResponse};
+
+use ai::types::{ModelMetadata, Provider};
 
 use chat::domain::models::{ChatResponse, GetChatResponse, WebCitation};
 use chat::inbound::http::router::{
@@ -71,6 +75,7 @@ use utoipa::OpenApi;
             chat_router::update_tool_response_handler,
             chat_router::call_tool_handler,
             chat_router::reject_tool_call_handler,
+            get_models::get_models_handler,
             get_chats_for_attachment::get_chats_for_attachment_handler,
             citations::get_citation_handler,
             get_batch_preview::handler,
@@ -90,7 +95,11 @@ use utoipa::OpenApi;
         components(
             schemas(
                 DocumentCognitionServiceApiVersion,
-                AgentModel,
+                // Models
+                GetModelsResponse,
+                Provider,
+                ModelMetadata,
+                AIModel,
                 // Generic
                 StringIDResponse,
                 GenericErrorResponse,
@@ -161,7 +170,7 @@ use utoipa::OpenApi;
                 StructuredCompletionRequest,
                 StructuredCompletionResponse,
                 StructuredCompletionError,
-                agent::structured_output::DynamicSchema,
+                ai::structured_output_v2::DynamicSchema,
 
                 // Memory
                 MemoryResponse,
@@ -176,8 +185,8 @@ use utoipa::OpenApi;
                 model_error_response::ErrorResponse,
 
                 // Tools
-                ai_toolset::schema::ToolSchema,
-                ai_toolset::schema::ToolSchemas,
+                ai::tool::schema::ToolSchema,
+                ai::tool::schema::ToolSchemas,
             ),
         ),
         tags(

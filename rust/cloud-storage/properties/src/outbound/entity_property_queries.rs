@@ -94,7 +94,6 @@ pub async fn upsert_entity_property(
 }
 
 /// Counts how many of the provided option IDs exist for the property definition.
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 pub async fn count_valid_property_options(
     pool: &Pool<Postgres>,
     property_definition_id: Uuid,

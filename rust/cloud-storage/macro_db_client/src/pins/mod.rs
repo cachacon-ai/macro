@@ -296,7 +296,6 @@ pub async fn remove_pin_by_pinned_item_id(
 }
 
 #[tracing::instrument(skip(db))]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 pub async fn reorder_pins(
     db: Pool<Postgres>,
     user_id: &str,

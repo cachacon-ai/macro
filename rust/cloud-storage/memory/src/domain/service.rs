@@ -1,15 +1,16 @@
 use super::ports::*;
-use agent::types::{ChatMessage, ChatMessageContent, Role};
-use agent::{AgentLoop, AgentModel, StreamPart};
+use ai::chat_completion::get_chat_completion;
+use ai::tool::tool_loop::ai_client::ToolLoop;
+use ai::types::*;
 use ai_tools::{ToolServiceContext, ToolSetWithPrompt};
+use ai_toolset::RequestContext;
 use chrono::Utc;
 use futures::stream::StreamExt;
 use macro_env::Environment;
 use serde::Deserialize;
-use std::sync::Arc;
 
-static GENERATION_MODEL: AgentModel = AgentModel::Smart;
-static JUDGE_MODEL: AgentModel = AgentModel::Sonnet4_6;
+static GENERATION_MODEL: Model = Model::Claude46Opus;
+static JUDGE_MODEL: Model = Model::Claude46Sonnet;
 
 static GENERATE_MEMORY_PROMPT: &str = "\
 Use tool calls to research who I am, what I care about, what I'm working on, \
@@ -140,7 +141,7 @@ where
         &self,
         user: macro_user_id::user_id::MacroUserIdStr<'static>,
     ) -> super::Result<Memory> {
-        // append user data + datetime to prompt
+        // append user data + datetimeto prompt
         let system_prompt = format!(
             "{}\n<user_id>{:?}</user_id>\n<datetime>{}</datetime>",
             self.tools.prompt,
@@ -148,41 +149,40 @@ where
             Utc::now().to_rfc2822()
         );
 
-        let agent_loop = AgentLoop::new().with_model(GENERATION_MODEL);
-        let toolset: Arc<dyn ai_toolset::ToolSet<_> + Send + Sync> =
-            self.tools.toolset.clone() as _;
-        let mut session = agent_loop
-            .session(
-                toolset,
-                Arc::new(self.tool_context.clone()),
-                &system_prompt,
-                user.clone(),
-            )
-            .await;
+        let request = RequestBuilder::new()
+            .model(GENERATION_MODEL)
+            .system_prompt(system_prompt)
+            .user_message(GENERATE_MEMORY_PROMPT)
+            .build();
 
-        let user_msg = ChatMessage {
-            content: ChatMessageContent::Text(GENERATE_MEMORY_PROMPT.to_string()),
-            role: Role::User,
-            attachments: None,
+        let mut agent = ToolLoop::new(self.tools.toolset.clone(), self.tool_context.clone()).chat();
+
+        let request_context = RequestContext {
+            user_id: user.clone(),
         };
-        let rig_messages = agent::to_rig_messages(&[user_msg]);
 
-        let mut content = String::new();
         {
-            let mut stream = session.send_message(rig_messages).await?;
+            let mut stream = agent
+                .send_message(request, request_context, user.clone().into())
+                .await?;
 
             while let Some(next) = stream.next().await {
-                let part = next?;
-                if let StreamPart::Content(text) = part {
-                    content.push_str(&text);
-                }
+                next?;
             }
         }
 
-        let memory = content.trim().to_string();
-        if memory.is_empty() {
+        let messages = agent.get_new_conversation_messages();
+
+        let Some(memory) = messages.last().and_then(|message| {
+            let text = message.content.message_text();
+            if text.trim().is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }) else {
             return Err(MemoryError::NoGeneration);
-        }
+        };
 
         // 2nd pass: judge the memory quality
         judge_memory(&memory).await?;
@@ -201,7 +201,13 @@ async fn judge_memory(memory: &str) -> super::Result<()> {
          ---\n\n{memory}"
     );
 
-    let response = agent::complete(JUDGE_MODEL, JUDGE_PROMPT, &user_message)
+    let request = RequestBuilder::new()
+        .model(JUDGE_MODEL)
+        .system_prompt(JUDGE_PROMPT)
+        .user_message(&user_message)
+        .build();
+
+    let response = get_chat_completion(request)
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 

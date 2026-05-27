@@ -1,6 +1,6 @@
 //! Axum extractors for chat inbound handlers.
 
-use agent::AgentModel;
+use ai::types::Model;
 use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
@@ -14,11 +14,11 @@ use roles_and_permissions::domain::model::PermissionId;
 /// The permission hierarchy is: Opus > Sonnet > Haiku.  If the user has none
 /// of these permissions the extractor rejects with `402 Payment Required`.
 #[derive(Debug)]
-pub struct ChatModelAccess(AgentModel);
+pub struct ChatModelAccess(Model);
 
 impl ChatModelAccess {
     /// Returns the resolved model.
-    pub fn model(&self) -> AgentModel {
+    pub fn model(&self) -> Model {
         self.0
     }
 }
@@ -68,11 +68,11 @@ impl<S: Send + Sync> FromRequestParts<S> for ChatModelAccess {
             .ok_or(ChatModelAccessRejection::MissingPermissions)?;
 
         let model = if permissions.contains(&PermissionId::WriteOpus.to_string()) {
-            AgentModel::Opus4_7
+            Model::Claude46Opus
         } else if permissions.contains(&PermissionId::WriteSonnet.to_string()) {
-            AgentModel::Sonnet4_6
+            Model::Claude46Sonnet
         } else if permissions.contains(&PermissionId::WriteHaiku.to_string()) {
-            AgentModel::Haiku4_5
+            Model::Claude45Haiku
         } else {
             return Err(ChatModelAccessRejection::NoModelAccess);
         };

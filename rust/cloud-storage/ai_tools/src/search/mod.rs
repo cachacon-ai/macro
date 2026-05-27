@@ -2,6 +2,7 @@ use crate::AiToolSet;
 use ai_toolset::AsyncToolCollection;
 
 mod search_service;
+pub mod web;
 
 pub fn search_toolset() -> AiToolSet {
     AsyncToolCollection::new()

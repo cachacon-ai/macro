@@ -13,7 +13,7 @@ use crate::domain::{
     },
     service::NotificationReader,
 };
-use ai_toolset::{
+use ai::tool::{
     AsyncTool, AsyncToolCollection, RequestContext, ServiceContext, ToolCallError, ToolResult,
 };
 use async_trait::async_trait;

@@ -4,7 +4,7 @@ use crate::domain::{
     models::{ContactInfo, ParsedMessage, ParsedThread},
     ports::{EmailService, GmailTokenProvider},
 };
-use ai_toolset::{AsyncTool, RequestContext, ServiceContext, ToolCallError, ToolResult};
+use ai::tool::{AsyncTool, RequestContext, ServiceContext, ToolCallError, ToolResult};
 use async_trait::async_trait;
 use entity_access::domain::{
     models::{EntityType, ViewAccessLevel},

@@ -6,7 +6,7 @@ mod list_entities;
 mod test;
 
 use crate::domain::ports::SoupService;
-use ai_toolset::AsyncToolCollection;
+use ai::tool::AsyncToolCollection;
 use email::domain::ports::EmailService;
 use std::sync::Arc;
 

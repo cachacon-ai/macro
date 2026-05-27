@@ -1,6 +1,6 @@
 //! Fetch all messages for a chat with their attachments.
 
-use agent::types::{ChatMessageContent, Role};
+use ai::types::{ChatMessageContent, Role};
 use model::chat::ChatMessageWithAttachments;
 use model_entity::{Entity, EntityType};
 use sqlx::PgPool;

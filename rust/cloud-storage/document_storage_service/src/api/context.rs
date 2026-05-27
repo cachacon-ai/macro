@@ -13,22 +13,11 @@ use call::{
     outbound::{livekit_rtc_client::LivekitRtcClient, pg_call_repo::PgCallRepo},
 };
 use channels::{
-    domain::{
-        service::ChannelServiceImpl,
-        side_effects::{ChannelSideEffectService, SpawnedChannelEventDispatcher},
-    },
-    inbound::axum_router::ChannelsRouterState,
-    outbound::{
-        connection_gateway_realtime::ConnectionGatewayChannelRealtimePublisher,
-        contacts_dispatcher::ContactsChannelDispatcher,
-        notification_sender::NotificationChannelSender,
-        pg_channel_reference_share_permissions::PgChannelReferenceSharePermissions,
-        pg_channels_repo::PgChannelsRepo, pg_side_effect_context::PgChannelSideEffectContext,
-        sqs_search_indexer::SqsChannelSearchIndexer,
-    },
+    domain::service::ChannelMessagesServiceImpl, inbound::axum_router::ChannelsRouterState,
+    outbound::pg_channels_repo::PgChannelMessagesRepo,
 };
 use comms::{
-    domain::service::ChannelServiceImpl as CommsChannelServiceImpl,
+    domain::service::ChannelServiceImpl,
     inbound::router::CommsRouterState,
     outbound::postgres::{comms_repo::PgCommsRepo, user_repo::PgUserRepo},
 };
@@ -105,7 +94,7 @@ type DssSoupState = SoupRouterState<
         PgSoupRepo,
         FrecencyQueryServiceImpl<FrecencyPgStorage>,
         ReadonlyEmailPreviewAdapter<DssEmailService>,
-        CommsChannelServiceImpl<PgCommsRepo, PgUserRepo, FrecencyPgStorage>,
+        ChannelServiceImpl<PgCommsRepo, PgUserRepo, FrecencyPgStorage>,
         call::domain::service::CallRecordQueryServiceImpl<call::outbound::pg_call_repo::PgCallRepo>,
     >,
     DssEmailService,
@@ -200,28 +189,14 @@ pub(crate) type DocumentsState = DocumentRouterState<DocumentService, EntityAcce
 
 /// Type alias for the ChannelServiceImpl used by comms
 pub(crate) type CommsChannelService =
-    CommsChannelServiceImpl<PgCommsRepo, PgUserRepo, FrecencyPgStorage>;
+    ChannelServiceImpl<PgCommsRepo, PgUserRepo, FrecencyPgStorage>;
 
 /// Type alias for the CommsRouterState
 pub(crate) type CommsState = CommsRouterState<CommsChannelService>;
 
-/// Type alias for the channels service wired into DSS.
-pub(crate) type DssChannelService = ChannelServiceImpl<
-    PgChannelsRepo,
-    SpawnedChannelEventDispatcher<
-        ChannelSideEffectService<
-            PgChannelSideEffectContext,
-            ConnectionGatewayChannelRealtimePublisher,
-            NotificationChannelSender<NotificationIngressType>,
-            SqsChannelSearchIndexer,
-            ContactsChannelDispatcher<SqsContactsIngress<SqsContactsQueue>>,
-        >,
-    >,
-    PgChannelReferenceSharePermissions<EntityAccessService>,
->;
-
 /// Type alias for the channels router state.
-pub(crate) type DssChannelsState = ChannelsRouterState<DssChannelService, EntityAccessService>;
+pub(crate) type DssChannelsState =
+    ChannelsRouterState<ChannelMessagesServiceImpl<PgChannelMessagesRepo>, EntityAccessService>;
 
 /// Type alias for the call connection service.
 pub(crate) type CallConnectionService =

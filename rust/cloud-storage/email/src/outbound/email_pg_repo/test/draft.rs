@@ -221,7 +221,6 @@ async fn test_upsert_contacts_new_contact(pool: Pool<Postgres>) -> anyhow::Resul
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "../../../../fixtures", scripts("email_draft"))
 )]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 async fn test_upsert_contacts_fills_missing_name(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let repo = EmailPgRepo::new(pool.clone());
 
@@ -329,7 +328,6 @@ async fn test_upsert_contacts_case_insensitive(pool: Pool<Postgres>) -> anyhow::
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "../../../../fixtures", scripts("email_draft"))
 )]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 async fn test_insert_draft_message_into_existing_thread(
     pool: Pool<Postgres>,
 ) -> anyhow::Result<()> {
@@ -420,7 +418,6 @@ async fn test_insert_draft_message_into_existing_thread(
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "../../../../fixtures", scripts("email_draft"))
 )]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 async fn test_insert_draft_message_with_new_thread(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let repo = EmailPgRepo::new(pool.clone());
 
@@ -491,7 +488,6 @@ async fn test_insert_draft_message_with_new_thread(pool: Pool<Postgres>) -> anyh
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "../../../../fixtures", scripts("email_draft"))
 )]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 async fn test_insert_draft_message_with_scheduled_send(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let repo = EmailPgRepo::new(pool.clone());
 
@@ -543,7 +539,6 @@ async fn test_insert_draft_message_with_scheduled_send(pool: Pool<Postgres>) -> 
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "../../../../fixtures", scripts("email_draft"))
 )]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 async fn test_insert_draft_message_upsert_existing(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let repo = EmailPgRepo::new(pool.clone());
 
@@ -599,7 +594,6 @@ async fn test_insert_draft_message_upsert_existing(pool: Pool<Postgres>) -> anyh
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "../../../../fixtures", scripts("email_draft"))
 )]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 async fn test_insert_draft_message_updates_thread_metadata(
     pool: Pool<Postgres>,
 ) -> anyhow::Result<()> {
@@ -653,7 +647,6 @@ async fn test_insert_draft_message_updates_thread_metadata(
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "../../../../fixtures", scripts("email_draft"))
 )]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 async fn test_insert_message_with_is_draft_false(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let repo = EmailPgRepo::new(pool.clone());
 

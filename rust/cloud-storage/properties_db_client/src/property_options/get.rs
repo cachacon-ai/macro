@@ -11,7 +11,6 @@ type Result<T> = std::result::Result<T, PropertiesDatabaseError>;
 
 /// Gets a single property option by ID.
 #[tracing::instrument(skip(db))]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 pub async fn get_property_option_by_id(
     db: &Pool<Postgres>,
     option_id: uuid::Uuid,
@@ -39,7 +38,6 @@ pub async fn get_property_option_by_id(
 
 /// Gets all property options for a property definition.
 #[tracing::instrument(skip(db))]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 pub async fn get_property_options(
     db: &Pool<Postgres>,
     property_definition_id: uuid::Uuid,
@@ -70,7 +68,6 @@ pub async fn get_property_options(
 
 /// Counts property options by their IDs.
 #[tracing::instrument(skip(db))]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 pub async fn count_property_options_by_ids(
     db: &Pool<Postgres>,
     property_definition_id: uuid::Uuid,
@@ -95,7 +92,6 @@ pub async fn count_property_options_by_ids(
 /// Gets property options for multiple properties in a single query.
 /// Returns a HashMap where the key is property_definition_id and value is the list of options.
 #[tracing::instrument(skip(db))]
-#[allow(clippy::disallowed_methods, reason = "legacy code. fix later")]
 pub async fn get_property_options_batch(
     db: &Pool<Postgres>,
     property_definition_ids: &[Uuid],
