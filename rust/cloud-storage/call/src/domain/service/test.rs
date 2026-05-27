@@ -3,12 +3,13 @@ use std::sync::Mutex;
 
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
+use notification::domain::models::apple::VoipPushPayload;
 use uuid::Uuid;
 
 use crate::domain::models::{CallError, CallWebhookEvent, EgressS3Config};
-use crate::domain::ports::CallRtcClient;
+use crate::domain::ports::{CallRtcClient, VoipPushPayloadRequest};
 
-use super::{build_voip_push_payloads, exclude_voip_recipients, extract_recording_key};
+use super::{exclude_voip_recipients, extract_recording_key};
 
 #[cfg(feature = "outbound")]
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
@@ -65,6 +66,36 @@ impl CallRtcClient for MockRtcClient {
         tokens
             .remove(&key)
             .unwrap_or_else(|| Ok(format!("default-token-{key}")))
+    }
+
+    async fn build_voip_push_payloads<'a>(
+        &self,
+        request: VoipPushPayloadRequest<'a>,
+    ) -> Vec<(MacroUserIdStr<'static>, VoipPushPayload)> {
+        let mut payloads = Vec::new();
+        for recipient_id in request.recipients {
+            let livekit_token = match self
+                .generate_token(request.room_name, recipient_id.clone())
+                .await
+            {
+                Ok(livekit_token) => livekit_token,
+                Err(_) => continue,
+            };
+            payloads.push((
+                recipient_id.clone(),
+                VoipPushPayload {
+                    aps: Default::default(),
+                    call_id: request.call_id.to_string(),
+                    channel_id: request.channel_id.to_string(),
+                    channel_name: request.channel_name.to_string(),
+                    caller_name: request.caller_name.to_string(),
+                    livekit_server_url: Some(request.livekit_server_url.to_string()),
+                    livekit_token: Some(livekit_token),
+                },
+            ));
+        }
+
+        payloads
     }
 
     async fn remove_participant<'a>(
@@ -219,17 +250,17 @@ async fn build_voip_push_payloads_mints_a_distinct_token_per_recipient() {
     mock.set_token(bob.as_ref(), Ok("token-bob".to_string()));
 
     let recipients = vec![alice.clone(), bob.clone()];
-    let payloads = build_voip_push_payloads(
-        &mock,
-        &recipients,
-        "room-1",
-        Uuid::nil(),
-        "channel-1",
-        "general",
-        "Carla",
-        "wss://lk.example",
-    )
-    .await;
+    let payloads = mock
+        .build_voip_push_payloads(VoipPushPayloadRequest {
+            recipients: &recipients,
+            room_name: "room-1",
+            call_id: Uuid::nil(),
+            channel_id: "channel-1",
+            channel_name: "general",
+            caller_name: "Carla",
+            livekit_server_url: "wss://lk.example",
+        })
+        .await;
 
     assert_eq!(payloads.len(), 2);
     let by_id: HashMap<String, String> = payloads
@@ -258,17 +289,17 @@ async fn build_voip_push_payloads_drops_recipients_whose_token_mint_fails() {
     mock.set_token(bob.as_ref(), Err(anyhow::anyhow!("livekit unreachable")));
 
     let recipients = vec![alice.clone(), bob.clone()];
-    let payloads = build_voip_push_payloads(
-        &mock,
-        &recipients,
-        "room-1",
-        Uuid::nil(),
-        "channel-1",
-        "general",
-        "Carla",
-        "wss://lk.example",
-    )
-    .await;
+    let payloads = mock
+        .build_voip_push_payloads(VoipPushPayloadRequest {
+            recipients: &recipients,
+            room_name: "room-1",
+            call_id: Uuid::nil(),
+            channel_id: "channel-1",
+            channel_name: "general",
+            caller_name: "Carla",
+            livekit_server_url: "wss://lk.example",
+        })
+        .await;
 
     assert_eq!(
         payloads.len(),
@@ -285,17 +316,17 @@ async fn build_voip_push_payloads_returns_empty_for_no_recipients() {
     let mock = MockRtcClient::new();
     let recipients: Vec<MacroUserIdStr<'static>> = Vec::new();
 
-    let payloads = build_voip_push_payloads(
-        &mock,
-        &recipients,
-        "room-1",
-        Uuid::nil(),
-        "channel-1",
-        "general",
-        "Carla",
-        "wss://lk.example",
-    )
-    .await;
+    let payloads = mock
+        .build_voip_push_payloads(VoipPushPayloadRequest {
+            recipients: &recipients,
+            room_name: "room-1",
+            call_id: Uuid::nil(),
+            channel_id: "channel-1",
+            channel_name: "general",
+            caller_name: "Carla",
+            livekit_server_url: "wss://lk.example",
+        })
+        .await;
 
     assert!(payloads.is_empty());
     assert!(mock.calls().is_empty());

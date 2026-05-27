@@ -8,7 +8,6 @@ use entity_access::domain::models::{
     EditAccessLevel, EntityAccessReceipt, EntityType, ViewAccessLevel,
 };
 use entity_access::domain::ports::EntityAccessService;
-use futures::future;
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
 use notification::domain::models::apple::VoipPushPayload;
@@ -36,9 +35,8 @@ use super::models::{
 use super::ports::{
     CallRecordQueryService, CallRepository, CallRtcClient, CallSearchIndexer, CallService,
     CallSummarizer, NoOpCallSearchIndexer, NoOpVoiceRepository, RecordingStorage, VoiceRepository,
+    VoipPushPayloadRequest,
 };
-
-const VOIP_TOKEN_MINT_CONCURRENCY: usize = 16;
 
 /// The concrete call service implementation.
 pub struct CallServiceImpl<
@@ -297,59 +295,6 @@ fn exclude_voip_recipients<'a>(
         .collect()
 }
 
-/// Build VoIP payloads with a bounded number of concurrent LiveKit token mints.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn build_voip_push_payloads<C>(
-    rtc_client: &C,
-    recipients: &[MacroUserIdStr<'static>],
-    room_name: &str,
-    call_id: Uuid,
-    channel_id: &str,
-    channel_name: &str,
-    caller_name: &str,
-    livekit_server_url: &str,
-) -> Vec<(MacroUserIdStr<'static>, VoipPushPayload)>
-where
-    C: CallRtcClient + ?Sized,
-{
-    let mut payloads = Vec::new();
-    for batch in recipients.chunks(VOIP_TOKEN_MINT_CONCURRENCY) {
-        let results = future::join_all(batch.iter().map(|recipient_id| {
-            let recipient_id = recipient_id.clone();
-            async move {
-                match rtc_client
-                    .generate_token(room_name, recipient_id.clone())
-                    .await
-                {
-                    Ok(livekit_token) => Some((
-                        recipient_id.clone(),
-                        VoipPushPayload {
-                            aps: Default::default(),
-                            call_id: call_id.to_string(),
-                            channel_id: channel_id.to_string(),
-                            channel_name: channel_name.to_string(),
-                            caller_name: caller_name.to_string(),
-                            livekit_server_url: Some(livekit_server_url.to_string()),
-                            livekit_token: Some(livekit_token),
-                        },
-                    )),
-                    Err(e) => {
-                        tracing::error!(
-                            error=?e,
-                            "failed to mint LiveKit token for VoIP push"
-                        );
-                        None
-                    }
-                }
-            }
-        }))
-        .await;
-        payloads.extend(results.into_iter().flatten());
-    }
-
-    payloads
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 struct CallStartedNotification {
     sender_profile_picture_url: Option<String>,
@@ -570,26 +515,25 @@ impl<
                                     Vec::new()
                                 }
                             };
-                            // Token minting is bounded inside
-                            // build_voip_push_payloads so a large channel does
-                            // not fan out unbounded LiveKit requests.
                             let voip_target_recipient_ids: Vec<MacroUserIdStr<'static>> =
                                 voip_targets
                                     .iter()
                                     .map(|target| target.recipient_id.clone())
                                     .collect();
 
-                            let payloads = build_voip_push_payloads(
-                                &self.rtc_client,
-                                &voip_target_recipient_ids,
-                                &call.room_name,
-                                call.id,
-                                &channel_id_str,
-                                &channel_name.clone().unwrap_or_default(),
-                                &caller_name,
-                                &self.server_url,
-                            )
-                            .await;
+                            let voip_channel_name = channel_name.clone().unwrap_or_default();
+                            let payloads = self
+                                .rtc_client
+                                .build_voip_push_payloads(VoipPushPayloadRequest {
+                                    recipients: &voip_target_recipient_ids,
+                                    room_name: &call.room_name,
+                                    call_id: call.id,
+                                    channel_id: &channel_id_str,
+                                    channel_name: &voip_channel_name,
+                                    caller_name: &caller_name,
+                                    livekit_server_url: &self.server_url,
+                                })
+                                .await;
 
                             let mut payloads_by_recipient: HashMap<
                                 MacroUserIdStr<'static>,
