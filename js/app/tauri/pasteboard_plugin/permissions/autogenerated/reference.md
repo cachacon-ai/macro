@@ -10,6 +10,32 @@
 <tr>
 <td>
 
+`pasteboard:allow-stage-dropped-image`
+
+</td>
+<td>
+
+Enables the stage_dropped_image command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pasteboard:deny-stage-dropped-image`
+
+</td>
+<td>
+
+Denies the stage_dropped_image command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pasteboard:allow-stage-pasteboard-image`
 
 </td>

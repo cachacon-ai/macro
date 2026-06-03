@@ -6,6 +6,13 @@ private struct StagePasteboardImagePayload: Decodable {
     let tokenPrefix: String
 }
 
+private struct StageDroppedImagePayload: Decodable {
+    let stagingDirectoryPath: String
+    let tokenPrefix: String
+    let imageData: String
+    let fileName: String?
+}
+
 class PasteboardPlugin: Plugin {
     @objc public func stagePasteboardImage(_ invoke: Invoke) throws {
         let payload = try invoke.parseArgs(StagePasteboardImagePayload.self)
@@ -26,40 +33,80 @@ class PasteboardPlugin: Plugin {
                 return
             }
 
-            DispatchQueue.global(qos: .userInitiated).async {
-                self.cleanupStalePasteboardImages(in: stagingDirectory)
+            self.stageImage(
+                image,
+                baseName: "pasted-image",
+                stagingDirectory: stagingDirectory,
+                tokenPrefix: payload.tokenPrefix,
+                invoke: invoke
+            )
+        }
+    }
 
-                let encoded = encodedData(from: image)
-                guard let data = encoded.data else {
-                    invoke.reject("Failed to encode pasteboard image")
-                    return
-                }
+    @objc public func stageDroppedImage(_ invoke: Invoke) throws {
+        let payload = try invoke.parseArgs(StageDroppedImagePayload.self)
+        let stagingDirectory = URL(
+            fileURLWithPath: payload.stagingDirectoryPath,
+            isDirectory: true
+        )
 
-                let token = payload.tokenPrefix
-                    + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-                let name = "pasted-image.\(encoded.fileExtension)"
-                let fileURL = stagingDirectory.appendingPathComponent("\(token)-\(name)")
+        guard
+            let data = Data(base64Encoded: payload.imageData),
+            let image = UIImage(data: data)
+        else {
+            invoke.reject("Failed to decode dropped image")
+            return
+        }
 
-                do {
-                    try FileManager.default.createDirectory(
-                        at: stagingDirectory,
-                        withIntermediateDirectories: true
-                    )
-                    try data.write(to: fileURL, options: [.atomic])
-                    let size = try FileManager.default.attributesOfItem(
-                        atPath: fileURL.path
-                    )[.size] as? NSNumber
+        self.stageImage(
+            image,
+            baseName: droppedImageBaseName(from: payload.fileName),
+            stagingDirectory: stagingDirectory,
+            tokenPrefix: payload.tokenPrefix,
+            invoke: invoke
+        )
+    }
 
-                    invoke.resolve([
-                        "token": token,
-                        "name": name,
-                        "mimeType": encoded.mimeType,
-                        "size": size?.uint64Value ?? UInt64(data.count),
-                        "previewPath": fileURL.path,
-                    ])
-                } catch {
-                    invoke.reject("Failed to stage pasteboard image: \(error.localizedDescription)")
-                }
+    private func stageImage(
+        _ image: UIImage,
+        baseName: String,
+        stagingDirectory: URL,
+        tokenPrefix: String,
+        invoke: Invoke
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.cleanupStalePasteboardImages(in: stagingDirectory)
+
+            let encoded = encodedData(from: image)
+            guard let data = encoded.data else {
+                invoke.reject("Failed to encode image")
+                return
+            }
+
+            let token = tokenPrefix
+                + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            let name = "\(baseName).\(encoded.fileExtension)"
+            let fileURL = stagingDirectory.appendingPathComponent("\(token)-\(name)")
+
+            do {
+                try FileManager.default.createDirectory(
+                    at: stagingDirectory,
+                    withIntermediateDirectories: true
+                )
+                try data.write(to: fileURL, options: [.atomic])
+                let size = try FileManager.default.attributesOfItem(
+                    atPath: fileURL.path
+                )[.size] as? NSNumber
+
+                invoke.resolve([
+                    "token": token,
+                    "name": name,
+                    "mimeType": encoded.mimeType,
+                    "size": size?.uint64Value ?? UInt64(data.count),
+                    "previewPath": fileURL.path,
+                ])
+            } catch {
+                invoke.reject("Failed to stage image: \(error.localizedDescription)")
             }
         }
     }
@@ -88,6 +135,20 @@ private struct EncodedImageData {
     let data: Data?
     let mimeType: String
     let fileExtension: String
+}
+
+private func droppedImageBaseName(from fileName: String?) -> String {
+    let fallback = "dropped-image"
+    guard let fileName else { return fallback }
+
+    let stem = (fileName as NSString).deletingPathExtension
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+    let sanitized = String(
+        stem.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+    )
+    .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+
+    return sanitized.isEmpty ? fallback : sanitized
 }
 
 private let maxImagePixelDimension: CGFloat = 4096

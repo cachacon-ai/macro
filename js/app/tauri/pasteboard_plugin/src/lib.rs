@@ -15,6 +15,16 @@ struct StagePasteboardImagePayload {
     token_prefix: &'static str,
 }
 
+#[cfg(target_os = "ios")]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StageDroppedImagePayload {
+    staging_directory_path: String,
+    token_prefix: &'static str,
+    image_data: String,
+    file_name: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedPasteboardImage {
@@ -39,6 +49,26 @@ impl<R: Runtime> Pasteboard<R> {
                 StagePasteboardImagePayload {
                     staging_directory_path,
                     token_prefix: staged_upload_constants::PASTEBOARD_TOKEN_PREFIX,
+                },
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    #[cfg(target_os = "ios")]
+    fn stage_dropped_image(
+        &self,
+        staging_directory_path: String,
+        image_data: String,
+        file_name: Option<String>,
+    ) -> Result<StagedPasteboardImage, String> {
+        self.0
+            .run_mobile_plugin(
+                "stageDroppedImage",
+                StageDroppedImagePayload {
+                    staging_directory_path,
+                    token_prefix: staged_upload_constants::PASTEBOARD_TOKEN_PREFIX,
+                    image_data,
+                    file_name,
                 },
             )
             .map_err(|error| error.to_string())
@@ -80,9 +110,39 @@ async fn stage_pasteboard_image<R: Runtime>(
     }
 }
 
+#[command]
+async fn stage_dropped_image<R: Runtime>(
+    app: AppHandle<R>,
+    image_data: String,
+    file_name: Option<String>,
+) -> Result<StagedPasteboardImage, String> {
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, image_data, file_name);
+        Err("pasteboard plugin is only available on iOS".to_string())
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        let staging_directory_path = app
+            .path()
+            .app_cache_dir()
+            .map_err(|error| format!("failed to resolve app cache directory: {error}"))?
+            .join(staged_upload_constants::PASTEBOARD_STAGING_DIRECTORY_NAME)
+            .to_string_lossy()
+            .into_owned();
+
+        app.pasteboard()
+            .stage_dropped_image(staging_directory_path, image_data, file_name)
+    }
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("pasteboard")
-        .invoke_handler(tauri::generate_handler![stage_pasteboard_image])
+        .invoke_handler(tauri::generate_handler![
+            stage_pasteboard_image,
+            stage_dropped_image
+        ])
         .setup(|_app, _api| {
             #[cfg(target_os = "ios")]
             {

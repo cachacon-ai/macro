@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the stage_dropped_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stage-dropped-image",
+          "markdownDescription": "Enables the stage_dropped_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stage_dropped_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stage-dropped-image",
+          "markdownDescription": "Denies the stage_dropped_image command without any pre-configured scope."
+        },
+        {
           "description": "Enables the stage_pasteboard_image command without any pre-configured scope.",
           "type": "string",
           "const": "allow-stage-pasteboard-image",

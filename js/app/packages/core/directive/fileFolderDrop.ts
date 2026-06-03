@@ -1,4 +1,5 @@
 import { internalDragExceedsThreshold } from '@core/directive/internalDragState';
+import { processMobileDroppedImageEntries } from '@core/mobile/mobileDroppedImageRecovery';
 import { extractFileSystemEntries } from '@core/util/dataTransfer';
 import { type Accessor, onCleanup } from 'solid-js';
 
@@ -124,6 +125,13 @@ export function fileFolderDrop(
       return;
     }
 
+    // On mobile, run dragged image bytes through the same native processing
+    // (downscale + re-encode) that pasted images receive before attaching.
+    const emitFileEntries = async (entries: FileSystemFileEntry[]) => {
+      const processed = await processMobileDroppedImageEntries(entries);
+      options?.onDrop?.(processed, [], e);
+    };
+
     const { fileEntries, directoryEntries } =
       extractFileSystemEntries(dataTransfer);
 
@@ -134,7 +142,7 @@ export function fileFolderDrop(
     }
 
     if (fileEntries.length > 0) {
-      options?.onDrop?.(fileEntries, [], e);
+      await emitFileEntries(fileEntries);
       return;
     }
 
@@ -144,7 +152,7 @@ export function fileFolderDrop(
       const fileEntries: FileSystemFileEntry[] = Array.from(files).map(
         fileToFileSystemFileEntry
       );
-      options?.onDrop?.(fileEntries, [], e);
+      await emitFileEntries(fileEntries);
       return;
     }
 
@@ -187,7 +195,7 @@ export function fileFolderDrop(
 
           const file = new File([blob], filename, { type: blob.type });
           const fileEntry = fileToFileSystemFileEntry(file);
-          options?.onDrop?.([fileEntry], [], e);
+          await emitFileEntries([fileEntry]);
           return;
         } catch (error) {
           console.error('Failed to fetch dragged image:', error);

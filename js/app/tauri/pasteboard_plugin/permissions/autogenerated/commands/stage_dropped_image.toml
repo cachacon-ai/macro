@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-stage-dropped-image"
+description = "Enables the stage_dropped_image command without any pre-configured scope."
+commands.allow = ["stage_dropped_image"]
+
+[[permission]]
+identifier = "deny-stage-dropped-image"
+description = "Denies the stage_dropped_image command without any pre-configured scope."
+commands.deny = ["stage_dropped_image"]
