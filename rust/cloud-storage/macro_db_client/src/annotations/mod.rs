@@ -9,6 +9,7 @@ pub mod delete_thread;
 pub mod edit_anchor;
 pub mod edit_comment;
 pub mod get;
+pub mod share_on_mention;
 
 #[derive(Error, Debug)]
 pub enum CommentError {
