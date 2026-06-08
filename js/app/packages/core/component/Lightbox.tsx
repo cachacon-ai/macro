@@ -68,15 +68,24 @@ export function Lightbox(props: LightboxProps) {
   // gesture — the user-activation window expires if a network round-trip is
   // needed. Desktop clipboard doesn't have this constraint.
   const [cachedBlob, setCachedBlob] = createSignal<Blob | undefined>();
+  // True while the iOS pre-fetch is in flight. We surface this as a loading
+  // state on the copy/download buttons so the blob is guaranteed to be in
+  // memory before the user can tap. Without this, tapping download on a large
+  // image (whose pre-fetch hasn't finished yet) falls through to an awaited
+  // network fetch, which consumes the tap's user activation and makes
+  // navigator.share() silently no-op until a second tap.
+  const [isPrefetching, setIsPrefetching] = createSignal(false);
   if (isIOS) {
     createEffect(() => {
       props.src(); // re-fetch when navigating to a new image
       setCachedBlob(undefined);
+      setIsPrefetching(true);
       untrack(() => fetchBlob())
         .then((blob) => {
           if (blob) setCachedBlob(blob);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setIsPrefetching(false));
     });
   }
   const fetchBlobCached = (): Promise<Blob | undefined> => {
@@ -288,19 +297,27 @@ export function Lightbox(props: LightboxProps) {
             variant="ghost"
             size="icon-md"
             onClick={copyToClipboard}
-            disabled={isCopying()}
+            disabled={isCopying() || isPrefetching()}
             label="Copy image"
           >
-            {isCopying() ? <SpinnerIcon /> : <ClipboardIcon />}
+            {isCopying() || isPrefetching() ? (
+              <SpinnerIcon />
+            ) : (
+              <ClipboardIcon />
+            )}
           </Button>
           <Button
             variant="ghost"
             size="icon-md"
             onClick={downloadImage}
-            disabled={isDownloading()}
+            disabled={isDownloading() || isPrefetching()}
             label="Download image"
           >
-            {isDownloading() ? <SpinnerIcon /> : <DownloadIcon />}
+            {isDownloading() || isPrefetching() ? (
+              <SpinnerIcon />
+            ) : (
+              <DownloadIcon />
+            )}
           </Button>
           <Dialog.CloseButton>
             <Button variant="ghost" size="icon-md" label="Close">
