@@ -53,6 +53,10 @@ export function createChannelHotkeys(options: CreateChannelHotkeysOptions) {
     return options.messageById().get(id);
   };
 
+  const focusInput = () => {
+    inputEl?.querySelector<HTMLElement>('[contenteditable]')?.focus();
+  };
+
   registerHotkey({
     scopeId: messageListScope,
     hotkey: 'arrowup',
@@ -79,7 +83,7 @@ export function createChannelHotkeys(options: CreateChannelHotkeysOptions) {
         options.navigation()?.markUserIntent('down');
         options.navigation()?.scrollToId(id, { align: 'nearest' });
       } else {
-        inputEl?.querySelector<HTMLElement>('[contenteditable]')?.focus();
+        focusInput();
       }
       return true;
     },
@@ -108,6 +112,19 @@ export function createChannelHotkeys(options: CreateChannelHotkeysOptions) {
       if (!msg) return false;
       const actions = options.getMessageActions(msg);
       actions?.onReply?.({ message: msg });
+      return true;
+    },
+  });
+
+  registerHotkey({
+    scopeId: messageListScope,
+    hotkey: 'enter',
+    hotkeyToken: TOKENS.channel.focusInput,
+    description: 'Focus input',
+    registrationType: 'add',
+    condition: () => !hasSelection(),
+    keyDownHandler: () => {
+      focusInput();
       return true;
     },
   });
