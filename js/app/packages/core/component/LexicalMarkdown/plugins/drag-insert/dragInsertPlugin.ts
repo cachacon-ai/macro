@@ -184,6 +184,13 @@ function registerDragInsert(
 
   const handleDrop = (event: DragEvent) => {
     event.preventDefault();
+    // Always hide the indicator: a drop ends the drag even when no valid
+    // insert point is found (e.g. in the margin between blocks), and
+    // OS-sourced drags never fire a dragend on this document.
+    if (props.setState) {
+      props.setState({ visible: false });
+    }
+
     const { key, position } = calculateInsertPoint(
       editor,
       event,
@@ -191,10 +198,6 @@ function registerDragInsert(
     );
     if (!key || !position) {
       return;
-    }
-
-    if (props.setState) {
-      props.setState({ visible: false });
     }
 
     if (props.onDrop) {

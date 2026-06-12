@@ -355,6 +355,9 @@ export function MarkdownEditor(props: {
   };
 
   const dndDragEnd = async (event: EntityDragEvent) => {
+    // Cancel any pending throttled move so its trailing call can't re-show
+    // the indicator after the drop.
+    dndDragMove.clear();
     if (!dragInsertStore.visible) return;
     setDragInsertStore({ visible: false });
     if (!canEdit()) return;
