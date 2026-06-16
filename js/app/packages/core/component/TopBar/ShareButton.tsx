@@ -989,10 +989,15 @@ export function ShareModal(props: ShareModalProps) {
                 <Panel depth={2} class="rounded-xl">
                   <Panel.Header class="px-4">
                     <span class="text-sm font-medium">
-                      People with access to this{' '}
-                      {props.itemType === 'email'
-                        ? 'email thread'
-                        : props.itemType}
+                      <Show
+                        when={props.userPermissions === Permissions.OWNER}
+                        fallback="Document owner"
+                      >
+                        People with access to this{' '}
+                        {props.itemType === 'email'
+                          ? 'email thread'
+                          : props.itemType}
+                      </Show>
                     </span>
                   </Panel.Header>
                   <Panel.Body class="text-ink">
