@@ -49,6 +49,14 @@ const getExcludedDocumentSubTypes = (...subTypes: string[]) =>
 const getDisabledSnippetSubtypeExclude = (): Query['exclude'] =>
   ENABLE_SNIPPETS() ? {} : { subType: ['snippet'] };
 
+/**
+ * The only foreign-entity source we currently surface in the soup. Scoping the
+ * inbox query to this source keeps other foreign-entity types (added in the
+ * future) out of the request rather than relying on a client-side predicate to
+ * drop them. Mirrors the backend `GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE`.
+ */
+const GITHUB_PULL_REQUEST_SOURCE = 'github_pull_request';
+
 /** Filters for inbox/signal: not done, importance=true for emails, 2-week window */
 const getInboxSignalFilters = () => {
   const twoWeeksAgo = subWeeks(startOfDay(new Date()), 2).toISOString();
@@ -66,9 +74,11 @@ const getInboxSignalFilters = () => {
       folderUpdatedAt: { gte: twoWeeksAgo },
       // Foreign entities (e.g. GitHub PRs) with a not-done notification.
       // Referencing `fef` also opts them into the signal query (otherwise
-      // defineQueryFilters excludes unreferenced entity types). Rendering is
-      // still gated on the supported-foreign-entities flag client-side.
+      // defineQueryFilters excludes unreferenced entity types). The source
+      // scope keeps non-GitHub foreign entities out of the request; rendering
+      // is still gated on the supported-foreign-entities flag client-side.
       foreignEntityDone: false,
+      foreignEntitySource: [GITHUB_PULL_REQUEST_SOURCE],
       emailShared: 'exclude',
     },
     exclude: getDisabledSnippetSubtypeExclude(),
@@ -106,8 +116,16 @@ export const VIEW_TAB_PRESETS: Record<ListView, ViewTabConfig> = {
       }),
       all: () => ({
         filters: {
-          // crm companies aren't surfaced outside the Companies view.
-          include: { crmCompanyId: [NIL_UUID] },
+          include: {
+            // crm companies aren't surfaced outside the Companies view.
+            crmCompanyId: [NIL_UUID],
+            // When the override opts foreign entities in (via the exclude
+            // below), scope them to GitHub PRs so other foreign sources don't
+            // leak into the request.
+            ...(ENABLE_SUPPORTED_SOUP_FOREIGN_ENTITIES_OVERRIDE
+              ? { foreignEntitySource: [GITHUB_PULL_REQUEST_SOURCE] }
+              : {}),
+          },
           exclude: {
             documentId: [NIL_UUID],
             threadId: [NIL_UUID],
