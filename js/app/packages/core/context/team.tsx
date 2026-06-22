@@ -1,3 +1,4 @@
+import { queryReadyGate } from '@queries/gate';
 import { useCurrentTeamQuery } from '@queries/team/teams';
 import { type Accessor, createMemo } from 'solid-js';
 import { createAssertedContextProvider } from './createContext';
@@ -11,9 +12,10 @@ type TeamContextValue = {
 export const [TeamContextProvider, useTeamContext] =
   createAssertedContextProvider('TeamContext', (): TeamContextValue => {
     const currentTeam = useCurrentTeamQuery();
-    const isMacroTeam = createMemo(
-      () => currentTeam.data?.team.slug === MACRO_TEAM_SLUG
-    );
+    const isMacroTeam = createMemo(() => {
+      if (!queryReadyGate(currentTeam)) return false;
+      return currentTeam.data.team?.slug === MACRO_TEAM_SLUG;
+    });
 
     return {
       isMacroTeam,

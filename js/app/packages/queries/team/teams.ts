@@ -52,7 +52,7 @@ export function useIsTeamAdmin(): Accessor<boolean> {
     const uid = userId();
     if (!uid) return false;
     if (!queryReadyGate(teamQuery)) return false;
-    const member = teamQuery.data.members.find((m) => m.user_id === uid);
+    const member = teamQuery.data.members?.find((m) => m.user_id === uid);
     return member?.role === TeamRole.admin || member?.role === TeamRole.owner;
   };
 }
