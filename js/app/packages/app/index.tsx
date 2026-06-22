@@ -7,7 +7,10 @@ import '@fontsource-variable/playfair-display';
 import { initializeLexical } from '@core/component/LexicalMarkdown/init';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { getPlatform, isTauri } from '@core/util/platform';
-import { platformFetch } from '@core/util/platformFetch';
+import {
+  platformFetch,
+  setPlatformBrowserFetch,
+} from '@core/util/platformFetch';
 import { initMonochromeIcons } from '@ui/utils/monochromeIcons';
 import { ErrorBoundary, render } from 'solid-js/web';
 import { FatalError } from './component/FatalError';
@@ -17,6 +20,9 @@ import { Root } from './component/Root';
 // Skip localhost requests (dev server) to avoid breaking HMR
 if (isTauri()) {
   const originalFetch = window.fetch;
+  // platformFetch routes network requests through Tauri's HTTP client, but
+  // local app assets still need the WebView's original fetch for tauri://.
+  setPlatformBrowserFetch(originalFetch.bind(window));
   window.fetch = new Proxy(originalFetch, {
     apply: (target, thisArg, args) => {
       const url = args[0];
