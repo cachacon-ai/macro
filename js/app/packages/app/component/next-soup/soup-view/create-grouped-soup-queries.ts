@@ -32,15 +32,15 @@ import {
   on,
   untrack,
 } from 'solid-js';
+import {
+  buildRestoredGroupQueryData,
+  type GroupedSoupQueriesSnapshot,
+  type GroupQueryPage,
+} from './grouped-query-snapshot';
 
 type InitialGroupPage = {
   items: SoupAstItemsGroupedPage['items'];
   groups: GroupMeta[];
-};
-
-export type GroupQueryPage = {
-  items: InitialGroupPage['items'];
-  group: GroupMeta;
 };
 
 export type GroupQueryData = {
@@ -56,6 +56,7 @@ type CreateGroupedSoupQueriesArgs = {
     }
   >;
   soupBody: Accessor<SoupAstBody>;
+  initialSnapshot?: Accessor<GroupedSoupQueriesSnapshot | undefined>;
   queryOptions: Accessor<{
     enabled?: boolean;
     meta?: {
@@ -111,6 +112,27 @@ export function createGroupedSoupQueries(args: CreateGroupedSoupQueriesArgs) {
       if (item) groupItems[id] = item;
     }
     return { items: groupItems, group };
+  };
+
+  const groupBySnapshotKey = (field: GroupByField) =>
+    JSON.stringify(serializeGroupByField(field));
+
+  const snapshotScopeKey = (field: GroupByField) =>
+    JSON.stringify(
+      soupKeys.astItems({
+        params: args.soupParams(),
+        body: args.soupBody(),
+        groupBy: field,
+      }).queryKey
+    );
+
+  const snapshotKeys = () => {
+    const field = args.groupByField();
+    if (!field) return;
+    return {
+      groupBy: groupBySnapshotKey(field),
+      scopeKey: snapshotScopeKey(field),
+    };
   };
 
   const configs = createMemo(() => {
@@ -207,12 +229,32 @@ export function createGroupedSoupQueries(args: CreateGroupedSoupQueriesArgs) {
     return next;
   });
 
+  const getSnapshot = (): GroupedSoupQueriesSnapshot | undefined => {
+    const keys = snapshotKeys();
+    if (!keys) return undefined;
+
+    const groups: GroupedSoupQueriesSnapshot['groups'] = {};
+
+    for (const config of configs()) {
+      const data = queryClient.getQueryData<
+        InfiniteData<GroupQueryPage, string | null>
+      >(config.queryKey);
+      if (!data || data.pages.length <= 1) continue;
+      groups[config.key] = data;
+    }
+
+    return Object.keys(groups).length > 0 ? { ...keys, groups } : undefined;
+  };
+
   createEffect(
     on(
       () => args.initialPage(),
       (initialGroupedPage) => {
         const field = args.groupByField();
         if (!field || !initialGroupedPage) return;
+        const groupBy = groupBySnapshotKey(field);
+        const scopeKey = snapshotScopeKey(field);
+        const snapshot = args.initialSnapshot?.();
 
         batch(() => {
           for (const group of initialGroupedPage.groups) {
@@ -226,10 +268,16 @@ export function createGroupedSoupQueries(args: CreateGroupedSoupQueriesArgs) {
 
             queryClient.setQueryData<
               InfiniteData<GroupQueryPage, string | null>
-            >(queryKey, {
-              pages: [initialPage],
-              pageParams: [null],
-            });
+            >(
+              queryKey,
+              buildRestoredGroupQueryData({
+                initialPage,
+                groupBy,
+                groupKey: group.key,
+                scopeKey,
+                snapshot,
+              })
+            );
           }
 
           setGroupDataVersion((version) => version + 1);
@@ -243,5 +291,6 @@ export function createGroupedSoupQueries(args: CreateGroupedSoupQueriesArgs) {
     ...queries,
     list,
     map,
+    getSnapshot,
   };
 }

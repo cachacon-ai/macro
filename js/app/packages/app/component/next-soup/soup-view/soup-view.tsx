@@ -24,6 +24,7 @@ import { InboxSelector } from '@app/component/next-soup/soup-view/filters-bar/in
 import { SoupFiltersBar } from '@app/component/next-soup/soup-view/filters-bar/soup-filters-bar';
 import { SoupSearchbar } from '@app/component/next-soup/soup-view/filters-bar/soup-view-search-bar';
 import { useFilterRefinements } from '@app/component/next-soup/soup-view/filters-bar/use-filter-refinements';
+import type { GroupedSoupQueriesSnapshot } from '@app/component/next-soup/soup-view/grouped-query-snapshot';
 import { MaybeSoupEntityActionDrawerManager } from '@app/component/next-soup/soup-view/SoupEntityActionDrawerManager';
 import { SoupEntityContextMenu } from '@app/component/next-soup/soup-view/soup-entity-context-menu';
 import {
@@ -360,6 +361,14 @@ const listStateCache = new Map<
   }
 >();
 
+const SOUP_GROUP_STATE_ENTRY_KEY = 'soup.groupState';
+
+type SoupGroupEntryState = {
+  activeGroupId: string | null;
+  collapsedGroupKeys: string[];
+  loadedGroups?: GroupedSoupQueriesSnapshot;
+};
+
 interface SoupViewProps {
   viewName: string;
   initialClientFilters?: SetPredicatesInput<string>;
@@ -397,16 +406,11 @@ export const SoupView = (props: SoupViewProps) => {
 
   const persistedSearchText = entryState?.['search.text'] as string | undefined;
 
-  const persistedGroupBy = entryState?.['soup.groupBy'] as
-    | string
-    | null
+  const persistedGroupState = entryState?.[SOUP_GROUP_STATE_ENTRY_KEY] as
+    | SoupGroupEntryState
     | undefined;
 
   const persistedActiveTab = entryState?.['soup.tab'] as string | undefined;
-
-  const persistedCollapsedGroups = entryState?.['soup.collapsedGroups'] as
-    | string[]
-    | undefined;
 
   const [sortPref, setSortPref] = usePreference<string[]>(
     `macro:pref:soup:${contentId}:sort`,
@@ -431,11 +435,15 @@ export const SoupView = (props: SoupViewProps) => {
         initialQuery: persistedFilters ?? props.initialFilters,
         initialClientFilters: persistedPredicates ?? props.initialClientFilters,
         initialSearchText: persistedSearchText ?? props.initialSearchText,
+        initialGroupedQuerySnapshot: persistedGroupState?.loadedGroups,
         disableLocalSearch: props.disableLocalSearch,
         additionalEntities: props.additionalEntities,
       });
 
-      const initialGroupBy = persistedGroupBy ?? props.initialGroupBy;
+      let initialGroupBy = props.initialGroupBy;
+      if (persistedGroupState) {
+        initialGroupBy = persistedGroupState.activeGroupId ?? undefined;
+      }
 
       let initialSortIds = sortPref();
       if (initialSortIds.length === 0) {
@@ -449,7 +457,7 @@ export const SoupView = (props: SoupViewProps) => {
       }
 
       soup.grouping.setActiveGroupId(initialGroupBy);
-      soup.grouping.collapseAll(persistedCollapsedGroups ?? []);
+      soup.grouping.collapseAll(persistedGroupState?.collapsedGroupKeys ?? []);
 
       soup.sort.setAll(
         initialSortIds as Parameters<typeof soup.sort.setAll>[0]
@@ -724,6 +732,7 @@ export const SoupViewList = (props: SoupViewListProps) => {
     isLocalSearchSettling,
     activeTab,
     fetchNextGroupPage,
+    getGroupedQuerySnapshot,
     isFetchingGroupPage,
   } = useSoupView();
   const { hasActiveRefinements, hasHiddenItems, resetToTabDefaults } =
@@ -1027,23 +1036,17 @@ export const SoupViewList = (props: SoupViewListProps) => {
   );
   onCleanup(previewCaptorTeardown);
 
-  // Which groups are collapsed is also per-entry state: captured on nav-away
-  // and restored on back/forward.
-  const collapsedCaptorTeardown = panel.handle.registerEntryStateCaptor(
-    'soup.collapsedGroups',
-    () => [...soup.grouping.collapsedGroups()]
+  // Grouping is per-entry state too, including the active grouping, collapsed
+  // group labels, and per-group pages loaded via "Load more".
+  const groupStateCaptorTeardown = panel.handle.registerEntryStateCaptor(
+    SOUP_GROUP_STATE_ENTRY_KEY,
+    (): SoupGroupEntryState => ({
+      activeGroupId: soup.grouping.activeGroupId() ?? null,
+      collapsedGroupKeys: [...soup.grouping.collapsedGroups()],
+      loadedGroups: getGroupedQuerySnapshot(),
+    })
   );
-  onCleanup(collapsedCaptorTeardown);
-
-  // Active grouping is per-entry state too, so back/forward restores the
-  // grouping the user left each entry with. `null` (vs. key absent) records
-  // an explicit "no grouping" choice, which would otherwise be
-  // indistinguishable from a fresh entry.
-  const groupByCaptorTeardown = panel.handle.registerEntryStateCaptor(
-    'soup.groupBy',
-    () => soup.grouping.activeGroupId() ?? null
-  );
-  onCleanup(groupByCaptorTeardown);
+  onCleanup(groupStateCaptorTeardown);
 
   onCleanup(() => {
     if (isProjectList) return;

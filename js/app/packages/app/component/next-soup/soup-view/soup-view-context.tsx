@@ -20,6 +20,7 @@ import {
 } from '@app/component/next-soup/filters/filter-store/query-store';
 import { createGroupedSoupQueries } from '@app/component/next-soup/soup-view/create-grouped-soup-queries';
 import { createSearchState } from '@app/component/next-soup/soup-view/create-search-state';
+import type { GroupedSoupQueriesSnapshot } from '@app/component/next-soup/soup-view/grouped-query-snapshot';
 import {
   INBOX_FILTER_ENTRY_KEY,
   registerInboxFilterSplit,
@@ -92,6 +93,7 @@ type SoupViewInitializeOptions = {
   initialQuery?: Query;
   initialClientFilters?: SetPredicatesInput<string>;
   initialSearchText?: string;
+  initialGroupedQuerySnapshot?: GroupedSoupQueriesSnapshot;
   disableLocalSearch?: boolean;
   additionalEntities?: Accessor<EntityData[]>;
 };
@@ -117,6 +119,7 @@ interface SoupViewContextValues {
   activeTab: Accessor<string | undefined>;
   setActiveTab: Setter<string | undefined>;
   groupByField: Accessor<GroupByField | undefined>;
+  getGroupedQuerySnapshot: () => GroupedSoupQueriesSnapshot | undefined;
   fetchNextGroupPage: (groupKey: string) => Promise<void>;
   isFetchingGroupPage: (groupKey: string) => boolean;
   hasNextGroupPage: (groupKey: string) => boolean;
@@ -163,6 +166,7 @@ export const SoupViewContextProvider: FlowComponent<
     initialQuery: props.initialQuery,
     initialClientFilters: props.initialClientFilters,
     initialSearchText: props.initialSearchText,
+    initialGroupedQuerySnapshot: props.initialGroupedQuerySnapshot,
     disableLocalSearch: props.disableLocalSearch,
     additionalEntities: props.additionalEntities,
   });
@@ -498,6 +502,7 @@ export const SoupViewContextProvider: FlowComponent<
       return { groups, items };
     }),
     groupByField,
+    initialSnapshot: () => config().initialGroupedQuerySnapshot,
     soupParams,
     soupBody,
     queryOptions: () => {
@@ -649,6 +654,7 @@ export const SoupViewContextProvider: FlowComponent<
     activeTab,
     setActiveTab,
     groupByField,
+    getGroupedQuerySnapshot: groupQueries.getSnapshot,
     fetchNextGroupPage,
     isFetchingGroupPage,
     hasNextGroupPage,
