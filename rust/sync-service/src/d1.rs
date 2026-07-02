@@ -65,6 +65,7 @@ pub async fn get_user_id_from_peer_id(
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PeerWithUserId {
     pub peer_id: String,
     pub user_id: String,

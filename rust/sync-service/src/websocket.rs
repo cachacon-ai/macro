@@ -6,7 +6,7 @@ use tracing::trace;
 use worker::{Result, WebSocket};
 
 use crate::{
-    durable_object::{DocumentSyncSession, Wsm},
+    durable_object::{SessionState, Wsm},
     error::ResultExt,
     generated::schema::{FromPeer, FromRemote},
     mutex::Mutex,
@@ -81,7 +81,7 @@ pub async fn process_message(
     awareness: &EphemeralStore,
     message: Vec<u8>,
     buf: Arc<Mutex<Vec<u8>>>,
-    dss: &DocumentSyncSession,
+    dss: &SessionState,
 ) -> Result<()> {
     if message.len() > MAX_MESSAGE_SIZE {
         tracing::warn!("received message might be too large {}", message.len());

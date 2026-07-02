@@ -14,6 +14,8 @@ mod secrets;
 mod sps;
 mod state;
 mod storage;
+#[cfg(feature = "openapi")]
+pub mod swagger;
 mod tags;
 mod timeout;
 mod websocket;
@@ -21,7 +23,7 @@ mod websocket;
 use tracing_subscriber::{
     EnvFilter, fmt::time::UtcTime, layer::SubscriberExt, util::SubscriberInitExt,
 };
-use worker::{Context, Env, Result, event};
+use worker::{Context, Env, HttpRequest, Result, event};
 
 pub const GIT_DESCRIBE: &str = env!("GIT_DESCRIBE");
 
@@ -63,7 +65,15 @@ fn start() {
 }
 
 #[event(fetch)]
-async fn fetch(req: worker::Request, env: Env, _ctx: Context) -> Result<worker::Response> {
-    use crate::cf_worker::router;
-    router(env, req).await
+async fn fetch(
+    req: HttpRequest,
+    env: Env,
+    _ctx: Context,
+) -> Result<axum::http::Response<axum::body::Body>> {
+    use tower_service::Service;
+    let mut router = crate::cf_worker::outer_router(env);
+    Ok(router
+        .call(req)
+        .await
+        .unwrap_or_else(|e: std::convert::Infallible| match e {}))
 }
