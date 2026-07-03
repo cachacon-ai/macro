@@ -10,6 +10,7 @@ import type { ObjectLike, ResultError } from '@core/util/result';
 import type { SafeFetchInit } from '@core/util/safeFetch';
 import type { SerializedEditorState } from 'lexical';
 import { err, ok, type Result } from 'neverthrow';
+import type { DocumentMetadata } from './generated/http/schemas';
 import { InitializeFromSnapshotRequest } from './generated/schema';
 
 const SYNC_SERVICE_WORKER_URL = `${SYNC_SERVICE_HOSTS['worker']}`;
@@ -61,13 +62,6 @@ function syncFetch<T extends ObjectLike = never>(
     },
   });
 }
-
-type MetadataResponse = {
-  peers: Array<{
-    peer_id: number;
-    user_id: string;
-  }>;
-};
 
 export const syncServiceClient = {
   async wakeup(args: { documentId: string }) {
@@ -163,7 +157,7 @@ export const syncServiceClient = {
   async getDocumentMetadata(args: { documentId: string }) {
     const token = await getPermissionToken('document', args.documentId);
 
-    const response = await syncFetch<MetadataResponse>(
+    const response = await syncFetch<DocumentMetadata>(
       `/document/${args.documentId}/metadata`,
       {
         headers: {
@@ -177,7 +171,7 @@ export const syncServiceClient = {
       return err(response.error);
     }
 
-    return ok(response.value as MetadataResponse);
+    return ok(response.value);
   },
   async getSnapshot(args: { documentId: string }) {
     const token = await getPermissionToken('document', args.documentId);
