@@ -4,8 +4,9 @@ use tracing::trace;
 use worker::{Env, Error, Result, State};
 
 use crate::{
-    ids::DocumentId, state::DocumentState, storage::backends::durable_kv::DurableKVStorage, timeit,
-    timeit_log,
+    domain::{document_id::DocumentId, state::DocumentState},
+    outbound::storage::backends::durable_kv::DurableKVStorage,
+    timeit, timeit_log,
 };
 
 pub mod backends;
@@ -114,17 +115,21 @@ pub fn get_snapshot_storage(
     }
     #[cfg(feature = "do-sqlite-snapshot-storage")]
     {
-        crate::storage::backends::combined_sql_kv::Storage::new(_env, _state.storage(), document_id)
+        crate::outbound::storage::backends::combined_sql_kv::Storage::new(
+            _env,
+            _state.storage(),
+            document_id,
+        )
     }
     #[cfg(feature = "kv-snapshot-storage")]
     {
-        crate::storage::backends::kv::Kv::from_env(_env, document_id)
+        crate::outbound::storage::backends::kv::Kv::from_env(_env, document_id)
     }
     #[cfg(feature = "r2-snapshot-storage")]
     {
         const DOCUMENT_STATE_BUCKET: &str = "DOCUMENT_SNAPSHOT_BUCKET";
         let bucket = _env.bucket(DOCUMENT_STATE_BUCKET)?;
-        Ok(crate::storage::backends::r2::R2Storage::new(
+        Ok(crate::outbound::storage::backends::r2::R2Storage::new(
             bucket,
             document_id,
         ))
