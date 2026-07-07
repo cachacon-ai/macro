@@ -1282,6 +1282,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "macro_sync_service_jwt"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "jsonwebtoken",
+ "serde",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2114,8 +2123,8 @@ dependencies = [
  "bebop",
  "derive_more",
  "enum-map",
- "jsonwebtoken",
  "loro",
+ "macro_sync_service_jwt",
  "serde",
  "serde_json",
  "sync_service_bebop_schema",

@@ -22,11 +22,10 @@ use crate::{
         auth::Authenticator,
         router::do_router,
         socket::websocket,
-        sync_service::{SyncServiceImpl, Wsm},
+        sync_service::{SyncServiceImpl, Wsm, report_new_doc_state},
     },
     keepalive::{DEFAULT_TIME_TO_LIVE, keepalive},
     mutex::Mutex,
-    outbound::dss_internal::{DssInternal, DssInternalClient},
     outbound::secrets::Secrets,
     tags::get_ws_id_from_tags,
 };
@@ -193,15 +192,12 @@ impl DurableObject for DocumentSyncSession {
                     && let Ok(snapshot) = doc_state.export_shallow_snapshot()
                 {
                     // best effort
-                    if let Err(err) = DssInternalClient::new(&env)
-                        .publish_shallow_snapshot(&document_id, &snapshot)
-                        .await
-                    {
-                        warn!(error =? err, "failed to push snapshot to DSS");
-                    }
+                    report_new_doc_state(&document_id, &snapshot, &env).await;
                 }
             });
         }
+
+        self.session.flush_pending_blame();
 
         // Re-arm the alarm while clients are connected so the in-memory state
         // stays warm and pending updates keep getting persisted. Updates reach
@@ -241,10 +237,15 @@ impl DurableObject for DocumentSyncSession {
                 .context("failed to broadcast awareness")?;
         }
 
-        #[cfg(feature = "search-service")]
-        if self.session.state.get_websockets().len() == 1 {
-            crate::outbound::sps::update(&*self.session.document_id().await?, &self.session.env)
-                .await?;
+        if self.session.state.get_websockets().len() == 1
+            && let Ok(document_id) = self.session.document_id().await
+            && let Ok(state) = self.session.document_state().await
+            && let Ok(snapshot) = state.export_shallow_snapshot()
+        {
+            let env = self.session.env.clone();
+            self.session.state.wait_until(async move {
+                report_new_doc_state(&document_id, &snapshot, &env).await;
+            });
         }
         Ok(())
     }

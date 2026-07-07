@@ -10,7 +10,7 @@ import type { ObjectLike, ResultError } from '@core/util/result';
 import type { SafeFetchInit } from '@core/util/safeFetch';
 import type { SerializedEditorState } from 'lexical';
 import { err, ok, type Result } from 'neverthrow';
-import type { DocumentMetadata } from './generated/http/schemas';
+import type { BlameRow, DocumentMetadata } from './generated/http/schemas';
 import { InitializeFromSnapshotRequest } from './generated/schema';
 
 const SYNC_SERVICE_WORKER_URL = `${SYNC_SERVICE_HOSTS['worker']}`;
@@ -172,6 +172,35 @@ export const syncServiceClient = {
     }
 
     return ok(response.value);
+  },
+  /**
+   * Look up who last edited a given Lexical node and when. `user_id` is a
+   * MacroId resolved server-side; `null` if the peer has no recorded user
+   * (anonymous edits or legacy data not yet mirrored locally).
+   */
+  async getNodeBlame(args: { documentId: string; nodeId: string }) {
+    const token = await getPermissionToken('document', args.documentId);
+
+    const response = await syncFetch<BlameRow>(
+      `/document/${args.documentId}/blame/${args.nodeId}`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        method: 'GET',
+      }
+    );
+
+    if (response.isErr()) {
+      return err(response.error);
+    }
+    const { peer_id, user_id, timestamp_ms } = response.value;
+    return ok({
+      peerId: peer_id,
+      userId: user_id ?? null,
+      editedAt: new Date(timestamp_ms),
+    });
   },
   async getSnapshot(args: { documentId: string }) {
     const token = await getPermissionToken('document', args.documentId);

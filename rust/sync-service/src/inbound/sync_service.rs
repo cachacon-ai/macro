@@ -8,8 +8,9 @@ use worker::{Env, Error, Response, State, WebSocket, WebSocketPair};
 use crate::{
     constants::USER_PEER_D1_BINDING,
     domain::{
+        ai_peer::is_ai_peer,
         document_id::DocumentId,
-        models::{DocumentMetadata, GetSnapshotRequest, PeerResponse},
+        models::{BlameRow, DocumentMetadata, GetSnapshotRequest, PeerResponse},
         permissions::AuthToken,
         ports::{SyncServiceAdmin, SyncServiceCore, SyncServiceError},
         state::DocumentState,
@@ -23,7 +24,8 @@ use crate::{
     keepalive::{DEFAULT_TIME_TO_LIVE, keepalive},
     mutex::Mutex,
     outbound::{
-        d1::{get_user_id_from_peer_id, insert_user_mapping},
+        d1::{BlameEvent, get_blame_for_node, get_user_id_from_peer_id, insert_user_mapping},
+        dss_internal::{DssInternal, DssInternalClient},
         storage::{
             SessionStorage, backends::durable_kv::DurableKVStorage, get_snapshot_storage,
             snapshot::SnapshotStorage,
@@ -34,6 +36,25 @@ use crate::{
 };
 
 const DOCUMENT_ID_KEY: &str = "DOCUMENT_ID";
+
+/// send a shallow snapshot to cache and search service
+/// we should eagerly call this from time to time to keep our backend up to date on
+/// the status of the document:
+/// - every few seconds
+/// - on creation
+/// - on everyone being disconnected
+pub(crate) async fn report_new_doc_state(document_id: &DocumentId, snapshot: &[u8], env: &Env) {
+    if let Err(err) = DssInternalClient::new(env)
+        .publish_shallow_snapshot(document_id, snapshot)
+        .await
+    {
+        warn!(error=?err, "failed to push snapshot to DSS");
+    }
+    #[cfg(feature = "search-service")]
+    if let Err(err) = crate::outbound::sps::update(document_id, env).await {
+        warn!(error=?err, "failed to update search index");
+    }
+}
 
 pub struct SyncServiceImpl {
     pub(crate) state: State,
@@ -47,6 +68,8 @@ pub struct SyncServiceImpl {
     pub(crate) awareness: EphemeralStore,
     /// a map from websocket's ID's to websocket metadata
     ws_meta_map: Arc<Mutex<WsMetaMap>>,
+    /// Buffered blame events. Flushed via D1 batch on each alarm tick.
+    pending_blame: Arc<Mutex<Vec<BlameEvent>>>,
 }
 
 pub struct Wsm<'a> {
@@ -161,7 +184,37 @@ impl SyncServiceImpl {
             session_storage,
             awareness,
             ws_meta_map,
+            pending_blame: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub(crate) fn push_blame_events(&self, events: Vec<BlameEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        self.pending_blame
+            .lock("SyncServiceImpl::push_blame_events")
+            .extend(events);
+    }
+
+    /// Drain the pending blame buffer and write all events via a single D1
+    /// batch in the background. Returns immediately; the actual write runs
+    /// inside `wait_until` so the alarm handler doesn't block on D1.
+    pub(crate) fn flush_pending_blame(&self) {
+        let pending: Vec<BlameEvent> = std::mem::take(
+            &mut *self
+                .pending_blame
+                .lock("SyncServiceImpl::flush_pending_blame"),
+        );
+        if pending.is_empty() {
+            return;
+        }
+        let env = self.env.clone();
+        self.state.wait_until(async move {
+            if let Err(e) = crate::outbound::d1::insert_blame_many(&env, &pending).await {
+                warn!(error = ?e, "failed to flush pending blame");
+            }
+        });
     }
 
     pub(crate) fn socket_for(&self, ws: &WebSocket) -> worker::Result<WorkerSocket> {
@@ -413,13 +466,17 @@ impl SyncServiceCore for SyncServiceImpl {
         }
     }
 
-    async fn active_peers(&self) -> Result<Vec<u64>, SyncServiceError> {
+    async fn active_peers(&self, include_ai: bool) -> Result<Vec<u64>, SyncServiceError> {
         let mut peer_ids: BTreeSet<u64> = BTreeSet::new();
         for socket in self.get_sockets()? {
             let new_peer_ids = Wsm::new(self, socket.id().to_string())
                 .get_peer_ids()
                 .await?;
-            peer_ids.extend(new_peer_ids);
+            peer_ids.extend(
+                new_peer_ids
+                    .into_iter()
+                    .filter(|&p| include_ai || !is_ai_peer(p)),
+            );
         }
         Ok(peer_ids.into_iter().collect())
     }
@@ -434,6 +491,15 @@ impl SyncServiceCore for SyncServiceImpl {
             peer_id: peer_id.to_string(),
             user_id,
         })
+    }
+
+    async fn blame(
+        &self,
+        id: &DocumentId,
+        node_id: &str,
+    ) -> Result<Option<BlameRow>, SyncServiceError> {
+        let db = self.env.d1(USER_PEER_D1_BINDING)?;
+        Ok(get_blame_for_node(db, id.as_str(), node_id).await?)
     }
 
     async fn snapshot(
@@ -500,6 +566,11 @@ impl SyncServiceCore for SyncServiceImpl {
                     );
                 }
             }
+            let document_id = document_id.clone();
+            let env = self.env.clone();
+            self.state.wait_until(async move {
+                report_new_doc_state(&document_id, &snapshot, &env).await;
+            });
         }
 
         Ok(())
