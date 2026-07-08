@@ -89,6 +89,13 @@ export function EntityRowProvider(
     canSwipeLeft?: (entityId: string) => boolean;
     onSwipeRight?: (entityId: string) => void;
     onSwipeLeft?: (entityId: string) => void;
+    /**
+     * How a row animates once its swipe triggers. 'fly-out' (default)
+     * translates the row off-screen, for actions that remove the row from
+     * the list (e.g. mark done). 'spring-back' returns the row to rest, for
+     * actions that keep it in place (e.g. reply to a message).
+     */
+    triggerBehavior?: 'fly-out' | 'spring-back';
     setCollapseEntity?: Setter<
       ((entityId: string) => Promise<void>) | undefined
     >;
@@ -204,6 +211,21 @@ export function EntityRowProvider(
     // Cancel any pending animation frame
     if (rafId) cancelAnimationFrame(rafId);
 
+    if (props.triggerBehavior === 'spring-back') {
+      // The row stays in the list: return the content to rest and fire the
+      // handler synchronously — still inside the touch gesture, so a
+      // handler that focuses an input can open the iOS keyboard.
+      els.contentEl.style.transition = `transform ${SPRING_BACK_SPEED}ms ease-out`;
+      els.contentEl.style.transform = 'translateX(0px)';
+      setState(entityId, { phase: 'triggered' });
+      swipeHandler();
+      setTimeout(() => {
+        els.contentEl.style.transition = '';
+        clearState(entityId);
+      }, SPRING_BACK_SPEED);
+      return;
+    }
+
     els.contentEl.style.transition = `transform ${TRANSLATE_AFTER_TRIGGERED_SPEED}ms ease-out`;
     els.contentEl.style.transform = `translateX(${direction === 'left' ? '-100%' : '100%'})`;
 
@@ -235,11 +257,32 @@ export function EntityRowProvider(
     return props.canSwipeLeft ? props.canSwipeLeft(entityId) : true;
   };
 
+  // Touches that begin inside a horizontally scrollable element (a code
+  // block, a wide table) must pan that element, not swipe the row.
+  const startsInHorizontalScroller = (
+    target: Element,
+    boundary: Element
+  ): boolean => {
+    let el: Element | null = target;
+    while (el && el !== boundary) {
+      if (
+        el.scrollWidth > el.clientWidth &&
+        /auto|scroll/.test(getComputedStyle(el).overflowX)
+      ) {
+        return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  };
+
   const onTouchStart = (e: TouchEvent) => {
     const target = e.target;
     if (!(target instanceof Element)) return;
     const swipeEl = target.closest('[data-swipe-surface]');
     if (!(swipeEl instanceof HTMLDivElement)) return;
+
+    if (startsInHorizontalScroller(target, swipeEl)) return;
 
     const rowEl = swipeEl.closest('[data-swipe-row]');
     if (!(rowEl instanceof HTMLDivElement)) return;
@@ -449,6 +492,14 @@ export function EntityRow(
     swipeLeftRevealedComponent?: JSX.Element;
     swipeLeftColor?: string;
     swipeRightColor?: string;
+    /**
+     * Background class of the sliding content. Defaults to an opaque panel
+     * background so the revealed layer stays hidden at rest. Pass
+     * 'bg-transparent' when the row must not paint over decorations behind
+     * it (e.g. thread rails); the reveal components then have to manage
+     * their own visibility, since nothing covers them at rest.
+     */
+    contentColor?: string;
     onSwipeLeft?: () => void;
     onSwipeRight?: () => void;
   }>
@@ -533,7 +584,7 @@ export function EntityRow(
         {/* Swipe Content */}
         <div
           data-swipe-content
-          class="size-full min-h-0 overflow-hidden flex items-center p-0 bg-panel"
+          class={`size-full min-h-0 overflow-hidden flex items-center p-0 ${props.contentColor ?? 'bg-panel'}`}
         >
           {props.children}
         </div>

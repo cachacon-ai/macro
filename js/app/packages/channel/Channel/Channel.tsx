@@ -1,4 +1,5 @@
 import { openChatWithInput } from '@app/component/ChatWithAgentButton';
+import { EntityRowProvider } from '@app/component/mobile/EntityRow';
 import { FloatRegionOrInline } from '@app/component/mobile/float-regions/FloatRegion';
 import { FloatRegions } from '@app/component/mobile/float-regions/float-region-state';
 import { useSplitLayout } from '@app/component/split-layout/layout';
@@ -164,6 +165,9 @@ export function Channel(props: ChannelProps) {
     createSignal<ThreadListNavigation>();
   const [threadListScrollState, setThreadListScrollState] =
     createSignal<ThreadListScrollState>();
+  // Hosts the swipe-to-reply gesture listeners (mobile).
+  const [threadListContainerEl, setThreadListContainerEl] =
+    createSignal<HTMLElement>();
 
   // When opening without a target, clear stale data that was previously
   // restored from a load-around session so the query fetches from the bottom.
@@ -583,80 +587,90 @@ export function Channel(props: ChannelProps) {
                   />
                 </Show>
                 <Show when={messages().length > 0}>
-                  <div class="relative flex-1 min-h-0">
-                    <ThreadList
-                      keys={() => messageIndex.keys}
-                      initialScrollTarget={threadListInitialScrollTarget()}
-                      fullFrameScrollInsets={threadListScrollInsets}
-                      shift={shift}
-                      prepend={threadPaginator.isPrepending}
-                      onScrollNearTop={threadPaginator.shiftPaginate}
-                      onScrollNearBottom={threadPaginator.prependPaginate}
-                      onNavigationReady={setThreadListNavigation}
-                      onScrollStateChange={setThreadListScrollState}
-                      initialScrollSnapshot={
-                        props.targetMessageId
-                          ? undefined
-                          : props.initialMessagesStateSnapshot?.scroll
-                      }
-                      onScrollSnapshotChange={setThreadListScrollSnapshot}
+                  <div
+                    class="relative flex-1 min-h-0"
+                    ref={setThreadListContainerEl}
+                  >
+                    <EntityRowProvider
+                      container={threadListContainerEl}
+                      triggerBehavior="spring-back"
                     >
-                      {(item) => {
-                        const message = () => messageById().get(item.id);
-                        const state = threadManager.getOrCreateThreadState(
-                          item.id
-                        );
-                        const isNewestThread = () =>
-                          item.id === messageIndex.keys.at(-1);
+                      <ThreadList
+                        keys={() => messageIndex.keys}
+                        initialScrollTarget={threadListInitialScrollTarget()}
+                        fullFrameScrollInsets={threadListScrollInsets}
+                        shift={shift}
+                        prepend={threadPaginator.isPrepending}
+                        onScrollNearTop={threadPaginator.shiftPaginate}
+                        onScrollNearBottom={threadPaginator.prependPaginate}
+                        onNavigationReady={setThreadListNavigation}
+                        onScrollStateChange={setThreadListScrollState}
+                        initialScrollSnapshot={
+                          props.targetMessageId
+                            ? undefined
+                            : props.initialMessagesStateSnapshot?.scroll
+                        }
+                        onScrollSnapshotChange={setThreadListScrollSnapshot}
+                      >
+                        {(item) => {
+                          const message = () => messageById().get(item.id);
+                          const state = threadManager.getOrCreateThreadState(
+                            item.id
+                          );
+                          const isNewestThread = () =>
+                            item.id === messageIndex.keys.at(-1);
 
-                        return (
-                          <Show when={message()}>
-                            {(m) => (
-                              <ChannelThread
-                                data={m}
-                                channelId={() => props.channelId}
-                                isNewestThread={isNewestThread()}
-                                getMessageActions={getMessageActions}
-                                targetThreadId={targetMessageController.activeTargetMessageId()}
-                                targetReplyId={targetMessageController.pendingTargetReplyId()}
-                                activeTargetReplyId={targetMessageController.activeTargetMessageReplyId()}
-                                unifiedReplyTarget={unifiedInput.replyTarget()}
-                                onTargetReplyScrolled={(replyId) => {
-                                  targetMessageController.completePendingReplyScroll(
-                                    m().id,
-                                    replyId
-                                  );
-                                }}
-                                isExpanded={state.isExpanded}
-                                setIsExpanded={state.setIsExpanded}
-                                isReplying={state.isReplying}
-                                setIsReplying={state.setIsReplying}
-                                replyInputState={state.replyInputState}
-                                setReplyInputState={state.setReplyInputState}
-                                setReplyInputEl={state.setReplyInputEl}
-                                replyInputHandle={state.replyInputHandle}
-                                setReplyInputHandle={state.setReplyInputHandle}
-                                replyInputFocusRequest={
-                                  state.replyInputFocusRequest
-                                }
-                                listMeta={listMetaByMessageId()[item.id]}
-                                messageEditor={messageEditor}
-                                participants={participants.users}
-                                threadActions={{
-                                  onDismissNewMessages:
-                                    activityTracker.dismissNewMessages,
-                                }}
-                                isNewMessage={activityTracker.isNewMessage}
-                                selectedMessageId={selection.selectedId}
-                                onSelectMessage={selectMessage}
-                                onClearSelection={clearSelection}
-                                messageListScopeId={messageListScopeId}
-                              />
-                            )}
-                          </Show>
-                        );
-                      }}
-                    </ThreadList>
+                          return (
+                            <Show when={message()}>
+                              {(m) => (
+                                <ChannelThread
+                                  data={m}
+                                  channelId={() => props.channelId}
+                                  isNewestThread={isNewestThread()}
+                                  getMessageActions={getMessageActions}
+                                  targetThreadId={targetMessageController.activeTargetMessageId()}
+                                  targetReplyId={targetMessageController.pendingTargetReplyId()}
+                                  activeTargetReplyId={targetMessageController.activeTargetMessageReplyId()}
+                                  unifiedReplyTarget={unifiedInput.replyTarget()}
+                                  onTargetReplyScrolled={(replyId) => {
+                                    targetMessageController.completePendingReplyScroll(
+                                      m().id,
+                                      replyId
+                                    );
+                                  }}
+                                  isExpanded={state.isExpanded}
+                                  setIsExpanded={state.setIsExpanded}
+                                  isReplying={state.isReplying}
+                                  setIsReplying={state.setIsReplying}
+                                  replyInputState={state.replyInputState}
+                                  setReplyInputState={state.setReplyInputState}
+                                  setReplyInputEl={state.setReplyInputEl}
+                                  replyInputHandle={state.replyInputHandle}
+                                  setReplyInputHandle={
+                                    state.setReplyInputHandle
+                                  }
+                                  replyInputFocusRequest={
+                                    state.replyInputFocusRequest
+                                  }
+                                  listMeta={listMetaByMessageId()[item.id]}
+                                  messageEditor={messageEditor}
+                                  participants={participants.users}
+                                  threadActions={{
+                                    onDismissNewMessages:
+                                      activityTracker.dismissNewMessages,
+                                  }}
+                                  isNewMessage={activityTracker.isNewMessage}
+                                  selectedMessageId={selection.selectedId}
+                                  onSelectMessage={selectMessage}
+                                  onClearSelection={clearSelection}
+                                  messageListScopeId={messageListScopeId}
+                                />
+                              )}
+                            </Show>
+                          );
+                        }}
+                      </ThreadList>
+                    </EntityRowProvider>
                     <Show when={!findBar.isOpen()}>
                       <ScrollToBottomOverlay
                         scrollState={threadListScrollState}
