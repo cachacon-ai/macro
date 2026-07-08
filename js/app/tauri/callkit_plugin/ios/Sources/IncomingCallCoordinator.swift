@@ -465,6 +465,12 @@ final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPushRegistr
         }
     }
 
+    // Besides app-requested hangups, the system sends this action unsolicited:
+    // since iOS 16.1 pressing the side/lock button during an active CallKit
+    // call ends it, matching the Phone app. No API suppresses that (video
+    // flags don't help), and the action can't be failed without also breaking
+    // End from the system call UI; the only opt-out is the user-side setting
+    // Settings > Accessibility > Touch > Prevent Lock to End Call.
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         let callId = action.callUUID.uuidString
         print("[CallKit] CXEndCallAction received uuid=\(callId)")
