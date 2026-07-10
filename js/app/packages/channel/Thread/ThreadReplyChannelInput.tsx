@@ -33,6 +33,11 @@ type ThreadReplyChannelInputProps = {
   focusRequest?: FocusRequest;
   /** Exit reply mode. Called on close and (immediately) on send. */
   onExit: () => void;
+  /**
+   * Called after a send is dispatched, with the sent reply's optimistic
+   * message id (the id its row renders with until the server responds).
+   */
+  onSent?: (messageId: string) => void;
   /** Where the reply input is hosted. Defaults to 'inline' (in the thread). */
   host?: 'inline' | 'unified';
   collapsible?: boolean;
@@ -140,11 +145,12 @@ export function ThreadReplyChannelInput(props: ThreadReplyChannelInputProps) {
           participantIds: participants.ids(),
         });
 
+        const optimisticId = crypto.randomUUID();
         sendMessageMutation.mutate(
           {
             channelID: props.channelId,
             senderId,
-            optimisticId: crypto.randomUUID(),
+            optimisticId,
             ...payload,
           },
           {
@@ -164,6 +170,7 @@ export function ThreadReplyChannelInput(props: ThreadReplyChannelInputProps) {
         // toast plus the draft restore above cover the error case.
         props.setReplyInputState(undefined);
         props.onExit();
+        props.onSent?.(optimisticId);
       }}
     />
   );

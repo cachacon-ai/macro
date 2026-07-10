@@ -1,4 +1,4 @@
-function getMessageElement(messageId: string) {
+export function getMessageElement(messageId: string) {
   return document.querySelector<HTMLElement>(
     `[data-message-id="${messageId}"]`
   );

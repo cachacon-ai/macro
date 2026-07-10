@@ -22,6 +22,8 @@ export function UnifiedReplyInput(props: {
   getTargetMessage: () => MessageData | undefined;
   onNavigateToTarget: () => void;
   onExit: () => void;
+  /** Called after a reply send is dispatched, with its optimistic id. */
+  onSent?: (messageId: string) => void;
 }) {
   return (
     <div
@@ -57,6 +59,7 @@ export function UnifiedReplyInput(props: {
         host="unified"
         collapsible
         onExit={() => props.onExit()}
+        onSent={props.onSent}
       />
     </div>
   );

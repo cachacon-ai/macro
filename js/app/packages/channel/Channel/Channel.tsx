@@ -23,6 +23,7 @@ import { toast } from '@core/component/Toast/Toast';
 import { useChannelActivity, useChannelName } from '@core/context/channels';
 import { useUserId } from '@core/context/user';
 import { isMobile } from '@core/mobile/isMobile';
+import { virtualKeyboardHeight } from '@core/mobile/virtualKeyboard';
 import type { DateValue } from '@core/util/date';
 import {
   extractUserMentions,
@@ -85,6 +86,7 @@ import { createChannelMessageActions } from './create-channel-message-actions';
 import { createDeleteMessageConfirmation } from './create-delete-message-confirmation';
 import { createMessageEditor } from './create-message-editor';
 import { createMessageSelection } from './create-message-selection';
+import { createSentReplyReveal } from './create-sent-reply-reveal';
 import {
   clearStaleRestoredChannelData,
   createTargetMessageController,
@@ -520,6 +522,12 @@ export function Channel(props: ChannelProps) {
     },
   });
 
+  const revealSentReply = createSentReplyReveal({
+    navigation: threadListNavigation,
+    obstructionHeight: () =>
+      virtualKeyboardHeight() + FloatRegions.hostHeight(),
+  });
+
   const onSend: ChannelInputProps['onSend'] = (snapshot) => {
     const senderId = userId();
     if (!senderId) return;
@@ -733,6 +741,9 @@ export function Channel(props: ChannelProps) {
                               )
                             }
                             onExit={unifiedInput.closeReply}
+                            onSent={(messageId) =>
+                              revealSentReply(threadId, messageId)
+                            }
                           />
                         )}
                       </Match>
