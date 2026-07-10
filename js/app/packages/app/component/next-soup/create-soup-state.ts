@@ -10,9 +10,16 @@ import {
 import { createSelectionState } from '@app/component/next-soup/selection-state';
 import { SORT_CONFIGS } from '@app/component/next-soup/soup-view/sort-options';
 import { isModality } from '@core/mobile/inputModality';
+import { isMobile } from '@core/mobile/isMobile';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import type { EntityData, WithNotification, WithSearch } from '@entity';
-import { createMemo, createSignal, type JSX } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  type JSX,
+  untrack,
+} from 'solid-js';
 
 /**
  * Active "focus" predicates that exclude done entities. When one of these is
@@ -160,7 +167,26 @@ export const createSoupState = <TId extends string = FilterID>(
     if (nextIndex < 0) lastFocusedRowId = undefined;
   };
 
-  const [previewEntity, setPreviewEntity] = createSignal<string | undefined>();
+  const [previewEntity, setPreviewEntityInternal] = createSignal<
+    string | undefined
+  >();
+
+  // The preview pane is a desktop-only affordance, so it must be impossible
+  // to enter preview mode on mobile: attempts to set a preview entity are
+  // dropped there (clearing is always allowed). All entry points — toggle
+  // button, space hotkey, row clicks, per-history-entry restores — funnel
+  // through this setter.
+  const setPreviewEntity = (id: string | undefined) => {
+    if (id !== undefined && untrack(isMobile)) return;
+    setPreviewEntityInternal(id);
+  };
+
+  // Exit preview mode if the viewport becomes mobile mid-preview (e.g. a
+  // phone rotating from landscape to portrait); otherwise the hidden pane's
+  // state leaks into panel layout (half-split headers, preview borders).
+  createEffect(() => {
+    if (isMobile()) setPreviewEntityInternal(undefined);
+  });
 
   const [collapseEntityCallback, setCollapseEntityCallback] = createSignal<
     ((entityId: string) => Promise<void>) | undefined

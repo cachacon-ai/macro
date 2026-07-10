@@ -32,10 +32,18 @@ vi.mock('@core/mobile/inputModality', () => ({
   isModality: vi.fn(() => false),
 }));
 
+// Relative specifier (not `@core/mobile/isMobile`): tsconfig aliases don't
+// resolve from test files, and it must match the import below so both hit the
+// same module id that create-soup-state.ts imports.
+vi.mock('../../../core/mobile/isMobile', () => ({
+  isMobile: vi.fn(() => false),
+}));
+
 vi.mock('@core/component/EntityIcon', () => ({
   getIconConfig: vi.fn(),
 }));
 
+import { isMobile } from '../../../core/mobile/isMobile';
 import type { EntityData } from '../../../entity/src';
 import { createSoupState } from './create-soup-state';
 
@@ -407,6 +415,31 @@ describe('createSoupState', () => {
         state.setPreviewEntity(undefined);
         expect(state.previewEntity()).toBeUndefined();
 
+        dispose();
+      });
+    });
+
+    it('should refuse to enter preview mode on mobile but still allow clearing', () => {
+      createRoot((dispose) => {
+        const state = createSoupState();
+
+        state.setPreviewEntity('entity-1');
+        expect(state.previewEntity()).toBe('entity-1');
+
+        vi.mocked(isMobile).mockReturnValue(true);
+
+        // Entering (or retargeting) preview is dropped on mobile.
+        state.setPreviewEntity('entity-2');
+        expect(state.previewEntity()).toBe('entity-1');
+
+        // Exiting preview stays possible.
+        state.setPreviewEntity(undefined);
+        expect(state.previewEntity()).toBeUndefined();
+
+        state.setPreviewEntity('entity-3');
+        expect(state.previewEntity()).toBeUndefined();
+
+        vi.mocked(isMobile).mockReturnValue(false);
         dispose();
       });
     });

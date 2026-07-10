@@ -38,6 +38,11 @@ export function SoupFiltersBar() {
   const { isWideSplitPanel } = usePreviewPaneVisiblity();
 
   const togglePreview = () => {
+    // Preview mode doesn't exist on mobile. The bar isn't rendered there but
+    // the space hotkey below stays registered, so bail before it can move
+    // focus or track a preview that the soup state would refuse anyway.
+    if (isMobile()) return;
+
     const currentPreview = soup.previewEntity();
     if (currentPreview) {
       soup.setPreviewEntity(undefined);

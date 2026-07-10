@@ -21,6 +21,7 @@ import { fileFolderDrop } from '@core/directive/fileFolderDrop';
 import { fileSelector } from '@core/directive/fileSelector';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
+import { isMobile } from '@core/mobile/isMobile';
 import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import {
   handleFileFolderDrop,
@@ -119,6 +120,9 @@ const Block: Component = () => {
       description: 'Toggle Preview',
       hotkeyToken: TOKENS.unifiedList.togglePreview,
       keyDownHandler: () => {
+        // Preview mode doesn't exist on mobile — let space fall through
+        // instead of tracking a preview the soup state would refuse anyway.
+        if (isMobile()) return false;
         if (projectSoup.previewEntity()) {
           projectSoup.setPreviewEntity(undefined);
           return true;
