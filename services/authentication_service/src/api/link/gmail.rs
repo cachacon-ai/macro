@@ -119,7 +119,7 @@ pub async fn init_gmail_link_handler(
         )
         .await?;
 
-    if count >= 5 {
+    if count >= 6 {
         return Err(InitGmailLinkError::TooManyInProgressLinks);
     }
 
