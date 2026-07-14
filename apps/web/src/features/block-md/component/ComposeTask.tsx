@@ -22,6 +22,7 @@ import { toast } from '@core/component/Toast/Toast';
 import { useUserId } from '@core/context/user';
 import { registerHotkey, useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { createTask } from '@core/util/create';
+import { markdownToLoroSnapshot } from '@macro-inc/lexical-core/markdown-loro-snapshot';
 import { filterMap } from '@core/util/list';
 import { buildSimpleEntityUrl } from '@core/util/url';
 import { mergeRegister } from '@lexical/utils';
@@ -575,7 +576,10 @@ export function ComposeTask(props: ComposeTaskProps) {
     },
   };
 
-  const showTaskCreatedToast = async (documentId: string) => {
+  const showTaskCreatedToast = async (
+    documentId: string,
+    optimisticSnapshot: Uint8Array | undefined
+  ) => {
     // Auto-copy link to clipboard
     const url = buildSimpleEntityUrl({ type: 'task', id: documentId });
     let linkCopied = false;
@@ -586,6 +590,10 @@ export function ComposeTask(props: ComposeTaskProps) {
       toast.failure('Failed to copy link to clipboard');
     }
 
+    const snapshotParams = optimisticSnapshot
+      ? { params: { optimisticSnapshot }, preserveParams: true as const }
+      : {};
+
     toast.success('Task created', {
       subtext: linkCopied ? 'Link copied' : undefined,
       actions: [
@@ -594,7 +602,7 @@ export function ComposeTask(props: ComposeTaskProps) {
           icon: ArrowSquareOutIcon,
           onClick: () => {
             openWithSplit(
-              { type: 'task', id: documentId },
+              { type: 'task', id: documentId, ...snapshotParams },
               { referredFrom: null }
             );
           },
@@ -604,7 +612,7 @@ export function ComposeTask(props: ComposeTaskProps) {
           icon: SplitIcon,
           onClick: () => {
             openWithSplit(
-              { type: 'task', id: documentId },
+              { type: 'task', id: documentId, ...snapshotParams },
               { referredFrom: null, preferNewSplit: true }
             );
           },
@@ -665,10 +673,11 @@ export function ComposeTask(props: ComposeTaskProps) {
         return;
       }
 
+      const optimisticSnapshot = await markdownToLoroSnapshot(taskContent);
       if (props.onSuccess) {
         props.onSuccess({ documentId, title: taskTitle, content: taskContent });
       } else {
-        showTaskCreatedToast(documentId);
+        showTaskCreatedToast(documentId, optimisticSnapshot);
       }
       props.onCreateTask?.(taskTitle, taskContent);
       return;
@@ -690,10 +699,11 @@ export function ComposeTask(props: ComposeTaskProps) {
 
     // Success: clear draft and notify
     clearTaskComposerDraft();
+    const optimisticSnapshot = await markdownToLoroSnapshot(taskContent);
     if (props.onSuccess) {
       props.onSuccess({ documentId, title: taskTitle, content: taskContent });
     } else {
-      showTaskCreatedToast(documentId);
+      showTaskCreatedToast(documentId, optimisticSnapshot);
     }
     props.onCreateTask?.(taskTitle, taskContent);
 
@@ -750,15 +760,20 @@ export function ComposeTask(props: ComposeTaskProps) {
       return;
     }
 
+    const optimisticSnapshot = await markdownToLoroSnapshot(taskContent);
+    const snapshotParams = optimisticSnapshot
+      ? { params: { optimisticSnapshot }, preserveParams: true as const }
+      : {};
+
     if (split) {
       split.replace({
-        next: { type: 'task', id: documentId },
+        next: { type: 'task', id: documentId, ...snapshotParams },
         mergeHistory: true,
         referredFrom: 'launcher',
       });
     } else {
       openWithSplit(
-        { type: 'task', id: documentId },
+        { type: 'task', id: documentId, ...snapshotParams },
         { referredFrom: 'launcher', preferNewSplit: true }
       );
     }
