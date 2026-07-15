@@ -2,15 +2,16 @@ import type {
   WebhookFilter,
   WebhookScope,
 } from '../../../generated/storage/types.gen';
+import { unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import { Webhook } from './webhook';
 
 /**
  * Webhook registrations for receiving signed entity-event deliveries.
  *
- * The API never returns a webhook's signing secret, so deliveries to a
- * webhook registered here cannot yet be verified by `MacroEvents`; pass the
- * secret via `MacroOpts.webhookSecret` once the backend exposes it.
+ * The API never returns a webhook's signing secret after creation, so pass the
+ * secret captured from {@link create} via `MacroOpts.webhookSecret` so
+ * `MacroEvents` can verify deliveries.
  */
 export class WebhooksNamespace {
   constructor(private readonly client: MacroClient) {}
@@ -18,7 +19,6 @@ export class WebhooksNamespace {
   /**
    * Register a webhook. `filters` must be non-empty (each entry matches event
    * names, optionally narrowed to entity ids); `scope` defaults to `'user'`.
-   * The returned instance is the only readable handle — there is no GET.
    */
   create(opts: {
     url: string;
@@ -30,11 +30,17 @@ export class WebhooksNamespace {
     return Webhook.create(this.client, opts);
   }
 
-  /**
-   * A write-only handle to an existing webhook by id: it can patch, delete,
-   * and validate.
-   */
+  /** A handle to an existing webhook by id. Details load on first access. */
   byId(id: string): Webhook {
     return Webhook.byId(this.client, id);
+  }
+
+  /**
+   * The caller's webhooks across their personal and team workspaces, newest
+   * first. Each returned handle already holds its record.
+   */
+  async list(): Promise<Webhook[]> {
+    const { webhooks } = unwrap(await this.client.storage.listWebhooks());
+    return webhooks.map((record) => Webhook.fromRecord(this.client, record));
   }
 }

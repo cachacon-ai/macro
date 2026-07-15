@@ -4,13 +4,7 @@ import type {
   SetPropertyValue,
 } from '../../generated/properties/types.gen';
 import type { FavoriteEntityRef } from '../../generated/storage/types.gen';
-import type {
-  EventHandler,
-  EventMap,
-  EventName,
-  EventPayload,
-} from '../events/types';
-import { Lazy, MacroError, unwrap } from '../utils';
+import { Lazy, unwrap } from '../utils';
 import type { MacroClient } from '../utils/client';
 
 /** How the entity-addressed APIs (favorites) identify an entity's type. */
@@ -38,20 +32,11 @@ type Normalized<V> = null extends V
     ? NonNullable<V> | undefined
     : V;
 
-/** Event names under a prefix, e.g. `ScopedEventName<'document'>`. */
-type ScopedEventName<P extends string> = Extract<EventName, `${P}.${string}`>;
-
-/** The suffixes of the event names under a prefix, e.g. `'created' | 'updated'`. */
-type EventSuffix<
-  P extends string,
-  N extends EventName = EventName,
-> = N extends `${P}.${infer S}` ? S : never;
-
 /**
  * Base for entity handles: a free-to-construct `(client, id)` pair whose
  * detail record loads lazily on first field access and is dropped after any
  * mutation. Subclasses implement {@link fetch} and build their surface from
- * {@link field}, {@link mutate}, and {@link scopedEvents}.
+ * {@link field} and {@link mutate}.
  */
 export abstract class MacroEntity<Detail> {
   protected readonly detail: Lazy<Detail>;
@@ -90,44 +75,22 @@ export abstract class MacroEntity<Detail> {
       );
   }
 
+  toJSON(): { id: string; detail?: Detail } {
+    const detail = this.detail.peek();
+    return detail === undefined ? { id: this.id } : { id: this.id, detail };
+  }
+
   /** Run a write, unwrap it, and drop the cached detail so reads refetch. */
-  protected async mutate<TData, TError>(
+  protected async mutate<TData>(
     fn: (client: MacroClient) => Promise<{
       data?: TData;
-      error?: TError;
+      error?: unknown;
       response?: Response;
     }>,
   ): Promise<TData> {
     const out = unwrap(await fn(this.client));
     this.detail.clear();
     return out;
-  }
-
-  /**
-   * Build an `on(event, handler)` method scoped to this entity: subscribes to
-   * `<prefix>.<event>` and dispatches only when `scope(metadata)` names this
-   * entity's id. Returns an unsubscribe function.
-   */
-  protected scopedEvents<P extends string>(
-    prefix: P,
-    scope: (metadata: EventPayload<ScopedEventName<P>>) => unknown,
-  ): <E extends EventSuffix<P>>(
-    event: E,
-    handler: EventHandler<ScopedEventName<P> & `${P}.${E}`>,
-  ) => () => void {
-    return (event, handler) => {
-      const events = this.client.events;
-      if (!events)
-        throw new MacroError(
-          'no webhook receiver configured — pass webhookSecret to MacroClient',
-        );
-      const full = `${prefix}.${event}` as ScopedEventName<P>;
-      return events.on(full, (e: EventMap[ScopedEventName<P>]) => {
-        if (scope(e.metadata as EventPayload<ScopedEventName<P>>) !== this.id)
-          return;
-        return (handler as EventHandler<ScopedEventName<P>>)(e);
-      });
-    };
   }
 }
 

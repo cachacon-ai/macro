@@ -2,15 +2,18 @@ import type {
   AddPropertyOptionRequest,
   DataType,
   PropertyDefinition as PropertyDefinitionRecord,
-  PropertyOption,
   PropertyOwner,
-  UpdatePropertyOptionRequest,
 } from '../../../generated/properties/types.gen';
 import { Lazy, unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import type { CreatePropertyScope, PropertyDataType } from './namespace';
+import {
+  PropertyOption,
+  type UpdatePropertyOptionRequest,
+} from './property-option';
 
 export type { AddPropertyOptionRequest, UpdatePropertyOptionRequest };
+export { PropertyOption };
 
 /**
  * A property definition: schema for a custom field that can be attached to
@@ -109,41 +112,44 @@ export class PropertyDefinition {
 
   /** The selectable options for this definition (select-type properties). */
   async options(): Promise<PropertyOption[]> {
-    return unwrap(
+    const records = unwrap(
       await this.client.properties.getPropertyOptions({
         path: { definition_id: this.id },
       }),
     );
+    return records.map((r) => PropertyOption.from(this.client, this.id, r));
   }
 
   /** Add an option to this select-type property. */
   async addOption(option: AddPropertyOptionRequest): Promise<PropertyOption> {
-    return unwrap(
+    const record = unwrap(
       await this.client.properties.addPropertyOption({
         path: { definition_id: this.id },
         body: option,
       }),
     );
+    return PropertyOption.from(this.client, this.id, record);
   }
 
   /** Update an option (label, color, display order). */
   async updateOption(
-    optionId: string,
+    option: PropertyOption,
     updates: UpdatePropertyOptionRequest,
   ): Promise<PropertyOption> {
-    return unwrap(
+    const record = unwrap(
       await this.client.properties.updatePropertyOption({
-        path: { definition_id: this.id, option_id: optionId },
+        path: { definition_id: this.id, option_id: option.id },
         body: updates,
       }),
     );
+    return PropertyOption.from(this.client, this.id, record);
   }
 
   /** Delete an option from this property. */
-  async deleteOption(optionId: string): Promise<void> {
+  async deleteOption(option: PropertyOption): Promise<void> {
     return unwrap(
       await this.client.properties.deletePropertyOption({
-        path: { definition_id: this.id, option_id: optionId },
+        path: { definition_id: this.id, option_id: option.id },
       }),
     );
   }

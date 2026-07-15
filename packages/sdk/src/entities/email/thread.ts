@@ -9,6 +9,7 @@ import { PropertiedEntity } from '../entity';
 import { Project } from '../projects/project';
 import { entitySearch } from '../search';
 import { EmailAttachment } from './attachment';
+import type { Label } from './label';
 import { Link } from './link';
 import { EmailMessage } from './message';
 
@@ -179,21 +180,21 @@ export class EmailThread extends PropertiedEntity<ThreadDetail> {
   }
 
   /** Add a label to every message in the thread. */
-  async addLabel(labelId: string): Promise<void> {
+  async addLabel(label: Label): Promise<void> {
     await this.mutate((c) =>
       c.email.addRemoveThreadLabel({
         path: { id: this.id },
-        body: { label_id: labelId, value: true },
+        body: { label_id: label.id, value: true },
       }),
     );
   }
 
   /** Remove a label from every message in the thread. */
-  async removeLabel(labelId: string): Promise<void> {
+  async removeLabel(label: Label): Promise<void> {
     await this.mutate((c) =>
       c.email.addRemoveThreadLabel({
         path: { id: this.id },
-        body: { label_id: labelId, value: false },
+        body: { label_id: label.id, value: false },
       }),
     );
   }

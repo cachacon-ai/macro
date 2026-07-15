@@ -19,8 +19,19 @@ import type { MacroEvents } from './events/receiver';
 import { MacroClient } from './utils/client';
 
 export type { MacroOpts } from './config';
+export {
+  here,
+  type Interpolation,
+  type Mentionable,
+  type MentionPart,
+  msg,
+  type RichMessage,
+  type SimpleMention,
+  toBody,
+  wrapXml,
+} from './mentions';
 
-export class Macro {
+export class Macro<T extends MacroOpts = MacroOpts> {
   readonly calls: CallRecordNamespace;
   readonly channels: ChannelNamespace;
   readonly chats: ChatNamespace;
@@ -37,13 +48,17 @@ export class Macro {
   readonly teams: TeamNamespace;
   readonly users: UserNamespace;
   readonly webhooks: WebhooksNamespace;
-  readonly events?: MacroEvents;
+  declare readonly events: T extends { webhookSecret: string }
+    ? MacroEvents
+    : undefined;
   /** Base URL of the Macro web app, used to build entity URLs. */
   readonly webAppUrl: string;
   /** Direct access to the underlying hey-api service clients. */
   readonly _client: MacroClient;
+  private readonly opts: T;
 
-  constructor(opts: MacroOpts) {
+  constructor(opts: T) {
+    this.opts = opts;
     const client = new MacroClient(opts);
     this._client = client;
     this.calls = new CallRecordNamespace(client);
@@ -62,7 +77,12 @@ export class Macro {
     this.teams = new TeamNamespace(client);
     this.users = new UserNamespace(client);
     this.webhooks = new WebhooksNamespace(client);
-    this.events = client.events;
+    (this as { events?: MacroEvents }).events = client.events;
     this.webAppUrl = client.webAppUrl;
+  }
+
+  /** Clone of this SDK whose requests all carry `x-requested-as: userId`. */
+  requestedAs(userId: string): Macro<T> {
+    return new Macro({ ...this.opts, requestedAs: userId });
   }
 }

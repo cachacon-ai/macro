@@ -20,9 +20,10 @@ const VALIDATION_EVENT = 'webhook.validation.test';
 function hydrate(client: MacroClient, event: MacroEvent): EventMap[EventName] {
   const meta = event.metadata;
   if ('message_id' in meta && 'channel_id' in meta) {
+    const mentions = 'mentions' in meta ? meta.mentions : [];
     return {
       metadata: meta,
-      message: Message.byId(client, meta.channel_id, meta.message_id),
+      message: Message.byId(client, meta.channel_id, meta.message_id, mentions),
     } as EventMap[EventName];
   }
   return { metadata: meta } as EventMap[EventName];
@@ -30,9 +31,8 @@ function hydrate(client: MacroClient, event: MacroEvent): EventMap[EventName] {
 
 /**
  * Per-instance webhook receiver. Register ONE webhook with Macro (one URL, one
- * signing secret) and mount this receiver at it; global handlers and
- * entity-scoped `.on` handlers all fan out from here by filtering the single
- * stream.
+ * signing secret) and mount this receiver at it; all `.on` handlers fan out
+ * from here.
  *
  * Obtain via `macro.events` — do not construct directly.
  */

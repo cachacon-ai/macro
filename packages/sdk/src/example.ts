@@ -11,9 +11,12 @@ const macro = new Macro({
 const HOUR_MS = 60 * 60 * 1000;
 const reminders = new Map<string, ReturnType<typeof setTimeout>>();
 
-const channel = macro.channels.byId('ch_abc');
+const CHANNEL_ID = 'ch_abc';
+const channel = macro.channels.byId(CHANNEL_ID);
 
-channel.on('message_posted', async ({ message }) => {
+macro.events?.on('channel.message_posted', async ({ metadata, message }) => {
+  if (metadata.channel_id !== CHANNEL_ID) return;
+
   const match = (await message.content()).match(/^(\d+)h\s+(.+)$/);
   if (!match) return;
 
@@ -29,7 +32,9 @@ channel.on('message_posted', async ({ message }) => {
   await message.react('alarm_clock');
 });
 
-channel.on('message_deleted', async ({ message }) => {
+macro.events?.on('channel.message_deleted', async ({ metadata, message }) => {
+  if (metadata.channel_id !== CHANNEL_ID) return;
+
   const timer = reminders.get(message.id);
   if (!timer) return;
   clearTimeout(timer);

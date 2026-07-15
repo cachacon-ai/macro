@@ -4,34 +4,49 @@ import type {
   WebhookFilter,
   Webhook as WebhookRecord,
   WebhookScope,
-  WebhookStatus,
 } from '../../../generated/storage/types.gen';
-import { MacroError, unwrap } from '../../utils';
+import { unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
+import { MacroEntity } from '../entity';
+import { User } from '../users/user';
 
 /**
  * A webhook registration: an HTTPS endpoint Macro delivers signed entity
  * events to.
  *
- * Not a `MacroEntity`: the API has no GET or list endpoint for webhooks, so a
- * lazily-(re)fetched detail record is impossible — a readable instance exists
- * only by holding the record from the create (or latest patch) response,
- * which is what this class does. Favorites and properties don't apply to
- * webhooks either, so none of the base surface would carry over.
+ * A free-to-construct `(client, id)` handle like any other entity: the detail
+ * record loads lazily from the webhook GET endpoint on first field access and
+ * is dropped after any mutation. {@link WebhooksNamespace.list} enumerates the
+ * caller's webhooks across their personal and team workspaces.
  *
- * The API never returns the webhook's signing secret, so deliveries to a
- * webhook registered here cannot yet be verified by `MacroEvents`; pass the
- * secret via `MacroOpts.webhookSecret` once the backend exposes it.
+ * The signing secret is only ever returned once, from {@link create}; it's
+ * exposed there as {@link Webhook.signingSecret}. Save it — patches, gets,
+ * and `byId` handles never carry it again — and pass it to
+ * `MacroOpts.webhookSecret` so `MacroEvents` can verify deliveries.
  */
-export class Webhook {
-  private record: WebhookRecord | null;
+export class Webhook extends MacroEntity<WebhookRecord> {
+  /**
+   * The signing secret used to verify deliveries, present only on the handle
+   * returned by {@link create}. `undefined` for `byId` and listed handles.
+   */
+  readonly signingSecret?: string;
 
   private constructor(
-    private readonly client: MacroClient,
-    readonly id: string,
-    record: WebhookRecord | null,
+    client: MacroClient,
+    id: string,
+    seed?: WebhookRecord,
+    signingSecret?: string,
   ) {
-    this.record = record;
+    super(client, id, seed);
+    this.signingSecret = signingSecret;
+  }
+
+  protected async fetch(): Promise<WebhookRecord> {
+    return unwrap(
+      await this.client.storage.getWebhook({
+        path: { webhook_id: this.id },
+      }),
+    );
   }
 
   /** Register a webhook. */
@@ -56,60 +71,60 @@ export class Webhook {
         },
       }),
     );
+    return new Webhook(client, record.id, record, record.signing_secret);
+  }
+
+  /** A handle to a webhook by id. Details load on first access. */
+  static byId(client: MacroClient, id: string): Webhook {
+    return new Webhook(client, id);
+  }
+
+  /** Wrap an already-loaded record, e.g. from a list response. */
+  static fromRecord(client: MacroClient, record: WebhookRecord): Webhook {
     return new Webhook(client, record.id, record);
   }
 
-  /**
-   * A write-only handle to an existing webhook by id: it can patch, delete,
-   * and validate.
-   */
-  static byId(client: MacroClient, id: string): Webhook {
-    return new Webhook(client, id, null);
-  }
-
-  /** The held record, or throws for {@link byId} handles without a record. */
-  private requireRecord(): WebhookRecord {
-    if (!this.record)
-      throw new MacroError(
-        `webhook ${this.id} was obtained by id and webhooks cannot be fetched; its fields are unknown until a patch returns the updated record`,
-      );
-    return this.record;
-  }
-
   /** The webhook's display name. */
-  get name(): string {
-    return this.requireRecord().name;
-  }
+  readonly name = this.field('name');
 
   /** The HTTPS endpoint URL deliveries are sent to. */
-  get endpointUrl(): string {
-    return this.requireRecord().endpoint_url;
-  }
+  readonly endpointUrl = this.field('endpoint_url');
 
   /** The webhook's lifecycle status. */
-  get status(): WebhookStatus {
-    return this.requireRecord().status;
-  }
+  readonly status = this.field('status');
 
   /** Whether the current endpoint configuration has passed validation. */
-  get isValid(): boolean {
-    return this.requireRecord().is_valid;
-  }
+  readonly isValid = this.field('is_valid');
 
   /** The event/entity-id filters that gate deliveries. */
-  get filters(): WebhookFilter[] {
-    return this.requireRecord().filters;
-  }
+  readonly filters = this.field('filters');
 
   /** When the webhook was created. */
-  get createdAt(): string {
-    return this.requireRecord().created_at;
+  readonly createdAt = this.field('created_at');
+
+  /** The owning workspace id: the creator's user id for a personal webhook, or a team id for a team webhook. */
+  readonly workspaceId = this.field('workspace_id');
+
+  /** The user who registered this webhook. */
+  readonly createdBy = this.mappedField('created_by_user_id', (id) =>
+    User.byId(this.client, id),
+  );
+
+  /**
+   * Whether this webhook is owned by the caller personally (`user`) or by
+   * their team (`team`). Derived from ownership: a personal webhook's owning
+   * workspace is the creator's own user id, whereas a team webhook's workspace
+   * is a distinct team id.
+   */
+  async scope(): Promise<WebhookScope> {
+    const record = await this.detail.get();
+    return record.workspace_id === record.created_by_user_id ? 'user' : 'team';
   }
 
-  /** Patch the webhook and hold the updated record the API returns. */
+  /** Patch the webhook; the cached detail is dropped so reads refetch. */
   private async patch(body: PatchWebhookRequest): Promise<void> {
-    this.record = unwrap(
-      await this.client.storage.patchWebhook({
+    await this.mutate((client) =>
+      client.storage.patchWebhook({
         path: { webhook_id: this.id },
         body,
       }),
@@ -143,8 +158,8 @@ export class Webhook {
 
   /** Delete the webhook. */
   async delete(): Promise<void> {
-    unwrap(
-      await this.client.storage.deleteWebhook({
+    await this.mutate((client) =>
+      client.storage.deleteWebhook({
         path: { webhook_id: this.id },
       }),
     );
@@ -152,11 +167,12 @@ export class Webhook {
 
   /**
    * Send a signed validation test delivery to the endpoint and report whether
-   * it was accepted. Note: this does not refresh this handle's `isValid`.
+   * it was accepted. Drops the cached detail so a subsequent {@link isValid}
+   * read reflects the new validation state.
    */
   async validate(): Promise<ValidateWebhookResponse> {
-    return unwrap(
-      await this.client.storage.validateWebhook({
+    return this.mutate((client) =>
+      client.storage.validateWebhook({
         path: { webhook_id: this.id },
       }),
     );

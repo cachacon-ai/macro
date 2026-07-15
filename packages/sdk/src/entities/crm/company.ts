@@ -1,15 +1,14 @@
 import type {
   CreateCrmCommentRequest,
-  CrmComment,
-  CrmCommentThread,
   DeleteCrmCommentResult,
   GetCompanyResponses,
 } from '../../../generated/storage/types.gen';
-import { unwrap } from '../../utils';
+import { MacroError, unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import { PropertiedEntity } from '../entity';
 import { entitySearch } from '../search';
 import { Team } from '../teams/team';
+import { CrmComment, type CrmThreadWithComments } from './comment';
 import { Contact } from './contact';
 
 type CompanyDetail = GetCompanyResponses[200];
@@ -124,38 +123,50 @@ export class Company extends PropertiedEntity<CompanyDetail> {
   }
 
   /** The comment threads attached to this company, with comments oldest first. */
-  async comments(): Promise<CrmCommentThread[]> {
-    return unwrap(
+  async comments(): Promise<CrmThreadWithComments[]> {
+    const threads = unwrap(
       await this.client.storage.listCrmComments({
         path: { entity_type: 'crm_company', entity_id: this.id },
       }),
     );
+    return threads.map(({ thread, comments }) => ({
+      thread,
+      comments: comments.map((c) => CrmComment.from(this.client, c)),
+    }));
   }
 
   /** Add a comment: starts a new thread unless `body.threadId` targets an existing one. */
-  async comment(body: CreateCrmCommentRequest): Promise<CrmCommentThread> {
-    return this.mutate((c) =>
+  async comment(body: CreateCrmCommentRequest): Promise<CrmComment> {
+    const { comments } = await this.mutate((c) =>
       c.storage.createCrmComment({
         path: { entity_type: 'crm_company', entity_id: this.id },
         body,
       }),
     );
+    const created = comments.reduce<(typeof comments)[number] | undefined>(
+      (a, b) => (!a || b.createdAt > a.createdAt ? b : a),
+      undefined,
+    );
+    if (!created)
+      throw new MacroError('create comment returned an empty thread');
+    return CrmComment.from(this.client, created);
   }
 
   /** Replace a comment's text (markdown). */
-  async editComment(commentId: string, text: string): Promise<CrmComment> {
-    return this.mutate((c) =>
+  async editComment(comment: CrmComment, text: string): Promise<CrmComment> {
+    const record = await this.mutate((c) =>
       c.storage.editCrmComment({
-        path: { comment_id: commentId },
+        path: { comment_id: comment.id },
         body: { text },
       }),
     );
+    return CrmComment.from(this.client, record);
   }
 
   /** Soft-delete a comment; the thread goes too when it was the last live one. */
-  async deleteComment(commentId: string): Promise<DeleteCrmCommentResult> {
+  async deleteComment(comment: CrmComment): Promise<DeleteCrmCommentResult> {
     return this.mutate((c) =>
-      c.storage.deleteCrmComment({ path: { comment_id: commentId } }),
+      c.storage.deleteCrmComment({ path: { comment_id: comment.id } }),
     );
   }
 }

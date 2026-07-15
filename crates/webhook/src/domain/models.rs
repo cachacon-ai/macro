@@ -468,6 +468,14 @@ impl From<Webhook> for CreateWebhookResponse {
     }
 }
 
+/// Webhooks visible to the caller across their personal and team workspaces.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+pub struct ListWebhooksResponse {
+    /// The caller's webhooks, newest first. Signing secrets are omitted.
+    pub webhooks: Vec<Webhook>,
+}
+
 /// Sanitized result of validating a webhook endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]

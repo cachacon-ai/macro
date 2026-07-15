@@ -73,14 +73,17 @@ export type TokenSource = string | (() => string | Promise<string>);
 
 /** Options passed to `new Macro(opts)` and stored on `MacroClient`. */
 export interface MacroOpts {
-  /** API token. Falls back to MACRO_API_KEY then MACRO_TOKEN env vars. */
+  /** API token. Falls back to the MACRO_API_KEY env var. */
   token?: TokenSource;
   env?: Env;
   /** Override individual service hosts (e.g. point one at localhost). */
   hosts?: Partial<Record<ServiceName, string>>;
   /** Override the web app base URL (e.g. for local frontend dev). Also reads MACRO_WEB_URL. */
   webAppUrl?: string;
-  /** Signing secret for verifying incoming webhooks. Required to receive webhooks. */
+  /** Signing secret for verifying incoming webhooks. Falls back to MACRO_WEBHOOK_SECRET. */
   webhookSecret?: string;
   wsVerify?: string;
+  /** User id sent as `x-requested-as` on every request. Set via
+   * `macro.requestedAs(userId)` rather than directly. */
+  requestedAs?: string;
 }

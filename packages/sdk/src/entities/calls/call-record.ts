@@ -81,14 +81,10 @@ export class CallRecord extends FavoritableEntity<CallRecordDetail> {
 
   /** Rename the call or clear the custom name. */
   async rename(name: string | null): Promise<void> {
-    if (name === null) {
-      name = '';
-    }
-
     await this.mutate((c) =>
       c.storage.editCallRecord({
         path: { call_id: this.id },
-        body: { customName: name },
+        body: { customName: name ?? '' },
       }),
     );
   }

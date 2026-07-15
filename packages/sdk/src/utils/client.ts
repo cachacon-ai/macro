@@ -29,6 +29,7 @@ export class MacroClient {
   readonly wsVerify?: string;
   readonly events?: MacroEvents;
   private readonly token: string | (() => string | Promise<string>);
+  private readonly requestedAs?: string;
 
   constructor(opts: MacroOpts) {
     const env: Env = opts.env ?? 'dev';
@@ -37,9 +38,7 @@ export class MacroClient {
       typeof process !== 'undefined' ? process.env.MACRO_WEB_URL : undefined;
     this.webAppUrl = opts.webAppUrl ?? envWebUrl ?? WEB_APP_URLS[env];
     const env_token =
-      typeof process !== 'undefined'
-        ? (process.env.MACRO_API_KEY ?? process.env.MACRO_TOKEN)
-        : undefined;
+      typeof process !== 'undefined' ? process.env.MACRO_API_KEY : undefined;
     this.token =
       opts.token ??
       env_token ??
@@ -49,6 +48,7 @@ export class MacroClient {
         );
       });
     this.wsVerify = opts.wsVerify;
+    this.requestedAs = opts.requestedAs;
 
     this.auth = new AuthSdk({ client: this.makeClient(hosts.auth) });
     this.cognition = new CognitionSdk({
@@ -67,8 +67,13 @@ export class MacroClient {
     this.search = new SearchSdk({ client: this.makeClient(hosts.search) });
     this.storage = new StorageSdk({ client: this.makeClient(hosts.storage) });
 
-    if (opts.webhookSecret) {
-      this.events = new MacroEvents(this, opts.webhookSecret);
+    const envWebhookSecret =
+      typeof process !== 'undefined'
+        ? process.env.MACRO_WEBHOOK_SECRET
+        : undefined;
+    const webhookSecret = opts.webhookSecret ?? envWebhookSecret;
+    if (webhookSecret) {
+      this.events = new MacroEvents(this, webhookSecret);
     }
   }
 
@@ -78,6 +83,9 @@ export class MacroClient {
       const tok =
         typeof this.token === 'function' ? await this.token() : this.token;
       request.headers.set('Authorization', `Bearer ${tok}`);
+      if (this.requestedAs) {
+        request.headers.set('x-requested-as', this.requestedAs);
+      }
       return request;
     });
     return c;

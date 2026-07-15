@@ -5,13 +5,13 @@ import type {
   PropertyDataType,
   PropertyDefinition as PropertyDefinitionRecord,
   EntityType as PropertyEntityType,
-  PropertyOption,
   PropertyScope,
   TagSetResponse,
 } from '../../../generated/properties/types.gen';
 import { unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import { PropertyDefinition } from './property-definition';
+import { PropertyOption } from './property-option';
 
 export type {
   BulkEntityPropertiesRequest,
@@ -20,12 +20,11 @@ export type {
   PropertyDataType,
   PropertyDefinitionRecord,
   PropertyEntityType,
-  PropertyOption,
   PropertyScope,
   TagSetResponse,
 };
 
-export { PropertyDefinition };
+export { PropertyDefinition, PropertyOption };
 
 /**
  * Property definitions and tag sets. Entity-level reads and writes live on
@@ -86,16 +85,16 @@ export class PropertiesNamespace {
   async addEntityPropertyOption(opts: {
     entityType: PropertyEntityType;
     entityId: string;
-    propertyId: string;
-    optionId: string;
+    property: PropertyDefinition;
+    option: PropertyOption;
   }): Promise<void> {
     return unwrap(
       await this.client.properties.addEntityPropertyOption({
         path: {
           entity_type: opts.entityType,
           entity_id: opts.entityId,
-          property_id: opts.propertyId,
-          option_id: opts.optionId,
+          property_id: opts.property.id,
+          option_id: opts.option.id,
         },
       }),
     );
@@ -105,16 +104,16 @@ export class PropertiesNamespace {
   async removeEntityPropertyOption(opts: {
     entityType: PropertyEntityType;
     entityId: string;
-    propertyId: string;
-    optionId: string;
+    property: PropertyDefinition;
+    option: PropertyOption;
   }): Promise<void> {
     return unwrap(
       await this.client.properties.removeEntityPropertyOption({
         path: {
           entity_type: opts.entityType,
           entity_id: opts.entityId,
-          property_id: opts.propertyId,
-          option_id: opts.optionId,
+          property_id: opts.property.id,
+          option_id: opts.option.id,
         },
       }),
     );

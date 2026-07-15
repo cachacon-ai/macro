@@ -4719,6 +4719,16 @@ export type LeaveCallResponse = {
     callEnded: boolean;
 };
 
+/**
+ * Webhooks visible to the caller across their personal and team workspaces.
+ */
+export type ListWebhooksResponse = {
+    /**
+     * The caller's webhooks, newest first. Signing secrets are omitted.
+     */
+    webhooks: Array<Webhook>;
+};
+
 export type LocationResponseData = {
     /**
      * The presigned url of the document if it is not a docx
@@ -10921,6 +10931,35 @@ export type EditProjectV2Responses = {
 
 export type EditProjectV2Response = EditProjectV2Responses[keyof EditProjectV2Responses];
 
+export type ListWebhooksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/webhook/webhooks';
+};
+
+export type ListWebhooksErrors = {
+    /**
+     * Forbidden
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type ListWebhooksError = ListWebhooksErrors[keyof ListWebhooksErrors];
+
+export type ListWebhooksResponses = {
+    /**
+     * Webhooks
+     */
+    200: ListWebhooksResponse;
+};
+
+export type ListWebhooksResponse2 = ListWebhooksResponses[keyof ListWebhooksResponses];
+
 export type CreateWebhookData = {
     body: CreateWebhookRequest;
     path?: never;
@@ -10991,6 +11030,44 @@ export type DeleteWebhookResponses = {
 };
 
 export type DeleteWebhookResponse = DeleteWebhookResponses[keyof DeleteWebhookResponses];
+
+export type GetWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Webhook id
+         */
+        webhook_id: string;
+    };
+    query?: never;
+    url: '/webhook/webhooks/{webhook_id}';
+};
+
+export type GetWebhookErrors = {
+    /**
+     * Forbidden
+     */
+    403: ErrorResponse;
+    /**
+     * Webhook not found
+     */
+    404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type GetWebhookError = GetWebhookErrors[keyof GetWebhookErrors];
+
+export type GetWebhookResponses = {
+    /**
+     * Webhook
+     */
+    200: Webhook;
+};
+
+export type GetWebhookResponse = GetWebhookResponses[keyof GetWebhookResponses];
 
 export type PatchWebhookData = {
     body: PatchWebhookRequest;

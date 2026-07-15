@@ -82,14 +82,10 @@ export class Chat extends PropertiedEntity<ChatDetail> {
    * pass `permanent: true` to delete irreversibly.
    */
   async delete(opts?: { permanent?: boolean }): Promise<void> {
-    if (opts?.permanent) {
-      await this.mutate((c) =>
-        c.cognition.permanentlyDeleteChat({ path: { chat_id: this.id } }),
-      );
-      return;
-    }
     await this.mutate((c) =>
-      c.cognition.deleteChat({ path: { chat_id: this.id } }),
+      opts?.permanent
+        ? c.cognition.permanentlyDeleteChat({ path: { chat_id: this.id } })
+        : c.cognition.deleteChat({ path: { chat_id: this.id } }),
     );
   }
 

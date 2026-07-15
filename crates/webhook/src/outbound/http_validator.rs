@@ -6,8 +6,7 @@ mod http_validator_test;
 
 use crate::domain::{
     models::{
-        Webhook, WebhookEndpointSchemePolicy, WebhookValidationResult,
-        WebhookValidationTestEvent,
+        Webhook, WebhookEndpointSchemePolicy, WebhookValidationResult, WebhookValidationTestEvent,
     },
     ports::WebhookValidationClient,
 };

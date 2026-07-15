@@ -9,7 +9,7 @@ export class ProjectNamespace {
     return Project.byId(this.client, id);
   }
 
-  create(opts: { name: string; parentId?: string }): Promise<Project> {
+  create(opts: { name: string; parent?: Project }): Promise<Project> {
     return Project.create(this.client, opts);
   }
 

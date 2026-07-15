@@ -296,7 +296,9 @@ pub struct ApiLatestMessage {
 impl ApiLatestMessage {
     fn new_from_domain(value: crate::domain::models::LatestMessage) -> Self {
         Self {
-            latest_message: value.latest_message.map(ApiChannelListMessage::new_from_recent),
+            latest_message: value
+                .latest_message
+                .map(ApiChannelListMessage::new_from_recent),
             latest_non_thread_message: value
                 .latest_non_thread_message
                 .map(ApiChannelListMessage::new_from_recent),

@@ -5,6 +5,7 @@ import type {
 import { unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import { MacroEntity } from '../entity';
+import type { Label } from './label';
 import { Link } from './link';
 import { EmailThread } from './thread';
 
@@ -97,19 +98,27 @@ export class EmailMessage extends MacroEntity<EmailMessageData> {
   );
 
   /** Add a label to this message. */
-  async addLabel(labelId: string): Promise<void> {
+  async addLabel(label: Label): Promise<void> {
     await this.mutate((c) =>
       c.email.addRemoveLabel({
-        body: { label_id: labelId, message_ids: [this.id], value: true },
+        body: {
+          label_id: label.id,
+          message_ids: [this.id],
+          value: true,
+        },
       }),
     );
   }
 
   /** Remove a label from this message. */
-  async removeLabel(labelId: string): Promise<void> {
+  async removeLabel(label: Label): Promise<void> {
     await this.mutate((c) =>
       c.email.addRemoveLabel({
-        body: { label_id: labelId, message_ids: [this.id], value: false },
+        body: {
+          label_id: label.id,
+          message_ids: [this.id],
+          value: false,
+        },
       }),
     );
   }

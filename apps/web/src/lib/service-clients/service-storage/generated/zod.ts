@@ -20264,6 +20264,69 @@ export const editProjectV2Response = zod.object({
 });
 
 /**
+ * @summary List the caller's webhooks.
+ */
+export const listWebhooksResponse = zod
+  .object({
+    webhooks: zod
+      .array(
+        zod
+          .object({
+            created_at: zod.iso.datetime({}).describe('Creation timestamp.'),
+            created_by_user_id: zod
+              .string()
+              .describe('User that created the webhook.'),
+            deleted_at: zod.iso
+              .datetime({})
+              .nullish()
+              .describe('Soft-delete timestamp.'),
+            endpoint_url: zod
+              .string()
+              .describe(
+                'Endpoint URL. HTTPS is required outside local environments.'
+              ),
+            filters: zod.array(
+              zod
+                .object({
+                  events: zod
+                    .array(zod.string())
+                    .describe('Event names matched by this filter.'),
+                  ids: zod
+                    .array(zod.string())
+                    .nullish()
+                    .describe(
+                      'Entity ids matched by this filter. When absent, the filter matches all entity ids.'
+                    ),
+                })
+                .describe(
+                  'Event and optional entity-id constraints used to match webhook deliveries.'
+                )
+            ),
+            headers: zod.record(zod.string(), zod.string()),
+            id: zod.string(),
+            is_valid: zod
+              .boolean()
+              .describe(
+                'Whether the current endpoint configuration has passed validation.'
+              ),
+            name: zod.string().describe('Display name.'),
+            status: zod
+              .enum(['active', 'paused', 'disabled'])
+              .describe('Webhook lifecycle status.'),
+            updated_at: zod.iso.datetime({}).describe('Update timestamp.'),
+            workspace_id: zod.string().describe('Owning workspace id.'),
+          })
+          .describe('Webhook row returned by application APIs.')
+      )
+      .describe(
+        "The caller's webhooks, newest first. Signing secrets are omitted."
+      ),
+  })
+  .describe(
+    'Webhooks visible to the caller across their personal and team workspaces.'
+  );
+
+/**
  * @summary Create a webhook.
  */
 export const createWebhookBody = zod
@@ -20297,6 +20360,57 @@ export const createWebhookBody = zod
       .describe('Scope that owns a newly-created webhook.'),
   })
   .describe('Request to create a webhook.');
+
+/**
+ * @summary Get a webhook.
+ */
+export const getWebhookParams = zod.object({
+  webhook_id: zod.string().describe('Webhook id'),
+});
+
+export const getWebhookResponse = zod
+  .object({
+    created_at: zod.iso.datetime({}).describe('Creation timestamp.'),
+    created_by_user_id: zod.string().describe('User that created the webhook.'),
+    deleted_at: zod.iso
+      .datetime({})
+      .nullish()
+      .describe('Soft-delete timestamp.'),
+    endpoint_url: zod
+      .string()
+      .describe('Endpoint URL. HTTPS is required outside local environments.'),
+    filters: zod.array(
+      zod
+        .object({
+          events: zod
+            .array(zod.string())
+            .describe('Event names matched by this filter.'),
+          ids: zod
+            .array(zod.string())
+            .nullish()
+            .describe(
+              'Entity ids matched by this filter. When absent, the filter matches all entity ids.'
+            ),
+        })
+        .describe(
+          'Event and optional entity-id constraints used to match webhook deliveries.'
+        )
+    ),
+    headers: zod.record(zod.string(), zod.string()),
+    id: zod.string(),
+    is_valid: zod
+      .boolean()
+      .describe(
+        'Whether the current endpoint configuration has passed validation.'
+      ),
+    name: zod.string().describe('Display name.'),
+    status: zod
+      .enum(['active', 'paused', 'disabled'])
+      .describe('Webhook lifecycle status.'),
+    updated_at: zod.iso.datetime({}).describe('Update timestamp.'),
+    workspace_id: zod.string().describe('Owning workspace id.'),
+  })
+  .describe('Webhook row returned by application APIs.');
 
 /**
  * @summary Delete a webhook.

@@ -62,10 +62,6 @@ use crate::{
         },
     },
 };
-use channels::inbound::list_router::{
-    ApiChannelListMessage, ApiChannelListParticipant, ApiChannelListType, ApiChannelWithLatest,
-    ApiParticipantListRole,
-};
 use channels::inbound::axum_router::{
     ApiActivity, ApiAttachmentChannelReference, ApiAttachmentEntityReference,
     ApiAttachmentGenericReference, ApiChannelAttachment, ApiChannelAttachmentsPage,
@@ -75,6 +71,10 @@ use channels::inbound::axum_router::{
     ChannelMessageFilters, CreateEntityMentionRequest, CreateEntityMentionResponse,
     DeleteEntityMentionResponse, GetAttachmentReferencesResponse, GetMessageWithContextResponse,
     PostActivityRequest,
+};
+use channels::inbound::list_router::{
+    ApiChannelListMessage, ApiChannelListParticipant, ApiChannelListType, ApiChannelWithLatest,
+    ApiParticipantListRole,
 };
 use document_sub_type::DocumentSubType;
 use documents_hex::inbound::axum_router::{
@@ -267,6 +267,8 @@ use utoipa::OpenApi;
         call::inbound::axum_router::webhook_handler,
         webhook::inbound::axum_router::create_webhook,
         webhook::inbound::axum_router::delete_webhook,
+        webhook::inbound::axum_router::get_webhook,
+        webhook::inbound::axum_router::list_webhooks,
         webhook::inbound::axum_router::patch_webhook,
         webhook::inbound::axum_router::validate_webhook,
         call::inbound::axum_router::ring_status_handler,
@@ -540,6 +542,7 @@ use utoipa::OpenApi;
             webhook::domain::events::WebhookEvent,
             webhook::domain::models::CreateWebhookRequest,
             webhook::domain::models::CreateWebhookResponse,
+            webhook::domain::models::ListWebhooksResponse,
             webhook::domain::models::PatchWebhookRequest,
             webhook::domain::models::ValidateWebhookResponse,
             webhook::domain::models::Webhook,

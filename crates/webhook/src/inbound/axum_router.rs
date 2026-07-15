@@ -2,8 +2,8 @@
 
 use crate::domain::{
     models::{
-        CreateWebhookRequest, CreateWebhookResponse, PatchWebhookRequest, ValidateWebhookResponse,
-        Webhook, WebhookId,
+        CreateWebhookRequest, CreateWebhookResponse, ListWebhooksResponse, PatchWebhookRequest,
+        ValidateWebhookResponse, Webhook, WebhookId,
     },
     ports::{WebhookError, WebhookService},
 };
@@ -12,7 +12,7 @@ use axum::{
     extract::{FromRef, FromRequestParts, Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{patch, post},
+    routing::{get, post},
 };
 use axum_extra::extract::Cached;
 use model_error_response::ErrorResponse;
@@ -129,10 +129,15 @@ where
         ));
 
     Router::new()
-        .route("/webhooks", post(create_webhook::<S>))
+        .route(
+            "/webhooks",
+            post(create_webhook::<S>).get(list_webhooks::<S>),
+        )
         .route(
             "/webhooks/{webhook_id}",
-            patch(patch_webhook::<S>).delete(delete_webhook::<S>),
+            get(get_webhook::<S>)
+                .patch(patch_webhook::<S>)
+                .delete(delete_webhook::<S>),
         )
         .merge(validate_route)
         .with_state(state)
@@ -158,6 +163,49 @@ pub async fn create_webhook<S: WebhookService>(
 ) -> Result<(StatusCode, Json<CreateWebhookResponse>), WebhookHandlerError> {
     let webhook = service.create_webhook(user.macro_user_id, request).await?;
     Ok((StatusCode::CREATED, Json(webhook.into())))
+}
+
+/// Get a webhook.
+#[utoipa::path(
+    get,
+    path = "/webhook/webhooks/{webhook_id}",
+    params(("webhook_id" = String, Path, description = "Webhook id")),
+    responses(
+        (status = 200, description = "Webhook", body = Webhook),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 404, description = "Webhook not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
+    ),
+    tag = "webhook"
+)]
+pub async fn get_webhook<S: WebhookService>(
+    State(service): State<Arc<S>>,
+    user: MacroUserExtractor,
+    Path(path): Path<WebhookPath>,
+) -> Result<Json<Webhook>, WebhookHandlerError> {
+    Ok(Json(
+        service
+            .get_webhook(user.macro_user_id, path.webhook_id)
+            .await?,
+    ))
+}
+
+/// List the caller's webhooks.
+#[utoipa::path(
+    get,
+    path = "/webhook/webhooks",
+    responses(
+        (status = 200, description = "Webhooks", body = ListWebhooksResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
+    ),
+    tag = "webhook"
+)]
+pub async fn list_webhooks<S: WebhookService>(
+    State(service): State<Arc<S>>,
+    user: MacroUserExtractor,
+) -> Result<Json<ListWebhooksResponse>, WebhookHandlerError> {
+    Ok(Json(service.list_webhooks(user.macro_user_id).await?))
 }
 
 /// Patch a webhook.

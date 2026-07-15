@@ -248,9 +248,4 @@ export class Channel extends PropertiedEntity<ChannelDetail> {
     type: 'channel',
     make: (client, hit) => new Channel(client, hit.channel_id),
   });
-
-  /**
-   * Handle an event for this channel. Returns an unsubscribe function.
-   */
-  on = this.scopedEvents('channel', (m) => m.channel_id);
 }

@@ -202,16 +202,12 @@ export class Document
    * pass `permanent: true` to delete irreversibly.
    */
   async delete(opts?: { permanent?: boolean }): Promise<void> {
-    if (opts?.permanent) {
-      await this.mutate((c) =>
-        c.storage.permanentlyDeleteDocument({
-          path: { document_id: this.id },
-        }),
-      );
-      return;
-    }
-    await this.mutate((c) =>
-      c.storage.deleteDocument({ path: { document_id: this.id } }),
+    await this.mutate<unknown>((c) =>
+      opts?.permanent
+        ? c.storage.permanentlyDeleteDocument({
+            path: { document_id: this.id },
+          })
+        : c.storage.deleteDocument({ path: { document_id: this.id } }),
     );
   }
 
@@ -249,7 +245,7 @@ export class Document
     );
     return data.map(({ thread, comments }) => ({
       thread,
-      comments: comments.map((c) => Comment.from(this.client, this.id, c)),
+      comments: comments.map((c) => Comment.from(this.client, this, c)),
     }));
   }
 
@@ -271,7 +267,7 @@ export class Document
     );
     if (!created)
       throw new MacroError('create comment returned an empty thread');
-    return Comment.from(this.client, this.id, created);
+    return Comment.from(this.client, this, created);
   }
 
   /** The document's short id (used in compact links and branch names). */
@@ -333,15 +329,6 @@ export class Document
     type: 'document',
     make: (client, hit) => new Document(client, hit.document_id),
   });
-
-  /**
-   * Handle an event for this document. Returns an unsubscribe function.
-   * `copied` events carry the new copy in `document_id`; this handle is the
-   * source, so scoping prefers `source_document_id`.
-   */
-  on = this.scopedEvents('document', (m) =>
-    'source_document_id' in m ? m.source_document_id : m.document_id,
-  );
 
   toMention(): MentionPart {
     const loaded = this.detail.peek();

@@ -1,12 +1,9 @@
-import type {
-  ApiLabel,
-  ApiSortMethod,
-  Label,
-} from '../../../generated/email/types.gen';
+import type { ApiSortMethod } from '../../../generated/email/types.gen';
 import { paginate, unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import type { SearchOpts } from '../search';
 import { EmailAttachment } from './attachment';
+import { Label } from './label';
 import { Link } from './link';
 import { EmailMessage, type SendEmailOptions } from './message';
 import { EmailThread } from './thread';
@@ -77,21 +74,24 @@ export class EmailNamespace {
     });
   }
 
+  /** A handle to a label by id. */
+  label(id: string): Label {
+    return Label.byId(this.client, id);
+  }
+
   /** All labels across the user's inboxes. */
-  async labels(): Promise<ApiLabel[]> {
-    return unwrap(await this.client.email.listLabels()).labels;
+  labels(): Promise<Label[]> {
+    return Label.list(this.client);
   }
 
   /** Create a user label. Returns the created label. */
-  async createLabel(name: string): Promise<Label> {
-    return unwrap(
-      await this.client.email.createLabel({ body: { label_name: name } }),
-    ).label;
+  createLabel(name: string): Promise<Label> {
+    return Label.create(this.client, name);
   }
 
-  /** Delete a label by id. */
-  async deleteLabel(id: string): Promise<void> {
-    unwrap(await this.client.email.deleteLabel({ path: { id } }));
+  /** Delete a label. */
+  async deleteLabel(label: Label): Promise<void> {
+    unwrap(await this.client.email.deleteLabel({ path: { id: label.id } }));
   }
 
   /** Block an email sender. */

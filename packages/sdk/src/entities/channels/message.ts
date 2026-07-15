@@ -51,8 +51,13 @@ export class Message extends FavoritableEntity<MessageData> {
   }
 
   /** A handle to a message by id. Fields load on first access. */
-  static byId(client: MacroClient, channelId: string, id: string): Message {
-    return new Message(client, channelId, id);
+  static byId(
+    client: MacroClient,
+    channelId: string,
+    id: string,
+    mentions: SimpleMention[] = [],
+  ): Message {
+    return new Message(client, channelId, id, mentions);
   }
 
   /** Build a message from a list-endpoint record (pre-seeded, no fetch). */

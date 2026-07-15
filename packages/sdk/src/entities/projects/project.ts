@@ -36,13 +36,13 @@ export class Project extends PropertiedEntity<ProjectDetail> {
   /** Create a project, optionally nested inside a parent project. */
   static async create(
     client: MacroClient,
-    opts: { name: string; parentId?: string },
+    opts: { name: string; parent?: Project },
   ): Promise<Project> {
     const { data } = unwrap(
       await client.storage.createProjectHandler({
         body: {
           name: opts.name,
-          projectParentId: opts.parentId ?? null,
+          projectParentId: opts.parent?.id ?? null,
         },
       }),
     );
@@ -85,14 +85,10 @@ export class Project extends PropertiedEntity<ProjectDetail> {
    * {@link restore}); pass `permanent: true` to delete irreversibly.
    */
   async delete(opts?: { permanent?: boolean }): Promise<void> {
-    if (opts?.permanent) {
-      await this.mutate((c) =>
-        c.storage.permanentlyDeleteProject({ path: { id: this.id } }),
-      );
-      return;
-    }
-    await this.mutate((c) =>
-      c.storage.deleteProjectHandler({ path: { id: this.id } }),
+    await this.mutate<unknown>((c) =>
+      opts?.permanent
+        ? c.storage.permanentlyDeleteProject({ path: { id: this.id } })
+        : c.storage.deleteProjectHandler({ path: { id: this.id } }),
     );
   }
 

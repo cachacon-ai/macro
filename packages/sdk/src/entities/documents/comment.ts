@@ -3,6 +3,7 @@ import { MacroNotFoundError, unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import { MacroEntity } from '../entity';
 import { User } from '../users/user';
+import type { Document } from './document';
 
 /**
  * A comment on a document. Compound-keyed by `(documentId, commentId)`:
@@ -43,10 +44,10 @@ export class Comment extends MacroEntity<CommentRecord> {
   /** Build a comment from a comment-thread record (pre-seeded, no fetch). */
   static from(
     client: MacroClient,
-    documentId: string,
+    document: Document,
     record: CommentRecord,
   ): Comment {
-    return new Comment(client, documentId, record.commentId, record);
+    return new Comment(client, document.id, record.commentId, record);
   }
 
   /** The comment's text. */

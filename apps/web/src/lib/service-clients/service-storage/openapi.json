@@ -9296,6 +9296,43 @@
       }
     },
     "/webhook/webhooks": {
+      "get": {
+        "tags": ["webhook"],
+        "summary": "List the caller's webhooks.",
+        "operationId": "list_webhooks",
+        "responses": {
+          "200": {
+            "description": "Webhooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListWebhooksResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": ["webhook"],
         "summary": "Create a webhook.",
@@ -9355,6 +9392,64 @@
       }
     },
     "/webhook/webhooks/{webhook_id}": {
+      "get": {
+        "tags": ["webhook"],
+        "summary": "Get a webhook.",
+        "operationId": "get_webhook",
+        "parameters": [
+          {
+            "name": "webhook_id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Webhook not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": ["webhook"],
         "summary": "Delete a webhook.",
@@ -17144,6 +17239,20 @@
           "callEnded": {
             "type": "boolean",
             "description": "Whether the entire call was ended (room deleted)."
+          }
+        }
+      },
+      "ListWebhooksResponse": {
+        "type": "object",
+        "description": "Webhooks visible to the caller across their personal and team workspaces.",
+        "required": ["webhooks"],
+        "properties": {
+          "webhooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Webhook"
+            },
+            "description": "The caller's webhooks, newest first. Signing secrets are omitted."
           }
         }
       },
