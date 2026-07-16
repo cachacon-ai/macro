@@ -2,13 +2,10 @@ import { FloatRegionOrInline } from '@components/app/mobile/float-regions/FloatR
 import { inboxIconProps } from '@core/component/inboxIcon';
 import { UserIcon } from '@core/component/UserIcon';
 import { useEmail } from '@core/context/user';
-import { TOKENS } from '@core/hotkey/tokens';
-import { getActiveCommandByToken, runCommand } from '@core/hotkey/utils';
 import { isMobile } from '@core/mobile/isMobile';
 import ArrowBendUpLeft from '@phosphor/arrow-bend-up-left.svg';
 import ArrowBendUpRight from '@phosphor/arrow-bend-up-right.svg';
 import CheckIcon from '@phosphor/check.svg';
-import { useEmailLinksQuery } from '@queries/email/link';
 import type { ApiMessage } from '@service-email/generated/schemas';
 import { createCallback } from '@solid-primitives/rootless';
 import { Button, cn } from '@ui';
@@ -51,7 +48,6 @@ export function BottomReplyButtons(props: { lastMessage: ApiMessage }) {
   const ctx = useEmailContext();
   const formRegistry = getEmailFormRegistry();
   const currentUserEmail = useEmail();
-  const linksQuery = useEmailLinksQuery();
 
   const open = (type: ReplyType) =>
     createCallback(() => {
@@ -71,29 +67,13 @@ export function BottomReplyButtons(props: { lastMessage: ApiMessage }) {
     return email ? inboxIconProps(email) : { email: '' };
   };
 
-  // Only surface Mark done for threads the user owns, mirroring the TopBar
-  // action's gating.
-  const isOwnThread = () => {
-    const thread = ctx.thread();
-    const links = linksQuery.data?.links;
-    if (!thread || !links) return false;
-    return links.some((link) => link.id === thread.link_id);
-  };
-
   const markDone = () => {
-    // Prefer the active Mark done command so it drives soup navigation and
-    // notifications; fall back to archiving the thread directly.
-    const command = getActiveCommandByToken(TOKENS.entity.action.markDone);
-    if (command) {
-      runCommand(command);
-    } else {
-      ctx.archiveThread();
-    }
+    ctx.archiveThread();
   };
 
   if (!isMobile()) {
     return (
-      <div class="flex w-full items-center gap-2 pt-4">
+      <div class="flex w-full items-center pt-4">
         <button
           type="button"
           class="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-ink-placeholder hover:text-ink-muted"
@@ -107,17 +87,6 @@ export function BottomReplyButtons(props: { lastMessage: ApiMessage }) {
           />
           <span class="truncate">Reply...</span>
         </button>
-        <Show when={isOwnThread()}>
-          <button
-            type="button"
-            aria-label="Mark done"
-            title="Mark done"
-            class="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-placeholder hover:bg-ink/10 hover:text-ink-muted"
-            onClick={markDone}
-          >
-            <CheckIcon class="size-5" />
-          </button>
-        </Show>
       </div>
     );
   }
@@ -125,26 +94,25 @@ export function BottomReplyButtons(props: { lastMessage: ApiMessage }) {
   return (
     <FloatRegionOrInline region="accessory">
       <div class="w-full p-2 pb-2 pt-4 mobile:px-(--mobile-chrome-gutter) mobile:py-0">
-        <div class="flex flex-row items-center gap-2 mobile:pointer-events-auto">
+        <div class="flex flex-row items-center gap2 justify-between mobile:pointer-events-auto">
+          <div class="flex flex-row items-center gap-2">
+            <ReplyActionButton
+              icon={ArrowBendUpLeft}
+              label="Reply"
+              onClick={open('reply-all')}
+            />
+            <ReplyActionButton
+              icon={ArrowBendUpRight}
+              label="Forward"
+              onClick={open('forward')}
+            />
+          </div>
+
           <ReplyActionButton
-            icon={ArrowBendUpLeft}
-            label="Reply"
-            onClick={open('reply-all')}
+            icon={CheckIcon}
+            ariaLabel="Mark done"
+            onClick={markDone}
           />
-          <ReplyActionButton
-            icon={ArrowBendUpRight}
-            label="Forward"
-            onClick={open('forward')}
-          />
-          <Show when={isOwnThread()}>
-            <div class="ml-auto">
-              <ReplyActionButton
-                icon={CheckIcon}
-                ariaLabel="Mark done"
-                onClick={markDone}
-              />
-            </div>
-          </Show>
         </div>
       </div>
     </FloatRegionOrInline>
