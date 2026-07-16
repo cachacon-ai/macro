@@ -19,7 +19,7 @@ use crate::{
     generated::schema::InitializeFromSnapshotRequest,
     inbound::{
         durable_object::{NO_SUCH_VALUE_ERR_STR, WebSocketMetadata, WsMetaMap, get_ws_id},
-        socket::{WorkerSocket, websocket},
+        socket::{RemoteSocket, websocket},
     },
     keepalive::{DEFAULT_TIME_TO_LIVE, keepalive},
     mutex::Mutex,
@@ -217,17 +217,17 @@ impl SyncServiceImpl {
         });
     }
 
-    pub(crate) fn socket_for(&self, ws: &WebSocket) -> worker::Result<WorkerSocket> {
-        Ok(WorkerSocket::new(ws.clone(), get_ws_id(&self.state, ws)?))
+    pub(crate) fn socket_for(&self, ws: &WebSocket) -> worker::Result<RemoteSocket> {
+        Ok(RemoteSocket::new(ws.clone(), get_ws_id(&self.state, ws)?))
     }
 
-    pub(crate) fn get_sockets(&self) -> worker::Result<Vec<WorkerSocket>> {
+    pub(crate) fn get_sockets(&self) -> worker::Result<Vec<RemoteSocket>> {
         self.state
             .get_websockets()
             .into_iter()
             .map(|ws| {
                 let id = get_ws_id(&self.state, &ws)?;
-                Ok(WorkerSocket::new(ws, id))
+                Ok(RemoteSocket::new(ws, id))
             })
             .collect()
     }
@@ -410,7 +410,7 @@ impl SyncServiceCore for SyncServiceImpl {
                 .and_then(|state| state.export_shallow_snapshot());
 
             if let Ok(snapshot) = snapshot {
-                let socket = WorkerSocket::new(pair.server, ws_id.clone());
+                let socket = RemoteSocket::new(pair.server, ws_id.clone());
                 websocket::send_initial_sync(
                     &socket,
                     snapshot.as_slice(),
