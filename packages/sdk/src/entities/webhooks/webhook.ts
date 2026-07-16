@@ -79,7 +79,7 @@ export class Webhook extends MacroEntity<WebhookRecord> {
     return new Webhook(client, id);
   }
 
-  /** Wrap an already-loaded record, e.g. from a list response. */
+  /** Wrap an already-loaded record. */
   static fromRecord(client: MacroClient, record: WebhookRecord): Webhook {
     return new Webhook(client, record.id, record);
   }
@@ -121,8 +121,8 @@ export class Webhook extends MacroEntity<WebhookRecord> {
     return record.workspace_id === record.created_by_user_id ? 'user' : 'team';
   }
 
-  /** Patch the webhook; the cached detail is dropped so reads refetch. */
-  private async patch(body: PatchWebhookRequest): Promise<void> {
+  /** Update the webhook. */
+  public async update(body: PatchWebhookRequest): Promise<void> {
     await this.mutate((client) =>
       client.storage.patchWebhook({
         path: { webhook_id: this.id },
@@ -133,27 +133,27 @@ export class Webhook extends MacroEntity<WebhookRecord> {
 
   /** Rename the webhook. */
   async rename(name: string): Promise<void> {
-    await this.patch({ name });
+    await this.update({ name });
   }
 
   /** Point the webhook at a new HTTPS endpoint URL. */
   async setUrl(url: string): Promise<void> {
-    await this.patch({ endpoint_url: url });
+    await this.update({ endpoint_url: url });
   }
 
   /** Replace the webhook's delivery filters (must be non-empty). */
   async setFilters(filters: WebhookFilter[]): Promise<void> {
-    await this.patch({ filters });
+    await this.update({ filters });
   }
 
   /** Pause deliveries. */
   async pause(): Promise<void> {
-    await this.patch({ status: 'paused' });
+    await this.update({ status: 'paused' });
   }
 
   /** Resume deliveries. */
   async resume(): Promise<void> {
-    await this.patch({ status: 'active' });
+    await this.update({ status: 'active' });
   }
 
   /** Delete the webhook. */

@@ -8,10 +8,6 @@ import { Webhook } from './webhook';
 
 /**
  * Webhook registrations for receiving signed entity-event deliveries.
- *
- * The API never returns a webhook's signing secret after creation, so pass the
- * secret captured from {@link create} via `MacroOpts.webhookSecret` so
- * `MacroEvents` can verify deliveries.
  */
 export class WebhooksNamespace {
   constructor(private readonly client: MacroClient) {}
