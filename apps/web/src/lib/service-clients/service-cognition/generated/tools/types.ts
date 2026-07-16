@@ -127,6 +127,22 @@ export type ContentType =
   | 'chat-message'
   | 'project';
 /**
+ * A tag color from the fixed palette.
+ */
+export type TagColor =
+  | 'red'
+  | 'tomato'
+  | 'orange'
+  | 'amber'
+  | 'yellow'
+  | 'green'
+  | 'teal'
+  | 'blue'
+  | 'indigo'
+  | 'purple'
+  | 'pink'
+  | 'gray';
+/**
  * Where document content is, or is expected to be, read from.
  */
 export type DocumentContentLocation =
@@ -272,6 +288,10 @@ export type EntityItem =
        * Call id.
        */
       id: string;
+      /**
+       * Tags on the call visible to the user.
+       */
+      tags?: AppliedTag[];
       type: 'call';
     }
   | {
@@ -302,6 +322,7 @@ export type ToolEntityType =
   | 'chat'
   | 'thread'
   | 'channel'
+  | 'call'
   | 'user'
   | 'company';
 /**
@@ -396,8 +417,8 @@ export type TaggedSearchResult1 =
   | (EmailSearchResponseItemWithMetadata & {
       type: 'email';
     })
-  | (ChannelSearchResponseItemWithMetadata & {
-      type: 'channel';
+  | (ChannelMessageSearchResponseItem & {
+      type: 'channelMessage';
     })
   | (ProjectSearchResponseItemWithMetadata & {
       type: 'project';
@@ -667,85 +688,57 @@ export interface CallRecordSummary {
   status?: ToolCallStatus | null;
 }
 /**
- * Metadata for a channel fetched from the database
+ * A single channel-message content hit in the unified search response.
+ * One item per matching message, timestamped by the message itself, so the
+ * unified sort interleaves channel messages with other entity types by
+ * their own recency.
  */
-export interface ChannelMetadata {
-  created_at: string;
-  interacted_at?: string | null;
-  updated_at: string;
-  viewed_at?: string | null;
-}
-/**
- * ChannelSearchResponseItem object with channel metadata we fetch from macrodb. we don't store these
- * timestamps in opensearch as they would require us to update each chat message record for the chat
- * every time the chat updates (specifically for updated_at and viewed_at and interacted_at)
- */
-export interface ChannelSearchResponseItemWithMetadata {
+export interface ChannelMessageSearchResponseItem {
   /**
-   * The id of the channel
+   * The id of the channel the message belongs to
    */
   channel_id: string;
-  /**
-   * The search results for the channel
-   * This may be empty if the search result match was not on content
-   */
-  channel_message_search_results: ChannelSearchResult[];
   /**
    * The type of channel
    */
   channel_type: string;
   /**
-   * Standardized fields that all item types will share.
-   * These field names are being aligned across all item types
-   * for consistency in our data model.
-   */
-  id: string;
-  /**
-   * Metadata from the database. None if the channel doesn't exist in the database.
-   */
-  metadata?: ChannelMetadata | null;
-  /**
-   * we don't store this for channels atm but keeping it here for consistency
-   */
-  owner_id?: string | null;
-}
-/**
- * A channel message match for a given channel id
- */
-export interface ChannelSearchResult {
-  /**
    * When the channel message was created
-   * This is only prsent if the search result is on the message content
    */
-  created_at?: string | null;
+  created_at: string;
   /**
    * When the channel message was deleted, if it has been
    */
   deleted_at?: string | null;
   highlight: SearchHighlight;
   /**
-   * The channel message id
-   * This is only prsent if the search result is on the message content
+   * Standardized id field shared by all item types; the channel id.
    */
-  message_id?: string | null;
+  id: string;
+  /**
+   * The channel message id
+   */
+  message_id: string;
+  /**
+   * we don't store this for channels atm but keeping it here for consistency
+   */
+  owner_id?: string | null;
   /**
    * The score of the result
    */
   score?: number | null;
   /**
    * The sender id
-   * This is only prsent if the search result is on the message content
    */
-  sender_id?: string | null;
+  sender_id: string;
   /**
    * The channel message thread id
    */
   thread_id?: string | null;
   /**
    * When the channel message was last updated
-   * This is only prsent if the search result is on the message content
    */
-  updated_at?: string | null;
+  updated_at: string;
 }
 /**
  * A single message in the tool response.
@@ -1050,7 +1043,7 @@ export interface CompanyPropertyOption {
   id: string;
 }
 /**
- * Search items by their content: document body text; email subject/body/sender/recipient/cc/bcc and the display names on those addresses; chat messages; call transcripts. This is keyword search, not semantic search: queries only match literal words/tokens, prefixes, or exact quoted terms that appear in the indexed content. Use this for targeted keyword/content lookup, not for activity-summary questions like "what happened today", "what's going on", "catch me up", or "what happened in standup today"; those should start with ListEntities using time/type/channel filters. Whitespace-separated terms are ANDed. For documents and emails, every term must match somewhere in the document — different terms can appear in different chunks/pages or different fields. For documents and emails specifically, each single-word term is matched as a prefix (so `scri` matches `script`); for emails the prefix expansion also runs against the local-part of address fields. For chats, channels, and call transcripts the whole query is matched as a single adjacent phrase prefix — so pass 1-3 targeted keywords drawn from words that would literally appear in the content, not the user's natural-language description; long phrases will not match. Matching defaults to prefix; set matchType to 'exact' to match whole tokens/phrases with no prefix expansion (e.g. an exact word, identifier, or full email address). Wrap a multi-word phrase in double quotes to keep it together as one adjacent phrase. If the user's request combines a person with a topic, run separate searches rather than one combined query. Leave entityTypes empty by default; only filter when the user explicitly scopes to a type. Results for documents, emails, AI chats, and projects include the tags visible to the user as {label, scope} pairs; to restrict a search to tagged items, pass the tag labels in the tags argument (ListTags shows which tags exist).
+ * Search items by their content: document body text; email subject/body/sender/recipient/cc/bcc and the display names on those addresses; chat messages; call transcripts. This is keyword search, not semantic search: queries only match literal words/tokens, prefixes, or exact quoted terms that appear in the indexed content. Use this for targeted keyword/content lookup, not for activity-summary questions like "what happened today", "what's going on", "catch me up", or "what happened in standup today"; those should start with ListEntities using time/type/channel filters. Whitespace-separated terms are ANDed. For documents and emails, every term must match somewhere in the document — different terms can appear in different chunks/pages or different fields. For documents and emails specifically, each single-word term is matched as a prefix (so `scri` matches `script`); for emails the prefix expansion also runs against the local-part of address fields. For chats, channels, and call transcripts the whole query is matched as a single adjacent phrase prefix — so pass 1-3 targeted keywords drawn from words that would literally appear in the content, not the user's natural-language description; long phrases will not match. Matching defaults to prefix; set matchType to 'exact' to match whole tokens/phrases with no prefix expansion (e.g. an exact word, identifier, or full email address). Wrap a multi-word phrase in double quotes to keep it together as one adjacent phrase. If the user's request combines a person with a topic, run separate searches rather than one combined query. Leave entityTypes empty by default; only filter when the user explicitly scopes to a type. Results for documents, emails, AI chats, projects, and call records include the tags visible to the user as {label, scope} pairs; to restrict a search to tagged items, pass the tag labels in the tags argument (ListTags shows which tags exist).
  */
 export interface ContentSearch {
   /**
@@ -1067,7 +1060,7 @@ export interface ContentSearch {
    */
   query: string;
   /**
-   * Restrict results to items carrying the given tags — any of them by default, every one of them with tagsMatch="all". Each entry names a tag by its label, matched case-insensitively against the user's own tags; only set scope ("personal" or "team") when the user distinguishes between their personal and team tags. An unknown label fails with the list of available tags — call ListTags first when unsure what tags exist. Only taggable items (documents, emails, AI chats, projects) can match, so channels and call records are dropped while a tag filter is active.
+   * Restrict results to items carrying the given tags — any of them by default, every one of them with tagsMatch="all". Each entry names a tag by its label, matched case-insensitively against the user's own tags; only set scope ("personal" or "team") when the user distinguishes between their personal and team tags. An unknown label fails with the list of available tags — call ListTags first when unsure what tags exist. Only taggable items (documents, emails, AI chats, projects, call records) can match, so channels are dropped while a tag filter is active.
    */
   tags?: TagFilter[] | null;
   tagsMatch?: TagMatch;
@@ -1124,6 +1117,43 @@ export interface CreateDocumentResponse {
    * The id of the document
    */
   documentId: string;
+}
+/**
+ * Create a new tag — a colored label the user can apply to documents, emails, tasks, AI chats, and projects — in the user's personal set or their team's shared set. The set is provisioned automatically the first time a tag is created. Tags are matched by label, so call ListTags first and avoid creating one whose label duplicates an existing tag in the same set. Returns the new tag's id and its set's propertyDefinitionId, which you can pass straight to SetEntityProperty (add_option_ids) to apply the tag to an item. Use this only to create a brand-new tag; to apply an existing tag to an item, use ListTags then SetEntityProperty instead.
+ */
+export interface CreateTag {
+  color: TagColor;
+  /**
+   * The tag's label, e.g. "Urgent" or "Follow-up".
+   */
+  label: string;
+  scope?: TagScope & string;
+}
+/**
+ * Response from the [`CreateTag`] tool.
+ */
+export interface CreateTagResponse {
+  /**
+   * The tag's color, when set.
+   */
+  color?: string | null;
+  /**
+   * The new tag's option id. Use it with SetEntityProperty to apply or remove the tag.
+   */
+  id: string;
+  /**
+   * The tag's label.
+   */
+  label: string;
+  /**
+   * The tag set's property definition id. Use it as propertyDefinitionId with SetEntityProperty.
+   */
+  propertyDefinitionId: string;
+  scope: TagScope;
+  /**
+   * Human-readable summary.
+   */
+  summary: string;
 }
 /**
  * A CRM domain attached to a company in search results.
@@ -1187,6 +1217,32 @@ export interface CrmCompanySearchResponseItem {
    * When the company was last updated (the sort key).
    */
   updatedAt: string;
+}
+/**
+ * Permanently delete a tag from the user's personal set or their team's shared set. This removes the tag from every item it is currently applied to, so it is destructive and cannot be undone — confirm with the user first. Both ids come from a ListTags result: `id` is the tag's option id, and `property_definition_id` is the propertyDefinitionId of the set that contains it. To simply remove a tag from a single item without deleting the tag itself, use SetEntityProperty with remove_option_ids instead.
+ */
+export interface DeleteTag {
+  /**
+   * The tag's option id (the `id` field from a ListTags result).
+   */
+  id: string;
+  /**
+   * The tag set's property definition id (the `propertyDefinitionId` of the ListTags set that contains this tag).
+   */
+  property_definition_id: string;
+}
+/**
+ * Response from the [`DeleteTag`] tool.
+ */
+export interface DeleteTagResponse {
+  /**
+   * Human-readable summary.
+   */
+  message: string;
+  /**
+   * Whether the tag was deleted.
+   */
+  success: boolean;
 }
 /**
  * Present results to the user as a rich view. The `view` argument is a dynamic-UI view object (a title plus an ordered list of widgets) following the dynamic-UI schema provided to you. The view is rendered immediately in the chat; this tool returns as soon as it is dispatched.
@@ -1304,6 +1360,52 @@ export interface EditDocumentResponse {
   /**
    * A short outcome for the model -- whether the edit was applied or
    * interrupted -- never the underlying list of edit operations.
+   */
+  summary: string;
+}
+/**
+ * Rename or recolor an existing tag in the user's personal set or their team's shared set. The tag's id is preserved, so the change is reflected everywhere the tag is already applied — no item loses the tag. Provide the tag's `id` and its set's `property_definition_id` (both from ListTags) plus a new `label` and/or `color`; omit whichever you want to leave unchanged. This edits the tag itself; to change which tags are on a specific item, use SetEntityProperty instead.
+ */
+export interface EditTag {
+  /**
+   * A new color for the tag, chosen from the fixed tag palette. Omit to keep the current color.
+   */
+  color?: TagColor | null;
+  /**
+   * The tag's option id (the `id` field from a ListTags result).
+   */
+  id: string;
+  /**
+   * A new label for the tag. Omit to keep the current label.
+   */
+  label?: string | null;
+  /**
+   * The tag set's property definition id (the `propertyDefinitionId` of the ListTags set that contains this tag).
+   */
+  property_definition_id: string;
+}
+/**
+ * Response from the [`EditTag`] tool.
+ */
+export interface EditTagResponse {
+  /**
+   * The tag's color after the edit, when set.
+   */
+  color?: string | null;
+  /**
+   * The tag's option id (unchanged).
+   */
+  id: string;
+  /**
+   * The tag's label after the edit.
+   */
+  label: string;
+  /**
+   * The tag set's property definition id.
+   */
+  propertyDefinitionId: string;
+  /**
+   * Human-readable summary.
    */
   summary: string;
 }
@@ -1736,7 +1838,7 @@ export interface ListCompaniesResponse {
   summary: string;
 }
 /**
- * Browse the user's Macro workspace to see recent items they have access to. Returns Macro documents, AI conversations, projects, emails, chat channels, call records, and foreign entities. Use this to get an overview of what the user has been working on or to find items by type. Start here for activity-summary questions such as "what happened today", "what's going on", "catch me up", or "what happened in standup today"; apply precise time, type, channel, or mailbox filters when the user gives that scope. For Macro task requests such as "list my tasks", "tasks assigned to me", or "tasks I completed yesterday", prefer this tool over external task trackers such as Linear unless the user explicitly asks for Linear. Macro tasks are document items with df subtype {"l":{"dst":"task"}} and includeTypes ["document"]. Filter task Status and Assignees through propf using entity_type TASK: Status property 00000001-0000-0000-0000-000000000002, Completed option 00000001-0000-0000-0002-000000000004, Assignees property 00000001-0000-0000-0000-000000000001. The current user's assignee entity id is their Macro user id, usually macro|<their email address from context>. For "completed yesterday", combine status Completed, assigned-to-me, and a df updatedAt yesterday window with ua gte/lt ISO timestamps. Returned documents, AI chats, projects, and emails include the tags visible to the user as {label, scope} pairs. To filter by tag (e.g. "my items tagged bug-report"), pass the tag labels in the tags argument — ListTags shows which tags exist. For finding specific items by name or content, use the search tool instead.
+ * Browse the user's Macro workspace to see recent items they have access to. Returns Macro documents, AI conversations, projects, emails, chat channels, call records, and foreign entities. Use this to get an overview of what the user has been working on or to find items by type. Start here for activity-summary questions such as "what happened today", "what's going on", "catch me up", or "what happened in standup today"; apply precise time, type, channel, or mailbox filters when the user gives that scope. For Macro task requests such as "list my tasks", "tasks assigned to me", or "tasks I completed yesterday", prefer this tool over external task trackers such as Linear unless the user explicitly asks for Linear. Macro tasks are document items with df subtype {"l":{"dst":"task"}} and includeTypes ["document"]. Filter task Status and Assignees through propf using entity_type TASK: Status property 00000001-0000-0000-0000-000000000002, Completed option 00000001-0000-0000-0002-000000000004, Assignees property 00000001-0000-0000-0000-000000000001. The current user's assignee entity id is their Macro user id, usually macro|<their email address from context>. For "completed yesterday", combine status Completed, assigned-to-me, and a df updatedAt yesterday window with ua gte/lt ISO timestamps. Returned documents, AI chats, projects, emails, and call records include the tags visible to the user as {label, scope} pairs. To filter by tag (e.g. "my items tagged bug-report"), pass the tag labels in the tags argument — ListTags shows which tags exist. For finding specific items by name or content, use the search tool instead.
  */
 export interface ListEntities {
   /**
@@ -1817,7 +1919,7 @@ export interface ListEntities {
   };
   sortBy?: SortBy;
   /**
-   * Filter results to items carrying the given tags — any of them by default, every one of them with tagsMatch="all". Each entry names a tag by its label, matched case-insensitively against the user's own tags; only set scope ("personal" or "team") when the user distinguishes between their personal and team tags. An unknown label fails with the list of available tags — call ListTags first when unsure what tags exist. Only taggable items (documents, tasks, projects, emails, AI chats) can match a tag filter. Prefer this over hand-building a propf filter for tags.
+   * Filter results to items carrying the given tags — any of them by default, every one of them with tagsMatch="all". Each entry names a tag by its label, matched case-insensitively against the user's own tags; only set scope ("personal" or "team") when the user distinguishes between their personal and team tags. An unknown label fails with the list of available tags — call ListTags first when unsure what tags exist. Only taggable items (documents, tasks, projects, emails, AI chats, call records) can match a tag filter. Prefer this over hand-building a propf filter for tags.
    */
   tags?: TagFilter[] | null;
   tagsMatch?: TagMatch;
@@ -2193,7 +2295,7 @@ export interface MarkNotificationsSeen {
   notificationIds: string[];
 }
 /**
- * Search items by their name or title: document name, email subject, chat title, project name, the channel name a call belongs to. This is keyword search, not semantic search: queries only match literal words/tokens, prefixes, or exact quoted terms that appear in the indexed title/name. Use this for targeted name/title lookup, not for activity-summary questions like "what happened today", "what's going on", "catch me up", or "what happened in standup today"; those should start with ListEntities using time/type/channel filters. For emails, whitespace-separated terms are ANDed and each is a prefix match against the subject. For all other types the whole query is matched as a single adjacent phrase prefix — so pass 1-3 targeted keywords drawn from words that would literally appear in the title, not the user's natural-language description; long phrases will not match. Matching defaults to prefix; set matchType to 'exact' to match whole tokens/phrases with no prefix expansion. Wrap a multi-word phrase in double quotes to keep it together as one adjacent phrase. If the user's request combines a person with a topic, run separate searches (NameSearch for the person, ContentSearch for the topic) rather than one combined query. Leave entityTypes empty by default; only filter when the user explicitly scopes to a type. Results for documents, emails, AI chats, and projects include the tags visible to the user as {label, scope} pairs; to restrict a search to tagged items, pass the tag labels in the tags argument (ListTags shows which tags exist).
+ * Search items by their name or title: document name, email subject, chat title, project name, the channel name a call belongs to. This is keyword search, not semantic search: queries only match literal words/tokens, prefixes, or exact quoted terms that appear in the indexed title/name. Use this for targeted name/title lookup, not for activity-summary questions like "what happened today", "what's going on", "catch me up", or "what happened in standup today"; those should start with ListEntities using time/type/channel filters. For emails, whitespace-separated terms are ANDed and each is a prefix match against the subject. For all other types the whole query is matched as a single adjacent phrase prefix — so pass 1-3 targeted keywords drawn from words that would literally appear in the title, not the user's natural-language description; long phrases will not match. Matching defaults to prefix; set matchType to 'exact' to match whole tokens/phrases with no prefix expansion. Wrap a multi-word phrase in double quotes to keep it together as one adjacent phrase. If the user's request combines a person with a topic, run separate searches (NameSearch for the person, ContentSearch for the topic) rather than one combined query. Leave entityTypes empty by default; only filter when the user explicitly scopes to a type. Results for documents, emails, AI chats, projects, and call records include the tags visible to the user as {label, scope} pairs; to restrict a search to tagged items, pass the tag labels in the tags argument (ListTags shows which tags exist).
  */
 export interface NameSearch {
   /**
@@ -2210,7 +2312,7 @@ export interface NameSearch {
    */
   name: string;
   /**
-   * Restrict results to items carrying the given tags — any of them by default, every one of them with tagsMatch="all". Each entry names a tag by its label, matched case-insensitively against the user's own tags; only set scope ("personal" or "team") when the user distinguishes between their personal and team tags. An unknown label fails with the list of available tags — call ListTags first when unsure what tags exist. Only taggable items (documents, emails, AI chats, projects) can match, so channels and call records are dropped while a tag filter is active.
+   * Restrict results to items carrying the given tags — any of them by default, every one of them with tagsMatch="all". Each entry names a tag by its label, matched case-insensitively against the user's own tags; only set scope ("personal" or "team") when the user distinguishes between their personal and team tags. An unknown label fails with the list of available tags — call ListTags first when unsure what tags exist. Only taggable items (documents, emails, AI chats, projects, call records) can match, so channels are dropped while a tag filter is active.
    */
   tags?: TagFilter[] | null;
   tagsMatch?: TagMatch;

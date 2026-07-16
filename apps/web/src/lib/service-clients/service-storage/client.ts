@@ -44,6 +44,7 @@ import type { Bot } from './generated/schemas/bot';
 import type { BotChannel } from './generated/schemas/botChannel';
 import type { BotToken } from './generated/schemas/botToken';
 import type { CallRecordPreview } from './generated/schemas/callRecordPreview';
+import type { ChannelJoinCodeResponse } from './generated/schemas/channelJoinCodeResponse';
 import type { ChannelMessageFilters } from './generated/schemas/channelMessageFilters';
 import { ChannelType } from './generated/schemas/channelType';
 import {
@@ -789,6 +790,19 @@ export const storageServiceClient = {
         method: 'POST',
       })
     ).map((result) => result);
+  },
+
+  async getChannelJoinLink(args: WithChannelId) {
+    return await dssFetch<ChannelJoinCodeResponse>(
+      `/channels/${args.channel_id}/join-link`,
+      { method: 'GET' }
+    );
+  },
+
+  async joinChannelByCode(args: { join_code: string }) {
+    return await dssFetch(`/channels/join/${args.join_code}`, {
+      method: 'POST',
+    });
   },
 
   async leaveChannel(args: WithChannelId) {

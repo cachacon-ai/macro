@@ -22,7 +22,7 @@ pub struct SoupCallRecordParticipant {
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct SoupCallRecord {
+pub struct SoupCallRecord<T = ()> {
     /// The call identifier.
     pub call_id: Uuid,
     /// The channel this call belongs to.
@@ -52,6 +52,9 @@ pub struct SoupCallRecord {
     pub attended: bool,
     /// Participants in the call.
     pub participants: Vec<SoupCallRecordParticipant>,
+    /// Extra fields passed from above
+    #[serde(flatten)]
+    pub extra: T,
 }
 
 fn participant_derived_status(participants: &[CallRecordParticipant], user_id: &str) -> CallStatus {
@@ -62,7 +65,7 @@ fn participant_derived_status(participants: &[CallRecordParticipant], user_id: &
     CallStatus::Unattended
 }
 
-impl SoupCallRecord {
+impl SoupCallRecord<()> {
     /// Build a `SoupCallRecord` from a domain `CallRecord` in the context of a
     /// specific viewer.
     pub fn from_record_for_user(record: CallRecord, user_id: &str) -> Self {
@@ -93,6 +96,7 @@ impl SoupCallRecord {
                     left_at: p.left_at,
                 })
                 .collect(),
+            extra: (),
         }
     }
 }

@@ -2,8 +2,8 @@ use crate::domain::{
     events::ChannelEvent,
     models::{
         Activity, ActivityType, AddParticipantsRequest, AttachmentEntityReference, BotId,
-        BotSenderProfile, ChannelAttachmentType, ChannelContextMessage, ChannelMessage,
-        ChannelMessageFilters, ChannelMetadata, ChannelParticipant, ChannelPreview,
+        BotSenderProfile, ChannelAttachmentType, ChannelContextMessage, ChannelJoinCodeResponse,
+        ChannelMessage, ChannelMessageFilters, ChannelMetadata, ChannelParticipant, ChannelPreview,
         ChannelPreviewData, ChannelType, CreateEntityMentionOptions, DeleteMessageQuery,
         EntityMention, GetOrCreateAction, GetOrCreateChannelResponse, GetOrCreateDmRequest,
         GetOrCreatePrivateRequest, MessagePageDirection, NewChannelAttachment, ParticipantRole,
@@ -14,9 +14,9 @@ use crate::domain::{
         WithChannelId,
     },
     ports::{
-        ChannelAttachmentsPage, ChannelEventDispatcher, ChannelMessagesErr,
-        ChannelMessagesQueryResult, ChannelMutationErr, ChannelReferenceSharePermissions,
-        ChannelRepo, ChannelService,
+        ChannelAttachmentsPage, ChannelEventDispatcher, ChannelMentionExtractor,
+        ChannelMessagesErr, ChannelMessagesQueryResult, ChannelMutationErr,
+        ChannelReferenceSharePermissions, ChannelRepo, ChannelService,
     },
 };
 use bot_id::BotIdStr;
@@ -39,10 +39,12 @@ pub struct ChannelServiceImpl<
     R,
     E = NoopChannelEventDispatcher,
     P = NoopChannelReferenceSharePermissions,
+    M = NoopChannelMentionExtractor,
 > {
     repo: R,
     events: E,
     reference_share_permissions: P,
+    mention_extractor: M,
 }
 
 /// No-op event dispatcher used by read-only contexts.
@@ -70,6 +72,19 @@ impl ChannelReferenceSharePermissions for NoopChannelReferenceSharePermissions {
     }
 }
 
+/// No-op mention extractor used by contexts that don't derive mentions from
+/// message content.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoopChannelMentionExtractor;
+
+impl ChannelMentionExtractor for NoopChannelMentionExtractor {
+    type Err = anyhow::Error;
+
+    async fn extract_mentions(&self, _content: &str) -> Result<Vec<SimpleMention>, Self::Err> {
+        Ok(Vec::new())
+    }
+}
+
 impl<R> ChannelServiceImpl<R, NoopChannelEventDispatcher, NoopChannelReferenceSharePermissions>
 where
     R: ChannelRepo,
@@ -80,6 +95,7 @@ where
             repo,
             events: NoopChannelEventDispatcher,
             reference_share_permissions: NoopChannelReferenceSharePermissions,
+            mention_extractor: NoopChannelMentionExtractor,
         }
     }
 }
@@ -91,11 +107,28 @@ impl<R, E, P> ChannelServiceImpl<R, E, P> {
             repo,
             events,
             reference_share_permissions,
+            mention_extractor: NoopChannelMentionExtractor,
         }
     }
 }
 
-impl<R, E, P> ChannelServiceImpl<R, E, P>
+impl<R, E, P, M> ChannelServiceImpl<R, E, P, M> {
+    /// Replace the mention extractor used to derive mentions from
+    /// bot-authored message content.
+    pub fn with_mention_extractor<M2>(
+        self,
+        mention_extractor: M2,
+    ) -> ChannelServiceImpl<R, E, P, M2> {
+        ChannelServiceImpl {
+            repo: self.repo,
+            events: self.events,
+            reference_share_permissions: self.reference_share_permissions,
+            mention_extractor,
+        }
+    }
+}
+
+impl<R, E, P, M> ChannelServiceImpl<R, E, P, M>
 where
     R: ChannelRepo,
     anyhow::Error: From<R::Err>,
@@ -294,11 +327,12 @@ fn created_channel_participant_ids<'a>(
         .collect()
 }
 
-impl<R, E, P> ChannelServiceImpl<R, E, P>
+impl<R, E, P, M> ChannelServiceImpl<R, E, P, M>
 where
     R: ChannelRepo,
     E: ChannelEventDispatcher,
     P: ChannelReferenceSharePermissions,
+    M: ChannelMentionExtractor,
 {
     #[tracing::instrument(err, skip(self, req))]
     async fn create_channel(
@@ -331,7 +365,7 @@ where
         }
 
         let org_id = None;
-        if req.participants.is_empty() {
+        if req.participants.is_empty() && req.channel_type != ChannelType::Private {
             return Err(ChannelMutationErr::BadRequest(
                 "participants must be a non-empty list of 'macro|<email>'".to_string(),
             ));
@@ -481,6 +515,18 @@ where
         Ok(())
     }
 
+    /// Best-effort extraction of the mentions embedded in message content;
+    /// extraction failure yields no mentions rather than failing the send.
+    async fn extract_content_mentions(&self, content: &str) -> Vec<SimpleMention> {
+        match self.mention_extractor.extract_mentions(content).await {
+            Ok(mentions) => mentions,
+            Err(err) => {
+                tracing::error!(error=?err.into(), "unable to extract mentions from message content");
+                Vec::new()
+            }
+        }
+    }
+
     #[tracing::instrument(err, skip(self, req))]
     async fn post_message(
         &self,
@@ -488,6 +534,14 @@ where
         channel_id: Uuid,
         req: PostMessageRequest,
     ) -> Result<PostMessageResponse, ChannelMutationErr> {
+        // Bots send raw macro markdown without a tracked mention list (the web
+        // editor builds that list for user-authored messages), so derive it
+        // from the content to keep bot-created references tracked.
+        let mut req = req;
+        if actor.as_bot().is_some() && req.mentions.is_empty() {
+            req.mentions = self.extract_content_mentions(&req.content).await;
+        }
+
         let message = self
             .repo
             .create_message(
@@ -599,6 +653,16 @@ where
             nonce,
             notification_policy,
         } = req;
+
+        // As in post_message: bots don't track a mention list, so when a bot
+        // replaces message content (e.g. Macro AI swapping its "thinking"
+        // placeholder for the reply), derive the mentions from the new content.
+        let replacement_mentions = match (replacement_mentions, &content) {
+            (None, Some(content)) if actor.as_bot().is_some() => {
+                Some(self.extract_content_mentions(content).await)
+            }
+            (mentions, _) => mentions,
+        };
 
         let owner = self
             .repo
@@ -975,12 +1039,35 @@ where
     }
 
     #[tracing::instrument(err, skip(self))]
+    async fn get_channel_join_code(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<ChannelJoinCodeResponse, ChannelMutationErr> {
+        let info = self
+            .repo
+            .get_channel_info(channel_id)
+            .await
+            .map_err(|e| ChannelMutationErr::Repo(e.into()))?;
+        if info.channel_type != ChannelType::Private {
+            return Err(ChannelMutationErr::Forbidden(
+                "join links are only available for private channels".to_string(),
+            ));
+        }
+
+        let join_code = self
+            .repo
+            .get_or_create_channel_join_code(channel_id)
+            .await
+            .map_err(|e| ChannelMutationErr::Repo(e.into()))?;
+        Ok(ChannelJoinCodeResponse { join_code })
+    }
+
+    #[tracing::instrument(err, skip(self))]
     async fn join_channel(
         &self,
         actor: Sender,
         channel_id: Uuid,
     ) -> Result<(), ChannelMutationErr> {
-        let actor_user = require_user_actor(&actor)?;
         let info = self
             .repo
             .get_channel_info(channel_id)
@@ -991,25 +1078,55 @@ where
                 "cannot join direct message channel".to_string(),
             ));
         }
+        self.join_channel_with_info(actor, info).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn join_channel_by_code(
+        &self,
+        actor: Sender,
+        join_code: Uuid,
+    ) -> Result<(), ChannelMutationErr> {
+        let info = self
+            .repo
+            .get_channel_info_by_join_code(join_code)
+            .await
+            .map_err(|e| ChannelMutationErr::Repo(e.into()))?
+            .ok_or_else(|| {
+                ChannelMutationErr::NotFound("channel join code not found".to_string())
+            })?;
+        if info.channel_type != ChannelType::Private {
+            return Err(ChannelMutationErr::Forbidden(
+                "join links are only valid for private channels".to_string(),
+            ));
+        }
+        self.join_channel_with_info(actor, info).await
+    }
+
+    async fn join_channel_with_info(
+        &self,
+        actor: Sender,
+        info: crate::domain::models::ChannelInfo,
+    ) -> Result<(), ChannelMutationErr> {
+        let actor_user = require_user_actor(&actor)?;
         let before = self
             .repo
-            .get_participants(channel_id)
+            .get_participants(info.id)
             .await
             .map_err(|e| ChannelMutationErr::Repo(e.into()))?;
-        self.repo
-            .add_participant(channel_id, actor_user.copied(), ParticipantRole::Member)
-            .await
-            .map_err(|e| ChannelMutationErr::Repo(e.into()))?;
-
         let mut active_participant_user_ids = participant_ids(&before);
-        if !active_participant_user_ids
-            .iter()
-            .any(|participant| participant == &actor_user)
-        {
-            active_participant_user_ids.push(actor_user.clone());
+        let changed = self
+            .repo
+            .add_participant(info.id, actor_user.copied(), ParticipantRole::Member)
+            .await
+            .map_err(|e| ChannelMutationErr::Repo(e.into()))?;
+        if !changed {
+            return Ok(());
         }
+
+        active_participant_user_ids.push(actor_user.clone());
         self.events.dispatch(ChannelEvent::ParticipantJoined {
-            channel_id,
+            channel_id: info.id,
             channel_type: info.channel_type,
             user_id: Sender::new_from_user(actor_user),
             active_participant_user_ids,
@@ -1056,11 +1173,12 @@ where
     }
 }
 
-impl<R, E, P> ChannelServiceImpl<R, E, P>
+impl<R, E, P, M> ChannelServiceImpl<R, E, P, M>
 where
     R: ChannelRepo,
     E: ChannelEventDispatcher,
     P: ChannelReferenceSharePermissions,
+    M: ChannelMentionExtractor,
 {
     async fn create_channel_record<'a>(
         &self,
@@ -1281,11 +1399,12 @@ fn center_window(
     }
 }
 
-impl<R, E, P> ChannelService for ChannelServiceImpl<R, E, P>
+impl<R, E, P, M> ChannelService for ChannelServiceImpl<R, E, P, M>
 where
     R: ChannelRepo,
     E: ChannelEventDispatcher,
     P: ChannelReferenceSharePermissions,
+    M: ChannelMentionExtractor,
     anyhow::Error: From<R::Err>,
 {
     #[tracing::instrument(err, skip(self))]
@@ -1697,12 +1816,27 @@ where
         ChannelServiceImpl::remove_participants(self, actor, channel_id, req).await
     }
 
+    async fn get_channel_join_code(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<ChannelJoinCodeResponse, ChannelMutationErr> {
+        ChannelServiceImpl::get_channel_join_code(self, channel_id).await
+    }
+
     async fn join_channel(
         &self,
         actor: Sender,
         channel_id: Uuid,
     ) -> Result<(), ChannelMutationErr> {
         ChannelServiceImpl::join_channel(self, actor, channel_id).await
+    }
+
+    async fn join_channel_by_code(
+        &self,
+        actor: Sender,
+        join_code: Uuid,
+    ) -> Result<(), ChannelMutationErr> {
+        ChannelServiceImpl::join_channel_by_code(self, actor, join_code).await
     }
 
     async fn leave_channel(

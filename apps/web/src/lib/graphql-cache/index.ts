@@ -7,6 +7,7 @@ export {
   executeOptimisticMutation,
   type OptimisticMutationContext,
 } from './exchange/optimistic';
+export { createTauriCacheHost } from './host/tauri-host';
 export type {
   CacheHost,
   CacheReadArgs,
@@ -14,7 +15,6 @@ export type {
 } from './host/types';
 export { createWorkerCacheHost } from './host/worker-host';
 export type {
-  CacheBroadcast,
   CachePush,
   CacheRequest,
   CacheResponse,

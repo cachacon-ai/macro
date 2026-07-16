@@ -19,6 +19,7 @@ export const listPropertiesQueryParams = zod.object({
     .describe('Whether to include property options in the response'),
   for_entity_type: zod
     .enum([
+      'CALL_RECORD',
       'CHANNEL',
       'CHAT',
       'COMPANY',
@@ -93,6 +94,7 @@ export const listPropertiesResponseItem = zod
             zod.null(),
             zod
               .enum([
+                'CALL_RECORD',
                 'CHANNEL',
                 'CHAT',
                 'COMPANY',
@@ -171,6 +173,7 @@ export const listPropertiesResponseItem = zod
                 zod.null(),
                 zod
                   .enum([
+                    'CALL_RECORD',
                     'CHANNEL',
                     'CHAT',
                     'COMPANY',
@@ -295,6 +298,7 @@ export const createPropertyDefinitionBody = zod
                 zod.null(),
                 zod
                   .enum([
+                    'CALL_RECORD',
                     'CHANNEL',
                     'CHAT',
                     'COMPANY',
@@ -590,6 +594,7 @@ export const getBulkEntityPropertiesBody = zod
             entity_id: zod.string(),
             entity_type: zod
               .enum([
+                'CALL_RECORD',
                 'CHANNEL',
                 'CHAT',
                 'COMPANY',
@@ -690,6 +695,7 @@ export const getBulkEntityPropertiesResponse = zod.record(
                     zod.null(),
                     zod
                       .enum([
+                        'CALL_RECORD',
                         'CHANNEL',
                         'CHAT',
                         'COMPANY',
@@ -755,6 +761,7 @@ export const getBulkEntityPropertiesResponse = zod.record(
                 entity_id: zod.string(),
                 entity_type: zod
                   .enum([
+                    'CALL_RECORD',
                     'CHANNEL',
                     'CHAT',
                     'COMPANY',
@@ -849,6 +856,7 @@ export const getBulkEntityPropertiesResponse = zod.record(
                                 entity_id: zod.string(),
                                 entity_type: zod
                                   .enum([
+                                    'CALL_RECORD',
                                     'CHANNEL',
                                     'CHAT',
                                     'COMPANY',
@@ -912,6 +920,7 @@ export const getBulkEntityPropertiesResponse = zod.record(
 export const getEntityPropertiesParams = zod.object({
   entity_type: zod
     .enum([
+      'CALL_RECORD',
       'CHANNEL',
       'CHAT',
       'COMPANY',
@@ -997,6 +1006,7 @@ export const getEntityPropertiesResponse = zod
                   zod.null(),
                   zod
                     .enum([
+                      'CALL_RECORD',
                       'CHANNEL',
                       'CHAT',
                       'COMPANY',
@@ -1062,6 +1072,7 @@ export const getEntityPropertiesResponse = zod
               entity_id: zod.string(),
               entity_type: zod
                 .enum([
+                  'CALL_RECORD',
                   'CHANNEL',
                   'CHAT',
                   'COMPANY',
@@ -1156,6 +1167,7 @@ export const getEntityPropertiesResponse = zod
                               entity_id: zod.string(),
                               entity_type: zod
                                 .enum([
+                                  'CALL_RECORD',
                                   'CHANNEL',
                                   'CHAT',
                                   'COMPANY',
@@ -1218,6 +1230,7 @@ export const getEntityPropertiesResponse = zod
 export const setEntityPropertyParams = zod.object({
   entity_type: zod
     .enum([
+      'CALL_RECORD',
       'CHANNEL',
       'CHAT',
       'COMPANY',
@@ -1284,6 +1297,7 @@ export const setEntityPropertyBody = zod
                     entity_id: zod.string(),
                     entity_type: zod
                       .enum([
+                        'CALL_RECORD',
                         'CHANNEL',
                         'CHAT',
                         'COMPANY',
@@ -1317,6 +1331,7 @@ export const setEntityPropertyBody = zod
                       entity_id: zod.string(),
                       entity_type: zod
                         .enum([
+                          'CALL_RECORD',
                           'CHANNEL',
                           'CHAT',
                           'COMPANY',
@@ -1378,6 +1393,7 @@ when adding one option.
 export const addEntityPropertyOptionParams = zod.object({
   entity_type: zod
     .enum([
+      'CALL_RECORD',
       'CHANNEL',
       'CHAT',
       'COMPANY',
@@ -1402,6 +1418,7 @@ each other.
 export const removeEntityPropertyOptionParams = zod.object({
   entity_type: zod
     .enum([
+      'CALL_RECORD',
       'CHANNEL',
       'CHAT',
       'COMPANY',
@@ -1492,6 +1509,7 @@ export const listTagsResponseItem = zod
                   zod.null(),
                   zod
                     .enum([
+                      'CALL_RECORD',
                       'CHANNEL',
                       'CHAT',
                       'COMPANY',
@@ -1631,6 +1649,7 @@ export const ensureTagSetResponse = zod
                   zod.null(),
                   zod
                     .enum([
+                      'CALL_RECORD',
                       'CHANNEL',
                       'CHAT',
                       'COMPANY',

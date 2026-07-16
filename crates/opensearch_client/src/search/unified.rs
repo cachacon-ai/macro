@@ -7,6 +7,7 @@ use crate::{
         builder::{SearchQueryConfig, updated_at_sort},
         call_records::{
             CallRecordIndex, CallRecordQueryBuilder, CallRecordSearchArgs, CallRecordSearchConfig,
+            CallRecordSearchMode,
         },
         channels::{
             ChannelMessageIndex, ChannelMessageQueryBuilder, ChannelMessageSearchArgs,
@@ -25,9 +26,10 @@ use crate::{
         },
         projects::{ProjectIndex, ProjectQueryBuilder, ProjectSearchArgs, ProjectSearchConfig},
         query::Keys,
+        utils::millis_to_datetime,
     },
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use models_search_cursor::{SearchCursorOption, SearchMethodCursor};
 use tracing::Instrument;
 
@@ -165,6 +167,9 @@ impl From<UnifiedSearchArgs> for CallRecordSearchArgs {
             call_ids: args.call_record_search_args.call_ids,
             channel_ids: args.call_record_search_args.channel_ids,
             speaker_ids: args.call_record_search_args.speaker_ids,
+            tag_option_ids: args.call_record_search_args.tag_option_ids,
+            match_all_tags: args.call_record_search_args.match_all_tags,
+            mode: args.call_record_search_args.mode,
         }
     }
 }
@@ -242,6 +247,9 @@ pub struct UnifiedCallRecordSearchArgs {
     pub channel_ids: Vec<String>,
     pub speaker_ids: Vec<String>,
     pub ids_only: bool,
+    pub tag_option_ids: Vec<String>,
+    pub match_all_tags: bool,
+    pub mode: CallRecordSearchMode,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -358,9 +366,7 @@ fn expand_hit_into_search_hits(hit: Hit<UnifiedSearchIndex>) -> Vec<SearchHit> {
     match &hit.source {
         UnifiedSearchIndex::Document(parent) => {
             let entity_id = parent.entity_id;
-            let updated_at = parent
-                .updated_at_seconds
-                .and_then(|s| DateTime::from_timestamp(s, 0));
+            let updated_at = millis_to_datetime(parent.updated_at_millis);
 
             let mut out: Vec<SearchHit> = Vec::new();
 
@@ -405,9 +411,7 @@ fn expand_hit_into_search_hits(hit: Hit<UnifiedSearchIndex>) -> Vec<SearchHit> {
                 return vec![hit.into()];
             };
             let entity_id = parent.entity_id;
-            let updated_at = parent
-                .updated_at_seconds
-                .and_then(|s| DateTime::from_timestamp(s, 0));
+            let updated_at = millis_to_datetime(parent.updated_at_millis);
             let expanded = crate::search::chats::expand_inner_hits_to_search_hits(
                 entity_id, updated_at, inner,
             );
@@ -417,15 +421,52 @@ fn expand_hit_into_search_hits(hit: Hit<UnifiedSearchIndex>) -> Vec<SearchHit> {
             expanded
         }
         UnifiedSearchIndex::CallRecord(parent) => {
-            let Some(inner) = hit.inner_hits.as_ref() else {
-                return vec![hit.into()];
-            };
-            let expanded =
-                crate::search::call_records::expand_inner_hits_to_search_hits(parent, inner);
-            if expanded.is_empty() {
+            let updated_at = millis_to_datetime(parent.started_at_millis);
+            let mut out: Vec<SearchHit> = Vec::new();
+
+            // A name match surfaces as a parent-level hit. Segment content lives
+            // in inner_hits and never highlights `name`, so a top-level highlight
+            // on that field means the call name matched. `goto` points at the
+            // call itself (no segment) so downstream grouping treats it as a name
+            // match rather than an empty content result.
+            if let Some(highlight) = hit.highlight.as_ref()
+                && highlight.contains_key(CallRecordSearchConfig::TITLE_KEY)
+            {
+                out.push(SearchHit {
+                    entity_id: parent.entity_id,
+                    entity_type: SearchEntityType::CallRecords,
+                    score: hit.score,
+                    highlight: parse_highlight_hit(
+                        highlight.clone(),
+                        Keys {
+                            title_key: CallRecordSearchConfig::TITLE_KEY,
+                            content_key: CallRecordSearchConfig::CONTENT_KEY,
+                        },
+                    ),
+                    goto: Some(SearchGotoContent::CallRecords(SearchGotoCallRecord {
+                        channel_id: parent.channel_id,
+                        transcript_id: uuid::Uuid::nil(),
+                        speaker_id: String::new(),
+                        sequence_num: 0,
+                        started_at: updated_at.unwrap_or_default(),
+                        ended_at: millis_to_datetime(parent.ended_at_millis),
+                        participant_ids: parent.participant_ids.clone(),
+                    })),
+                    updated_at,
+                });
+            }
+
+            // Content matches surface as one hit per matching segment.
+            if let Some(inner) = hit.inner_hits.as_ref() {
+                out.extend(
+                    crate::search::call_records::expand_inner_hits_to_search_hits(parent, inner),
+                );
+            }
+
+            if out.is_empty() {
                 return vec![hit.into()];
             }
-            expanded
+            out
         }
         _ => vec![hit.into()],
     }
@@ -454,12 +495,10 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     channel_message_id: a.message_id,
                     thread_id: (a.thread_id != a.message_id).then_some(a.thread_id),
                     sender_id: a.sender_id,
-                    created_at: DateTime::from_timestamp(a.created_at_seconds, 0)
-                        .unwrap_or_default(),
-                    updated_at: DateTime::from_timestamp(a.updated_at_seconds, 0)
-                        .unwrap_or_default(),
+                    created_at: millis_to_datetime(a.created_at_millis).unwrap_or_default(),
+                    updated_at: millis_to_datetime(a.updated_at_millis).unwrap_or_default(),
                 })),
-                updated_at: DateTime::from_timestamp(a.updated_at_seconds, 0),
+                updated_at: millis_to_datetime(a.updated_at_millis),
             },
             UnifiedSearchIndex::Document(a) => SearchHit {
                 entity_id: a.entity_id,
@@ -478,9 +517,7 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     })
                     .unwrap_or_default(),
                 goto: None,
-                updated_at: a
-                    .updated_at_seconds
-                    .and_then(|s| DateTime::from_timestamp(s, 0)),
+                updated_at: millis_to_datetime(a.updated_at_millis),
             },
             UnifiedSearchIndex::Email(a) => {
                 let a = *a;
@@ -505,15 +542,11 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                         bcc: a.bcc,
                         cc: a.cc,
                         labels: a.labels,
-                        sent_at: a
-                            .sent_at_seconds
-                            .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                        sent_at: millis_to_datetime(a.sent_at_millis),
                         sender: a.sender,
                         recipients: a.recipients,
                     })),
-                    updated_at: a
-                        .sent_at_seconds
-                        .and_then(|s| DateTime::from_timestamp(s, 0)),
+                    updated_at: millis_to_datetime(a.sent_at_millis),
                 }
             }
             UnifiedSearchIndex::Chat(a) => SearchHit {
@@ -533,9 +566,7 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     })
                     .unwrap_or_default(),
                 goto: None,
-                updated_at: a
-                    .updated_at_seconds
-                    .and_then(|s| DateTime::from_timestamp(s, 0)),
+                updated_at: millis_to_datetime(a.updated_at_millis),
             },
             UnifiedSearchIndex::Project(a) => SearchHit {
                 entity_id: a.entity_id,
@@ -554,9 +585,7 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     })
                     .unwrap_or_default(),
                 goto: None,
-                updated_at: a
-                    .updated_at_seconds
-                    .and_then(|s| DateTime::from_timestamp(s, 0)),
+                updated_at: millis_to_datetime(a.updated_at_millis),
             },
             UnifiedSearchIndex::CallRecord(a) => SearchHit {
                 entity_id: a.entity_id,
@@ -583,14 +612,11 @@ impl From<Hit<UnifiedSearchIndex>> for SearchHit {
                     transcript_id: uuid::Uuid::nil(),
                     speaker_id: String::new(),
                     sequence_num: 0,
-                    started_at: DateTime::from_timestamp(a.started_at_seconds, 0)
-                        .unwrap_or_default(),
-                    ended_at: a
-                        .ended_at_seconds
-                        .and_then(|s| DateTime::from_timestamp(s, 0)),
+                    started_at: millis_to_datetime(a.started_at_millis).unwrap_or_default(),
+                    ended_at: millis_to_datetime(a.ended_at_millis),
                     participant_ids: a.participant_ids,
                 })),
-                updated_at: DateTime::from_timestamp(a.started_at_seconds, 0),
+                updated_at: millis_to_datetime(a.started_at_millis),
             },
         }
     }

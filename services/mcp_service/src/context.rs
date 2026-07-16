@@ -38,6 +38,9 @@ use mcp_auth_proxy::{
 };
 use notification::domain::service::{NotificationReaderService, PlatformArnConfig};
 use notification::outbound::repository::DbNotificationRepository;
+use roles_and_permissions::{
+    domain::service::UserRolesAndPermissionsServiceImpl, outbound::pgpool::MacroDB,
+};
 use search_service_client::SearchServiceClient;
 use secretsmanager_client::LocalOrRemoteSecret;
 use soup::domain::service::SoupImpl;
@@ -53,7 +56,7 @@ pub struct McpContext {
     pub tool_context: ToolServiceContext,
     pub auth_proxy: McpAuthProxyServiceImpl<RedisInflightAuth>,
     pub mcp_public_host: String,
-    pub db: PgPool,
+    pub user_roles_and_permissions_service: UserRolesAndPermissionsServiceImpl<MacroDB, MacroDB>,
 }
 
 pub async fn build_context(config: &Config) -> anyhow::Result<McpContext> {
@@ -108,12 +111,16 @@ pub async fn build_context(config: &Config) -> anyhow::Result<McpContext> {
         .context("MCP_PUBLIC_URL has no host")?
         .to_owned();
 
+    let roles_repository = MacroDB::new(db.clone());
+    let user_roles_and_permissions_service =
+        UserRolesAndPermissionsServiceImpl::new(roles_repository.clone(), roles_repository);
+
     Ok(McpContext {
         jwt_args,
         tool_context,
         auth_proxy,
         mcp_public_host,
-        db,
+        user_roles_and_permissions_service,
     })
 }
 
@@ -235,7 +242,10 @@ async fn build_tool_context(
                 entity_access_management::outbound::PgRepository::new(db.clone()),
             ),
         foreign_entity_service: ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone())),
-        macro_event_broker,
+        macro_event_broker: macro_event_broker.clone(),
+        // No search event queue is configured in this context, so no
+        // search-index refresh is published from here.
+        search_indexer: None,
     };
     let lexical_client_for_tools = (*lexical_client).clone();
     let document_tool_context = DocumentToolContext::new(
@@ -251,16 +261,19 @@ async fn build_tool_context(
         ai_tools::build_properties_tool_context(properties_service, entity_access_service.clone());
 
     let email_tool_context = email::inbound::toolset::EmailToolContext::new(
-        Arc::new(EmailServiceImpl::new(
-            EmailPgRepo::new(db.clone()),
-            FrecencyQueryServiceImpl::new(FrecencyPgStorage::new(db.clone())),
-            sqs_client,
-            crm_service.clone(),
-            entity_access_management::domain::service::EntityAccessManagementServiceImpl::new(
-                entity_access_management::outbound::PgRepository::new(db.clone()),
-            ),
-            0,
-        )),
+        Arc::new(
+            EmailServiceImpl::new(
+                EmailPgRepo::new(db.clone()),
+                FrecencyQueryServiceImpl::new(FrecencyPgStorage::new(db.clone())),
+                sqs_client,
+                crm_service.clone(),
+                entity_access_management::domain::service::EntityAccessManagementServiceImpl::new(
+                    entity_access_management::outbound::PgRepository::new(db.clone()),
+                ),
+                0,
+            )
+            .with_macro_event_broker(macro_event_broker.clone()),
+        ),
         Arc::new(email::domain::ports::NoOpGmailTokenProvider),
         Arc::new(EntityAccessServiceImpl::new(PgAccessRepository::new(
             db.clone(),
@@ -324,7 +337,10 @@ async fn build_tool_context(
         call_tool_context,
         notification_tool_context,
         chat_tool_context,
-        channel_tool_context: ai_tools::build_channel_tool_context(db.clone()),
+        channel_tool_context: ai_tools::build_channel_tool_context(
+            db.clone(),
+            lexical_client.clone(),
+        ),
         team_tool_context: ai_tools::build_team_tool_context(db.clone()),
         crm_tool_context: ai_tools::build_crm_tool_context(db.clone()),
         schedule_tool_context: NoOpScheduleContext,

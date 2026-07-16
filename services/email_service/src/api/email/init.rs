@@ -7,9 +7,11 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json, Response},
 };
+use email::domain::events::{EmailMacroEvent, LinkConnectedMetadata};
 use email::domain::models::UserProvider;
 use email::domain::ports::EmailRepo;
 use email::outbound::EmailPgRepo;
+use email_service::pubsub::publish_email_event;
 use email_utils::token_cache_key::TokenCacheKey;
 use macro_user_id::email::EmailStr;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -659,6 +661,20 @@ async fn init_user(
     })
     .ok();
 
+    // Same gate as the history row above: only a genuinely new connection
+    // reaches here, so re-inits and concurrent duplicates don't re-publish.
+    publish_email_event(
+        ctx.macro_event_broker.as_ref(),
+        &EmailMacroEvent::link_connected(LinkConnectedMetadata {
+            link_id: link.id,
+            owner: link.macro_id.clone(),
+            email_address: link.email_address.0.as_ref().to_string(),
+            provider: link.provider.as_str().to_string(),
+            is_primary: link.is_primary,
+            connected_at: link.created_at,
+        }),
+    );
+
     let ps_message = BackfillPubsubMessage {
         backfill_operation: BackfillOperation::Init(JobScopedPayload {
             link_id: link.id,
@@ -706,7 +722,7 @@ async fn init_user(
         .into_response())
 }
 
-/// Rejects a connect when this Gmail identity already has 3+ recent backfill jobs in
+/// Rejects a connect when this Gmail identity already has 10+ recent backfill jobs in
 /// the last 24h (`@macro.com` is exempt). Enforced before the link and Gmail watch are
 /// created so a rejected connect never has to tear down a half-provisioned inbox.
 async fn enforce_backfill_rate_limit(
@@ -721,7 +737,7 @@ async fn enforce_backfill_rate_limit(
     .await
     .context("Failed to fetch recent backfill jobs")?;
 
-    if recent_jobs.len() >= 3 && !email_address.ends_with("@macro.com") {
+    if recent_jobs.len() >= 10 && !email_address.ends_with("@macro.com") {
         return Err(InitError::TooManyJobs);
     }
 
