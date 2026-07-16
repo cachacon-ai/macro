@@ -69,7 +69,7 @@ export function BottomReplyButtons(props: { lastMessage: ApiMessage }) {
 
   const markDone = () => {
     ctx.archiveThread();
-  }
+  };
 
   return (
     <Show
