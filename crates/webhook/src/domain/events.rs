@@ -1,10 +1,3 @@
-//! Webhook event payloads.
-//!
-//! Single source of truth for every entity event a webhook subscriber can
-//! receive. Wraps the internal broker events so the OpenAPI schema (and the
-//! TypeScript types generated from it) stay in lockstep with what is actually
-//! published to the `macro.documents` and `macro.channels` topics.
-
 use channels::domain::broker_events::ChannelTopicEvent;
 use documents::domain::events::DocumentTopicEvent;
 use serde::{Deserialize, Serialize};
