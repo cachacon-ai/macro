@@ -1,0 +1,57 @@
+[package]
+edition = "2024"
+name = "memory"
+publish = false
+version = "0.1.0"
+
+
+[dependencies]
+agent = { path = "../agent" }
+ai_usage = { path = "../ai_usage" }
+ai_tools = { path = "../ai_tools" }
+ai_toolset = { path = "../ai_toolset" }
+anyhow = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+call = { path = "../call", default-features = false, features = ["ai_tools", "outbound", "ports"] }
+futures = { workspace = true }
+macro_entrypoint = { path = "../macro_entrypoint" }
+macro_env = { path = "../macro_env" }
+macro_env_var = { path = "../macro_env_var" }
+macro_user_id = { path = "../macro_user_id" }
+macro_uuid = { path = "../macro_uuid" }
+model_user = { path = "../model_user", features = ["axum"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+
+# For building ToolServiceContext
+channels = { path = "../channels", features = ["outbound"] }
+crm = { path = "../crm" }
+documents = { path = "../documents" }
+email = { path = "../email" }
+email_service_client = { path = "../email_service_client" }
+entity_access = { path = "../entity_access" }
+entity_access_management = { path = "../entity_access_management" }
+foreign_entity = { path = "../foreign_entity" }
+frecency = { path = "../frecency" }
+lexical_client = { path = "../lexical_client" }
+macro_aws_config = { path = "../macro_aws_config" }
+notification = { path = "../notification", features = ["ai_tool"] }
+readonly_pool = { path = "../readonly_pool" }
+search_service_client = { path = "../search_service_client" }
+soup = { path = "../soup", features = ["all"] }
+sqs_client = { path = "../sqs_client", default-features = false, features = [
+  "email",
+  "gmail",
+] }
+sync_service_client = { path = "../sync_service_client" }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+
+[dev-dependencies]
+macro_db_migrator = { path = "../macro_db_migrator" }

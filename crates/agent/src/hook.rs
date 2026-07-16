@@ -1,0 +1,246 @@
+/// A [`rig_core::agent::PromptHook`] that bridges RIG lifecycle events into
+/// [`StreamPart`] items sent through a channel.
+use crate::AgentError;
+use crate::stream::{McpInfo, StreamPart, ToolCall, ToolResponse, Usage};
+use ai_toolset::{SearchableTool, ToolInfo};
+use rig_core::agent::{
+    HookAction, InvalidToolCallContext, InvalidToolCallHookAction, PromptHook, ToolCallHookAction,
+};
+use rig_core::completion::{CompletionModel, GetTokenUsage};
+use rig_core::message::Message;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+/// Resolves a tool name to its routing [`ToolInfo`] via the session's toolset.
+///
+/// rig only hands the hook a tool's (mangled) name, so this closure lets the
+/// bridge ask the authoritative source — [`ai_toolset::ToolSet::routing_description`]
+/// — whether a call is an external/MCP tool and recover its service, original
+/// name, and display name. Returns `None` for native tools.
+pub type ToolRouter = Arc<dyn Fn(&str) -> Option<ToolInfo> + Send + Sync>;
+
+/// Registers tools loaded on demand (via `SearchTools`) with the live tool
+/// server so they are advertised and callable on the next turn.
+///
+/// Built by the agent layer (which captures the tool-server handle and the
+/// session's context); context-erased so the bridge stays generic-free.
+pub type RegisterFn =
+    Arc<dyn Fn(Vec<SearchableTool>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
+static CANCELLED_REASON: &str = "user cancelled";
+
+/// Retry budget for invalid tool calls recovered via
+/// [`StreamBridge::on_invalid_tool_call`]. Lets the common one-shot recovery —
+/// the model calls a searchable tool it never loaded, the bridge loads it, the
+/// call is retried — succeed, while bounding a model that keeps emitting names
+/// that don't exist anywhere. Past the budget the stream fails with
+/// `UnknownToolCall`, as it did before recovery existed. Retries also consume
+/// multi-turn depth.
+pub(crate) const MAX_INVALID_TOOL_CALL_RETRIES: usize = 2;
+
+/// Sends [`StreamPart`] items through an unbounded channel as the RIG agentic
+/// loop produces events.
+#[derive(Clone)]
+pub struct StreamBridge {
+    tx: mpsc::UnboundedSender<Result<StreamPart, AgentError>>,
+    routing: ToolRouter,
+    /// Tools the `SearchTools` tool asked to load this turn, awaiting
+    /// registration. Drained in [`Self::on_tool_result`].
+    loaded_buffer: Arc<Mutex<Vec<SearchableTool>>>,
+    /// Registers drained tools with the live tool server.
+    register_loaded: RegisterFn,
+    /// The session's full searchable catalog. Read by
+    /// [`Self::on_invalid_tool_call`] to recover calls to tools the model
+    /// discovered but never loaded.
+    searchable_catalog: Arc<Vec<SearchableTool>>,
+    /// the user has requested the stream stop
+    cancel: CancellationToken,
+}
+
+impl StreamBridge {
+    /// Create a bridge and its receiving half.
+    ///
+    /// `routing` resolves tool names to [`ToolInfo`] so MCP calls can be
+    /// tagged as such (see [`ToolRouter`]). `loaded_buffer` / `register_loaded`
+    /// power on-demand tool loading: `SearchTools` pushes matches into the
+    /// buffer, and the bridge registers them after the tool result, before the
+    /// next turn (see [`Self::on_tool_result`]).
+    pub fn channel(
+        routing: ToolRouter,
+        loaded_buffer: Arc<Mutex<Vec<SearchableTool>>>,
+        register_loaded: RegisterFn,
+        searchable_catalog: Arc<Vec<SearchableTool>>,
+        cancel: CancellationToken,
+    ) -> (
+        Self,
+        mpsc::UnboundedReceiver<Result<StreamPart, AgentError>>,
+    ) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (
+            Self {
+                tx,
+                routing,
+                loaded_buffer,
+                register_loaded,
+                searchable_catalog,
+                cancel,
+            },
+            rx,
+        )
+    }
+
+    /// Clone the sending half of the bridge's channel.
+    ///
+    /// Lets the stream driver push parts derived from rig stream items
+    /// (buffered thinking, usage, errors) into the same ordered channel the
+    /// lifecycle hooks send through, so all parts share one FIFO order.
+    pub(crate) fn sender(&self) -> mpsc::UnboundedSender<Result<StreamPart, AgentError>> {
+        self.tx.clone()
+    }
+}
+
+impl<M> PromptHook<M> for StreamBridge
+where
+    M: CompletionModel,
+    M::StreamingResponse: GetTokenUsage + Send + Sync,
+{
+    async fn on_text_delta(&self, text_delta: &str, _aggregated_text: &str) -> HookAction {
+        let _ = self.tx.send(Ok(StreamPart::Content(text_delta.to_owned())));
+        if self.cancel.is_cancelled() {
+            HookAction::Terminate {
+                reason: CANCELLED_REASON.into(),
+            }
+        } else {
+            HookAction::Continue
+        }
+    }
+
+    /// Recover a tool call the model emitted for a tool that is not advertised
+    /// this turn, instead of rig's default fail-fast (which killed the whole
+    /// stream and surfaced to the user as a turn that announced a tool call and
+    /// then went silent).
+    ///
+    /// If the name exists in the searchable catalog — the model discovered it
+    /// via `SearchTools` (possibly in an earlier conversation turn) but it was
+    /// never loaded — load it now and ask the model to retry; the next request
+    /// is rebuilt from the live tool server, so the retried call is valid. For
+    /// names that exist nowhere, the retry feedback points the model at
+    /// `SearchTools` instead of failing the stream on a hallucinated name.
+    async fn on_invalid_tool_call(
+        &self,
+        context: &InvalidToolCallContext,
+    ) -> InvalidToolCallHookAction {
+        match self
+            .searchable_catalog
+            .iter()
+            .find(|tool| tool.name == context.tool_name)
+        {
+            Some(tool) => {
+                (self.register_loaded)(vec![tool.clone()]).await;
+                tracing::info!(
+                    tool = %context.tool_name,
+                    "auto-loaded searchable tool the model called without loading"
+                );
+                InvalidToolCallHookAction::retry(format!(
+                    "The tool `{}` exists but was not loaded when you called it. \
+                     It is loaded now — call it again with the same arguments.",
+                    context.tool_name
+                ))
+            }
+            None => InvalidToolCallHookAction::retry(format!(
+                "Unknown tool `{}`: no tool with that name exists in this session \
+                 or its connected integrations. Use `SearchTools` to find the \
+                 right tool, or continue without it.",
+                context.tool_name
+            )),
+        }
+    }
+
+    async fn on_tool_call(
+        &self,
+        tool_name: &str,
+        tool_call_id: Option<String>,
+        internal_call_id: &str,
+        args: &str,
+    ) -> ToolCallHookAction {
+        if self.cancel.is_cancelled() {
+            return ToolCallHookAction::Terminate {
+                reason: CANCELLED_REASON.into(),
+            };
+        }
+        let json = serde_json::from_str(args).unwrap_or(serde_json::Value::Null);
+        let id = tool_call_id.unwrap_or_else(|| internal_call_id.to_owned());
+        let mcp = (self.routing)(tool_name).map(|i| match i {
+            ToolInfo::ExternalTool {
+                service_name,
+                tool_name,
+                display_name,
+            } => McpInfo {
+                service: service_name,
+                tool_name,
+                display_name,
+            },
+        });
+        let _ = self.tx.send(Ok(StreamPart::ToolCall(ToolCall {
+            id,
+            name: tool_name.to_owned(),
+            json,
+            mcp,
+        })));
+        ToolCallHookAction::Continue
+    }
+
+    async fn on_tool_result(
+        &self,
+        tool_name: &str,
+        tool_call_id: Option<String>,
+        internal_call_id: &str,
+        _args: &str,
+        result: &str,
+    ) -> HookAction {
+        // Register any tools `SearchTools` asked to load. This fires after the
+        // tool executes and before the next turn's request is built, so loaded
+        // tools are advertised + callable next turn. (The lock guard is dropped
+        // before the await.)
+        let pending: Vec<SearchableTool> = {
+            let mut buf = self.loaded_buffer.lock().expect("loaded_buffer poisoned");
+            std::mem::take(&mut *buf)
+        };
+        if !pending.is_empty() {
+            (self.register_loaded)(pending).await;
+        }
+
+        let id = tool_call_id.unwrap_or_else(|| internal_call_id.to_owned());
+        let response = match serde_json::from_str::<serde_json::Value>(result) {
+            Ok(json) => ToolResponse::Json {
+                id,
+                json,
+                name: tool_name.to_owned(),
+            },
+            Err(_) => ToolResponse::Err {
+                id,
+                name: tool_name.to_owned(),
+                description: result.to_owned(),
+            },
+        };
+        let _ = self.tx.send(Ok(StreamPart::ToolResponse(response)));
+        HookAction::Continue
+    }
+
+    async fn on_stream_completion_response_finish(
+        &self,
+        _prompt: &Message,
+        response: &M::StreamingResponse,
+    ) -> HookAction {
+        if let Some(usage) = response.token_usage() {
+            let _ = self.tx.send(Ok(StreamPart::Usage(Usage {
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+            })));
+        }
+        HookAction::Continue
+    }
+}

@@ -1,0 +1,666 @@
+import { analytics } from '@app/lib/analytics';
+import { usePaywallState } from '@core/constant/PaywallState';
+import { isPaymentError } from '@core/util/handlePaymentError';
+
+import { removeHistoryItem } from '@queries/history/history';
+import {
+  getDeletedTree,
+  optimisticallyRemoveDeletedItem,
+} from '@queries/storage/deleted';
+import { callServiceClient } from '@service-call/client';
+import { cognitionApiServiceClient } from '@service-cognition/client';
+import { emailClient } from '@service-email/client';
+import { type ItemType, storageServiceClient } from '@service-storage/client';
+import type { FileType } from '@service-storage/generated/schemas/fileType';
+import type { Item } from '@service-storage/generated/schemas/item';
+import { refetchResources } from '@service-storage/util/refetchResources';
+import {
+  getPermissions,
+  hasPermissions,
+  Permissions,
+} from '../SharePermissions';
+
+const DEFAULT_CHUNK_SIZE = 10;
+
+export async function getItemAccessLevel({
+  itemType,
+  id,
+}: {
+  itemType: ItemType;
+  id: string;
+}) {
+  switch (itemType) {
+    case 'project':
+      const maybeProjectMetadata =
+        await storageServiceClient.projects.getProject({
+          id,
+        });
+      if (maybeProjectMetadata.isOk()) {
+        return maybeProjectMetadata.value.userAccessLevel;
+      }
+      break;
+
+    case 'document':
+      const maybeDocumentMetadata =
+        await storageServiceClient.getDocumentMetadata({
+          documentId: id,
+        });
+      if (maybeDocumentMetadata.isOk()) {
+        return maybeDocumentMetadata.value.userAccessLevel;
+      }
+      break;
+
+    case 'chat':
+      const maybeChatMetadata = await cognitionApiServiceClient.getChat({
+        chat_id: id,
+      });
+      if (maybeChatMetadata.isOk()) {
+        return maybeChatMetadata.value.userAccessLevel;
+      }
+      break;
+    case 'email':
+      const maybeThread = await emailClient.getThread({
+        thread_id: id,
+        limit: 1,
+      });
+      if (maybeThread.isOk()) {
+        return maybeThread.value.thread.access_level;
+      }
+      break;
+    default:
+      return;
+  }
+}
+
+/** @internal use rename mutation wrappers instead of this */
+export async function renameItem(args: {
+  itemType: ItemType;
+  id: string;
+  newName: string;
+}): Promise<boolean> {
+  const { itemType, id, newName } = args;
+
+  let result;
+
+  switch (itemType) {
+    case 'document': {
+      result = await storageServiceClient.editDocument({
+        documentId: id,
+        documentName: newName,
+      });
+      break;
+    }
+    case 'project': {
+      result = await storageServiceClient.projects.edit({
+        id,
+        name: newName,
+      });
+      break;
+    }
+    case 'chat': {
+      result = await cognitionApiServiceClient.renameChat({
+        chat_id: id,
+        new_name: newName,
+      });
+      break;
+    }
+    case 'channel': {
+      result = await storageServiceClient.patchChannel({
+        channel_id: id,
+        channel_name: newName,
+      });
+      break;
+    }
+    case 'call': {
+      result = await callServiceClient.editCallRecord({
+        callId: id,
+        customName: newName,
+      });
+      break;
+    }
+    default: {
+      return false;
+    }
+  }
+
+  if (result.isErr()) {
+    return false;
+  }
+
+  analytics.track('update_entity', {
+    entityType: itemType,
+    entityId: id,
+    property: 'name',
+  });
+
+  return true;
+}
+
+/** Backend only supports code file changes */
+export async function setFileType(args: {
+  id: string;
+  fileType: FileType;
+}): Promise<boolean> {
+  const { id, fileType } = args;
+
+  const result = await storageServiceClient.editDocument({
+    documentId: id,
+    fileType: { set: fileType },
+  });
+
+  if (result.isErr()) {
+    return false;
+  }
+
+  return true;
+}
+
+export async function deleteItem(args: {
+  itemType: ItemType;
+  id: string;
+}): Promise<boolean> {
+  const { itemType, id } = args;
+
+  const accessLevel = await getItemAccessLevel({ itemType, id });
+
+  if (accessLevel === 'owner') {
+    let result;
+    switch (itemType) {
+      case 'document': {
+        result = await storageServiceClient.deleteDocument({
+          documentId: id,
+        });
+        break;
+      }
+      case 'project': {
+        result = await storageServiceClient.projects.delete({
+          id,
+        });
+        break;
+      }
+      case 'chat': {
+        result = await cognitionApiServiceClient.deleteChat({
+          chat_id: id,
+        });
+        break;
+      }
+      default: {
+        return false;
+      }
+    }
+    if (result.isErr()) {
+      return false;
+    }
+  } else {
+    if (
+      itemType === 'channel' ||
+      itemType === 'email' ||
+      itemType === 'channel_message' ||
+      itemType === 'automation' ||
+      itemType === 'call' ||
+      itemType === 'foreign'
+    )
+      return false;
+
+    const removed = await removeHistoryItem(itemType, id);
+    if (!removed) return false;
+  }
+
+  analytics.track('delete_entity', {
+    entityType: itemType,
+    entityId: id,
+    deleteType: 'soft',
+  });
+
+  refetchResources();
+  return true;
+}
+
+export async function bulkDelete(
+  selectedItems: Item[],
+  chunkSize: number = DEFAULT_CHUNK_SIZE
+): Promise<{ success: boolean; failedItems: Item[] }> {
+  const failedItems: Item[] = [];
+
+  for (let i = 0; i < selectedItems.length; i += chunkSize) {
+    const chunk = selectedItems.slice(i, i + chunkSize);
+
+    const results = await Promise.allSettled(
+      chunk.map((item) =>
+        deleteItem({
+          itemType: item.type,
+          id: item.id,
+        })
+      )
+    );
+
+    results.forEach((result, index) => {
+      if (
+        result.status === 'rejected' ||
+        (result.status === 'fulfilled' && !result.value)
+      ) {
+        failedItems.push(chunk[index]);
+      }
+    });
+  }
+
+  return {
+    success: failedItems.length === 0,
+    failedItems,
+  };
+}
+
+export async function moveToFolder(args: {
+  itemType: ItemType;
+  id: string;
+  /** null removes the item from its folder */
+  folderId: string | null;
+}): Promise<boolean> {
+  const { itemType, id, folderId } = args;
+  const accessLevel = await getItemAccessLevel({ itemType, id });
+  if (!accessLevel) return false;
+  if (!hasPermissions(getPermissions(accessLevel), Permissions.CAN_EDIT))
+    return false;
+
+  let result;
+  switch (itemType) {
+    // Storage/chat backends clear the folder on empty string; email on null.
+    case 'document': {
+      result = await storageServiceClient.editDocument({
+        documentId: id,
+        projectId: folderId ?? '',
+      });
+      break;
+    }
+    case 'project': {
+      result = await storageServiceClient.projects.edit({
+        id,
+        projectParentId: folderId ?? '',
+      });
+      break;
+    }
+    case 'chat': {
+      result = await cognitionApiServiceClient.editChatProject({
+        chat_id: id,
+        project_id: folderId ?? '',
+      });
+      break;
+    }
+    case 'email': {
+      result = await emailClient.updateThreadProject({
+        thread_id: id,
+        projectId: folderId,
+      });
+      break;
+    }
+    default: {
+      return false;
+    }
+  }
+
+  if (result.isErr()) {
+    return false;
+  }
+
+  analytics.track('update_entity', {
+    entityType: itemType,
+    entityId: id,
+    property: 'parent_project',
+    newProjectId: folderId,
+  });
+
+  refetchResources();
+  return true;
+}
+
+export async function bulkMoveToFolder(
+  selectedItems: Item[],
+  folderId: string,
+  chunkSize: number = DEFAULT_CHUNK_SIZE
+): Promise<{ success: boolean; failedItems: Item[] }> {
+  const failedItems: Item[] = [];
+
+  // Process items in chunks
+  for (let i = 0; i < selectedItems.length; i += chunkSize) {
+    const chunk = selectedItems.slice(i, i + chunkSize);
+
+    const results = await Promise.allSettled(
+      chunk.map((item) =>
+        moveToFolder({
+          itemType: item.type,
+          id: item.id,
+          folderId,
+        })
+      )
+    );
+
+    // Process results for this chunk
+    results.forEach((result, index) => {
+      if (
+        result.status === 'rejected' ||
+        (result.status === 'fulfilled' && !result.value)
+      ) {
+        failedItems.push(chunk[index]);
+      }
+    });
+  }
+
+  return {
+    success: failedItems.length === 0,
+    failedItems,
+  };
+}
+
+/** NOTE: Currently we do not support copying projects */
+export async function copyItem(args: {
+  itemType: Exclude<ItemType, 'project'>;
+  id: string;
+  name: string;
+}): Promise<string | null> {
+  const { itemType, id, name } = args;
+  const { showPaywall } = usePaywallState();
+  const createCopyName = (originalName: string): string => {
+    return `${originalName} copy`;
+  };
+
+  let newId = '';
+  switch (itemType) {
+    case 'document': {
+      const result = await storageServiceClient.copyDocument({
+        documentId: id,
+        documentName: createCopyName(name),
+      });
+      if (result.isErr()) return null;
+      newId = result.value.documentId;
+      break;
+    }
+    case 'chat': {
+      const result = await cognitionApiServiceClient.copyChat({
+        chat_id: id,
+        name: createCopyName(name),
+      });
+      if (isPaymentError(result)) {
+        showPaywall();
+      }
+      if (result.isErr()) {
+        return null;
+      }
+      newId = result.value.id;
+      break;
+    }
+    default:
+      return null;
+  }
+
+  analytics.track('create_entity', {
+    entityType: itemType,
+    entityId: newId,
+    via: 'duplicate',
+    sourceEntityId: id,
+  });
+
+  refetchResources();
+  return newId;
+}
+
+export async function bulkCopy(
+  selectedItems: Item[],
+  chunkSize: number = DEFAULT_CHUNK_SIZE
+): Promise<{ success: boolean; failedItems: Item[] }> {
+  const failedItems: Item[] = [];
+
+  // Process items in chunks
+  for (let i = 0; i < selectedItems.length; i += chunkSize) {
+    const chunk = selectedItems.slice(i, i + chunkSize);
+
+    const results = await Promise.allSettled(
+      chunk.map((item) =>
+        copyItem({
+          itemType: item.type as Exclude<ItemType, 'project'>,
+          id: item.id,
+          name: item.name,
+        })
+      )
+    );
+
+    // Process results for this chunk
+    results.forEach((result, index) => {
+      if (
+        result.status === 'rejected' ||
+        (result.status === 'fulfilled' && !result.value)
+      ) {
+        failedItems.push(chunk[index]);
+      }
+    });
+  }
+
+  return {
+    success: failedItems.length === 0,
+    failedItems,
+  };
+}
+
+export async function revertDelete(args: {
+  itemType: ItemType;
+  id: string;
+}): Promise<boolean> {
+  const { itemType, id } = args;
+
+  let result;
+
+  switch (itemType) {
+    case 'document': {
+      result = await storageServiceClient.revertDocumentDelete({
+        documentId: id,
+      });
+      break;
+    }
+    case 'project': {
+      result = await storageServiceClient.projects.revertDelete({
+        id,
+      });
+      break;
+    }
+    case 'chat': {
+      result = await cognitionApiServiceClient.revertDeleteChat({
+        chat_id: id,
+      });
+      break;
+    }
+    default: {
+      return false;
+    }
+  }
+
+  if (result.isErr()) {
+    return false;
+  }
+
+  refetchResources();
+  return true;
+}
+
+export async function permanentlyDelete(args: {
+  itemType: ItemType;
+  id: string;
+}): Promise<boolean> {
+  const { itemType, id } = args;
+
+  let result;
+  switch (itemType) {
+    case 'document': {
+      optimisticallyRemoveDeletedItem(id);
+      result = await storageServiceClient.permanentlyDeleteDocument({
+        documentId: id,
+      });
+      break;
+    }
+    case 'project': {
+      const deleteTree = getDeletedTree();
+      const findAllDescendants = (projectId: string): string[] => {
+        const descendantIds: string[] = [];
+        const node = deleteTree.itemMap[projectId];
+        if (node && node.children) {
+          node.children.forEach((child) => {
+            descendantIds.push(child.id);
+            descendantIds.push(...findAllDescendants(child.id));
+          });
+        }
+        return descendantIds;
+      };
+
+      const descendantIds = findAllDescendants(id);
+      descendantIds.forEach((descendantId) => {
+        optimisticallyRemoveDeletedItem(descendantId);
+      });
+      optimisticallyRemoveDeletedItem(id);
+
+      result = await storageServiceClient.projects.permanentlyDelete({
+        id,
+      });
+      break;
+    }
+    case 'chat': {
+      optimisticallyRemoveDeletedItem(id);
+      result = await cognitionApiServiceClient.permanentlyDeleteChat({
+        chat_id: id,
+      });
+      break;
+    }
+    default: {
+      return false;
+    }
+  }
+
+  if (result.isErr()) {
+    return false;
+  }
+
+  analytics.track('delete_entity', {
+    entityType: itemType,
+    entityId: id,
+    deleteType: 'permanent',
+  });
+  return true;
+}
+
+export async function bulkPermanentlyDelete(
+  selectedItems: Item[],
+  chunkSize: number = DEFAULT_CHUNK_SIZE
+): Promise<{ success: boolean; failedItems: Item[] }> {
+  const failedItems: Item[] = [];
+
+  const selectedItemIds = new Set(selectedItems.map((item) => item.id));
+  const deleteTree = getDeletedTree();
+
+  const descendants: Item[] = [];
+
+  const eldestItemsOnly = selectedItems.filter((item) => {
+    const getParentId = (item: Item) => {
+      return item.type === 'project' ? item.parentId : item.projectId;
+    };
+
+    let currentItem = item;
+    while (currentItem) {
+      const parentId = getParentId(currentItem);
+      if (!parentId || !deleteTree.itemMap[parentId]?.item) break;
+
+      if (selectedItemIds.has(parentId)) {
+        descendants.push(item);
+        return false;
+      }
+
+      currentItem = deleteTree.itemMap[parentId]?.item;
+      if (!currentItem) break;
+    }
+
+    return true;
+  });
+
+  // Descendants need to be optimistically removed from history tree
+  descendants.forEach((item) => {
+    optimisticallyRemoveDeletedItem(item.id);
+  });
+
+  for (let i = 0; i < eldestItemsOnly.length; i += chunkSize) {
+    const chunk = selectedItems.slice(i, i + chunkSize);
+
+    const results = await Promise.allSettled(
+      chunk.map((item) =>
+        permanentlyDelete({
+          itemType: item.type,
+          id: item.id,
+        })
+      )
+    );
+
+    // Reverse of above, we need to push not only failed items, but also any of their descendants in selectedItems to failedItems
+    results.forEach((result, index) => {
+      if (
+        result.status === 'rejected' ||
+        (result.status === 'fulfilled' && !result.value)
+      ) {
+        const failedItem = chunk[index];
+        failedItems.push(failedItem);
+
+        const findChildren = (item: Item): Item[] => {
+          const children: Item[] = [];
+          const node = deleteTree.itemMap[item.id];
+          if (!node) return children;
+
+          node.children.forEach((child) => {
+            if (selectedItemIds.has(child.id)) {
+              children.push(child);
+              children.push(...findChildren(child));
+            }
+          });
+
+          return children;
+        };
+
+        failedItems.push(...findChildren(failedItem));
+      }
+    });
+  }
+
+  return {
+    success: failedItems.length === 0,
+    failedItems,
+  };
+}
+
+export async function bulkRevertDelete(
+  selectedItems: Item[],
+  chunkSize: number = DEFAULT_CHUNK_SIZE
+): Promise<{ success: boolean; failedItems: Item[] }> {
+  const failedItems: Item[] = [];
+
+  // Process items in chunks
+  for (let i = 0; i < selectedItems.length; i += chunkSize) {
+    const chunk = selectedItems.slice(i, i + chunkSize);
+
+    const results = await Promise.allSettled(
+      chunk.map((item) =>
+        revertDelete({
+          itemType: item.type,
+          id: item.id,
+        })
+      )
+    );
+
+    // Process results for this chunk
+    results.forEach((result, index) => {
+      if (
+        result.status === 'rejected' ||
+        (result.status === 'fulfilled' && !result.value)
+      ) {
+        failedItems.push(chunk[index]);
+      }
+    });
+  }
+
+  return {
+    success: failedItems.length === 0,
+    failedItems,
+  };
+}

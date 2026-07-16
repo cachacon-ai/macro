@@ -1,0 +1,19 @@
+//! Properties Models
+//!
+//! This crate defines the data models for the properties system using a three-layer architecture:
+//!
+//! - **shared**: Shared types (EntityType, DataType) used across all layers
+//! - **db**: Database layer types (used only by the properties crate's outbound adapters)
+//! - **service**: Business logic layer types (used within properties_service)
+//! - **api**: API layer types (external-facing requests/responses)
+
+pub mod api;
+pub mod db;
+pub mod service;
+pub mod shared;
+
+// Re-export commonly used shared types for convenience
+pub use shared::{DataType, EntityPropertyReference, EntityReference, EntityType, PropertyOwner};
+
+// Re-export conversion function
+pub use service::property_value::convert_set_property_value_to_property_value;

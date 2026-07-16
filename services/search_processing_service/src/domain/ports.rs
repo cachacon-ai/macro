@@ -1,0 +1,106 @@
+//! Outbound trait contracts for the backfill domain.
+//!
+//! Two ports:
+//!
+//! - [`BackfillSource`] — entity-aware reader. One method per searchable
+//!   entity, each producing a [`SourcePage`] (messages + rows consumed) for
+//!   a given offset. The orchestrator drives sources through these methods.
+//! - [`SearchEventPublisher`] — entity-agnostic batch publisher onto the
+//!   search-event queue.
+//!
+//! Splitting reads (source) from the queue write (publisher) keeps each
+//! adapter single-concern and lets the application-level pagination loop be
+//! tested with in-memory fakes.
+
+use std::future::Future;
+
+use sqs_client::search::SearchQueueMessage;
+
+use super::models::{
+    BackfillError, CallBackfillCursor, CallBackfillRequest, ChannelBackfillRequest,
+    ChatBackfillCursor, ChatBackfillRequest, DocumentBackfillCursor, DocumentBackfillRequest,
+    EmailBackfillRequest, ProjectBackfillCursor, ProjectBackfillRequest, PropertiesBackfillRequest,
+    SourcePage,
+};
+
+/// Publishes batches of search-event messages.
+pub trait SearchEventPublisher: Send + Sync + 'static {
+    fn publish(
+        &self,
+        messages: Vec<SearchQueueMessage>,
+    ) -> impl Future<Output = Result<(), BackfillError>> + Send;
+}
+
+/// Source of backfill messages across every searchable entity. The
+/// orchestrator's `drain_source` loop calls one of these per request.
+///
+/// `rows_consumed` on each [`SourcePage`] is the unit the orchestrator
+/// advances by; `messages` is what gets handed to the publisher. Sources
+/// that fold many rows into fewer messages (e.g. emails batching threads
+/// per user) must report the row count separately so the loop offsets
+/// correctly.
+pub trait BackfillSource: Send + Sync + 'static {
+    /// Calls paginate by keyset cursor (mirroring documents/chats): the
+    /// implementation returns the page plus the cursor of the last row
+    /// to feed back into the next call. An empty page signals
+    /// end-of-source. When `req.call_ids` is non-empty, the
+    /// implementation paginates the explicit list with the cursor
+    /// instead of scanning the table.
+    fn fetch_calls(
+        &self,
+        req: &CallBackfillRequest,
+        cursor: Option<CallBackfillCursor>,
+    ) -> impl Future<Output = Result<(SourcePage, Option<CallBackfillCursor>), BackfillError>> + Send;
+
+    /// Chats paginate by keyset cursor (mirroring documents): each call
+    /// passes the cursor of the last row from the previous page (or
+    /// `None` for the first page), and the implementation returns the
+    /// page plus the cursor to feed back into the next call. An empty
+    /// page signals end-of-source.
+    fn fetch_chats(
+        &self,
+        req: &ChatBackfillRequest,
+        cursor: Option<ChatBackfillCursor>,
+    ) -> impl Future<Output = Result<(SourcePage, Option<ChatBackfillCursor>), BackfillError>> + Send;
+
+    fn fetch_channels(
+        &self,
+        req: &ChannelBackfillRequest,
+        offset: usize,
+    ) -> impl Future<Output = Result<SourcePage, BackfillError>> + Send;
+
+    /// Documents paginate by keyset cursor: each call passes the cursor
+    /// of the last row from the previous page (or `None` for the first
+    /// page), and the implementation returns the page plus the cursor
+    /// to feed back into the next call. An empty page signals
+    /// end-of-source.
+    fn fetch_documents(
+        &self,
+        req: &DocumentBackfillRequest,
+        cursor: Option<DocumentBackfillCursor>,
+    ) -> impl Future<Output = Result<(SourcePage, Option<DocumentBackfillCursor>), BackfillError>> + Send;
+
+    fn fetch_emails(
+        &self,
+        req: &EmailBackfillRequest,
+        offset: usize,
+    ) -> impl Future<Output = Result<SourcePage, BackfillError>> + Send;
+
+    /// Distinct entity ids holding property rows of the requested type,
+    /// paginated by plain offset over `entity_properties`.
+    fn fetch_entity_properties(
+        &self,
+        req: &PropertiesBackfillRequest,
+        offset: usize,
+    ) -> impl Future<Output = Result<SourcePage, BackfillError>> + Send;
+    /// Projects paginate by keyset cursor (mirroring documents): each call
+    /// passes the cursor of the last row from the previous page (or `None`
+    /// for the first page), and the implementation returns the page plus
+    /// the cursor to feed back into the next call. An empty page signals
+    /// end-of-source.
+    fn fetch_projects(
+        &self,
+        req: &ProjectBackfillRequest,
+        cursor: Option<ProjectBackfillCursor>,
+    ) -> impl Future<Output = Result<(SourcePage, Option<ProjectBackfillCursor>), BackfillError>> + Send;
+}

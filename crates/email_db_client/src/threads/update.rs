@@ -1,0 +1,361 @@
+#[cfg(test)]
+mod test;
+
+use crate::messages::get::fetch_messages_metadata;
+
+use chrono::{DateTime, Utc};
+use models_email::email::service::message::{is_inbound, is_outbound, is_spam_or_trash};
+use models_email::service;
+use models_email::service::message::is_macro_draft;
+use sqlx::types::Uuid;
+
+/// Updates a thread's metadata
+#[expect(clippy::too_many_arguments, reason = "too annoying to fix right now")]
+#[tracing::instrument(skip(tx), err)]
+async fn update_db_thread_metadata(
+    tx: &mut sqlx::PgConnection,
+    thread_id: Uuid,
+    link_id: Uuid,
+    inbox_visible: bool,
+    is_read: bool,
+    latest_inbound_message_ts: Option<DateTime<Utc>>,
+    latest_outbound_message_ts: Option<DateTime<Utc>>,
+    latest_non_spam_message_ts: Option<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE email_threads
+        SET
+            inbox_visible = $1,
+            is_read = $2,
+            latest_inbound_message_ts = $3,
+            latest_outbound_message_ts = $4,
+            latest_non_spam_message_ts = $5,
+            updated_at = NOW()
+        WHERE
+            id = $6 AND
+            link_id = $7
+        "#,
+        inbox_visible,
+        is_read,
+        latest_inbound_message_ts,
+        latest_outbound_message_ts,
+        latest_non_spam_message_ts,
+        thread_id,
+        link_id,
+    )
+    .execute(tx)
+    .await?;
+
+    Ok(())
+}
+
+// updates a thread's archived status to the passed boolean without performing checks
+#[tracing::instrument(skip(conn), err)]
+pub async fn update_inbox_visible_status(
+    conn: &mut sqlx::PgConnection,
+    thread_id: Uuid,
+    link_id: Uuid,
+    inbox_visible: bool,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE email_threads
+        SET
+            inbox_visible = $1,
+            updated_at = NOW()
+        WHERE
+            id = $2 AND
+            link_id = $3
+        "#,
+        inbox_visible,
+        thread_id,
+        link_id,
+    )
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(skip(executor), err)]
+pub async fn update_thread_read_status<'e, E>(
+    executor: E,
+    thread_id: Uuid,
+    link_id: Uuid,
+    is_read: bool,
+) -> anyhow::Result<()>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    sqlx::query!(
+        r#"
+        UPDATE email_threads
+        SET
+            is_read = $1,
+            updated_at = NOW()
+        WHERE
+            id = $2 AND
+            link_id = $3
+        "#,
+        is_read,
+        thread_id,
+        link_id,
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(())
+}
+
+/// Updates a thread's provider_id
+#[tracing::instrument(skip(conn), err)]
+pub async fn update_thread_provider_id(
+    conn: &mut sqlx::PgConnection,
+    thread_id: Uuid,
+    link_id: Uuid,
+    provider_id: &str,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE email_threads
+        SET
+            provider_id = $1,
+            updated_at = NOW()
+        WHERE
+            id = $2 AND
+            link_id = $3
+        "#,
+        provider_id,
+        thread_id,
+        link_id,
+    )
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+/// Recomputes the denormalized `email_threads.has_calendar_attachment` flag
+/// from the thread's current attachment set. Mirrors the CalendarOnly
+/// predicate in the email crate's dynamic query builder.
+#[tracing::instrument(skip(tx), err)]
+pub async fn sync_thread_calendar_flag(
+    tx: &mut sqlx::PgConnection,
+    thread_db_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE email_threads t
+        SET has_calendar_attachment = calc.has_cal
+        FROM (
+            SELECT EXISTS (
+                SELECT 1
+                FROM email_messages m
+                JOIN email_attachments a ON a.message_id = m.id
+                WHERE m.thread_id = $1
+                  AND (a.filename ILIKE '%.ics'
+                       OR a.mime_type = 'text/calendar'
+                       OR a.mime_type = 'application/ics')
+            ) AS has_cal
+        ) calc
+        WHERE t.id = $1
+          AND t.has_calendar_attachment IS DISTINCT FROM calc.has_cal
+        "#,
+        thread_db_id
+    )
+    .execute(tx)
+    .await?;
+
+    Ok(())
+}
+
+/// Recomputes the denormalized `email_threads.is_signal` flag: true iff the
+/// thread has a non-TRASH message matching the importance heuristic. Mirrors
+/// the Importance(true) predicate in the email crate's dynamic query builder.
+#[tracing::instrument(skip(tx), err)]
+pub async fn sync_thread_signal_flag(
+    tx: &mut sqlx::PgConnection,
+    thread_db_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE email_threads t
+        SET is_signal = calc.sig
+        FROM (
+            SELECT EXISTS (
+                SELECT 1
+                FROM email_messages m
+                WHERE m.thread_id = $1
+                  AND NOT EXISTS (
+                      SELECT 1 FROM email_message_labels ml
+                      JOIN email_labels l ON ml.label_id = l.id
+                      WHERE ml.message_id = m.id AND l.name = 'TRASH'
+                  )
+                  AND (
+                      (
+                          EXISTS (
+                              SELECT 1
+                              FROM email_contacts sender_c
+                              JOIN email_filters ef
+                                ON ef.link_id = m.link_id
+                               AND ef.email_address IS NOT NULL
+                               AND LOWER(ef.email_address) = LOWER(sender_c.email_address)
+                              WHERE sender_c.id = m.from_contact_id
+                                AND ef.is_important = TRUE
+                          )
+                          OR EXISTS (
+                              SELECT 1
+                              FROM email_contacts sender_c
+                              JOIN email_filters ef
+                                ON ef.link_id = m.link_id
+                               AND ef.email_domain IS NOT NULL
+                               AND LOWER(ef.email_domain) = LOWER(SPLIT_PART(sender_c.email_address, '@', 2))
+                              WHERE sender_c.id = m.from_contact_id
+                                AND ef.is_important = TRUE
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM email_filters ef_addr
+                                    WHERE ef_addr.link_id = m.link_id
+                                      AND ef_addr.email_address IS NOT NULL
+                                      AND LOWER(ef_addr.email_address) = LOWER(sender_c.email_address)
+                                      AND ef_addr.is_important = FALSE
+                                )
+                          )
+                      )
+                      OR (
+                          NOT (
+                              EXISTS (
+                                  SELECT 1
+                                  FROM email_contacts sender_c
+                                  JOIN email_filters ef
+                                    ON ef.link_id = m.link_id
+                                   AND ef.email_address IS NOT NULL
+                                   AND LOWER(ef.email_address) = LOWER(sender_c.email_address)
+                                  WHERE sender_c.id = m.from_contact_id
+                                    AND ef.is_important = FALSE
+                              )
+                              OR EXISTS (
+                                  SELECT 1
+                                  FROM email_contacts sender_c
+                                  JOIN email_filters ef
+                                    ON ef.link_id = m.link_id
+                                   AND ef.email_domain IS NOT NULL
+                                   AND LOWER(ef.email_domain) = LOWER(SPLIT_PART(sender_c.email_address, '@', 2))
+                                  WHERE sender_c.id = m.from_contact_id
+                                    AND ef.is_important = FALSE
+                                    AND NOT EXISTS (
+                                        SELECT 1 FROM email_filters ef_addr
+                                        WHERE ef_addr.link_id = m.link_id
+                                          AND ef_addr.email_address IS NOT NULL
+                                          AND LOWER(ef_addr.email_address) = LOWER(sender_c.email_address)
+                                          AND ef_addr.is_important = TRUE
+                                    )
+                              )
+                          )
+                          AND (
+                              m.is_draft = TRUE
+                              OR EXISTS (
+                                  SELECT 1 FROM email_message_labels ml
+                                  JOIN email_labels l ON ml.label_id = l.id
+                                  WHERE ml.message_id = m.id
+                                    AND l.name IN ('CATEGORY_PERSONAL', 'SENT', 'DRAFT')
+                              )
+                              OR NOT EXISTS (
+                                  SELECT 1 FROM email_message_labels ml
+                                  JOIN email_labels l ON ml.label_id = l.id
+                                  WHERE ml.message_id = m.id
+                                    AND l.name IN ('CATEGORY_UPDATES', 'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS')
+                              )
+                          )
+                      )
+                  )
+            ) AS sig
+        ) calc
+        WHERE t.id = $1
+          AND t.is_signal IS DISTINCT FROM calc.sig
+        "#,
+        thread_db_id
+    )
+    .execute(tx)
+    .await?;
+
+    Ok(())
+}
+
+// Updates a thread's metadata (archived status, latest_timestamps)
+#[tracing::instrument(skip(tx), err)]
+pub async fn update_thread_metadata(
+    tx: &mut sqlx::PgConnection,
+    thread_db_id: Uuid,
+    link_id: Uuid,
+) -> anyhow::Result<()> {
+    let messages = fetch_messages_metadata(&mut *tx, thread_db_id).await?;
+
+    // if any non-sent message in the thread has the INBOX label, the thread is visible in the inbox
+    let inbox_visible = messages.iter().any(|message| {
+        let has_inbox = message
+            .labels
+            .iter()
+            .any(|label| label.provider_label_id == service::label::system_labels::INBOX);
+        let has_sent = message
+            .labels
+            .iter()
+            .any(|label| label.provider_label_id == service::label::system_labels::SENT);
+
+        (has_inbox && !has_sent) || is_macro_draft(message)
+    });
+
+    // if any message in the thread is unread, the thread is considered unread in the FE
+    let is_read = !messages.iter().any(|message| !message.is_read);
+
+    let latest_draft_ts = messages
+        .iter()
+        .filter(|msg| is_macro_draft(msg))
+        .map(|msg| msg.updated_at)
+        .max();
+
+    let latest_inbound_timestamp_ts = messages
+        .iter()
+        .find(|msg| is_inbound(msg))
+        .map(|msg| msg.internal_date_ts)
+        .unwrap_or_else(|| None);
+
+    let latest_inbound_or_draft_ts = [latest_inbound_timestamp_ts, latest_draft_ts]
+        .into_iter()
+        .flatten()
+        .max();
+
+    let latest_outbound_message_ts = messages
+        .iter()
+        .find(|msg| is_outbound(msg))
+        .map(|msg| msg.internal_date_ts)
+        .unwrap_or_else(|| None);
+
+    // latest non-spam message timestamp is the latest macro draft or provider message
+    let latest_provider_message_ts = messages
+        .iter()
+        .find(|msg| !is_spam_or_trash(msg))
+        .map(|msg| msg.internal_date_ts)
+        .unwrap_or_else(|| None);
+
+    let latest_non_spam_message_ts = [latest_provider_message_ts, latest_draft_ts]
+        .into_iter()
+        .flatten()
+        .max();
+
+    update_db_thread_metadata(
+        &mut *tx,
+        thread_db_id,
+        link_id,
+        inbox_visible,
+        is_read,
+        latest_inbound_or_draft_ts,
+        latest_outbound_message_ts,
+        latest_non_spam_message_ts,
+    )
+    .await?;
+
+    sync_thread_signal_flag(&mut *tx, thread_db_id).await?;
+
+    Ok(())
+}

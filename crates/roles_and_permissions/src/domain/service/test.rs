@@ -1,0 +1,207 @@
+//! Tests for the service logic for roles and permissions
+use super::*;
+use crate::domain::model::Permission;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+
+use macro_user_id::email::ReadEmailParts;
+
+#[derive(Debug, Clone, Default)]
+struct MockUserRepository {}
+
+impl UserRepository for MockUserRepository {
+    async fn get_user_id_by_email(
+        &self,
+        email: &Email<Lowercase<'_>>,
+    ) -> Result<MacroUserIdStr<'_>, UserRolesAndPermissionsError> {
+        match email.email_str() {
+            "doesnotexist@doesnotexist.com" => Err(UserRolesAndPermissionsError::UserDoesNotExist),
+            "user@user.com" => Ok(MacroUserIdStr::parse_from_str("macro|user@user.com").unwrap()),
+            _ => Err(UserRolesAndPermissionsError::StorageLayerError(
+                anyhow::anyhow!("unexpected email"),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct MockUserRolesAndPermissionsRepository {
+    add_roles_to_user_calls: Arc<Mutex<usize>>,
+    removed_roles_from_user_calls: Arc<Mutex<Vec<Vec<RoleId>>>>,
+}
+
+impl MockUserRolesAndPermissionsRepository {
+    pub fn get_add_roles_to_user_calls(&self) -> usize {
+        *self.add_roles_to_user_calls.lock().unwrap()
+    }
+
+    pub fn get_remove_roles_from_user_calls(&self) -> usize {
+        self.removed_roles_from_user_calls.lock().unwrap().len()
+    }
+
+    pub fn get_removed_roles_from_user_calls(&self) -> Vec<Vec<RoleId>> {
+        self.removed_roles_from_user_calls.lock().unwrap().clone()
+    }
+}
+
+impl UserRolesAndPermissionsRepository for MockUserRolesAndPermissionsRepository {
+    async fn get_user_roles(
+        &self,
+        _user_id: &MacroUserIdStr<'_>,
+    ) -> Result<HashSet<RoleId>, UserRolesAndPermissionsError> {
+        Ok(HashSet::from([
+            RoleId::SelfServe,
+            RoleId::ProfessionalSubscriber,
+        ]))
+    }
+
+    async fn get_user_permissions(
+        &self,
+        _user_id: &MacroUserIdStr<'_>,
+    ) -> Result<HashSet<Permission>, UserRolesAndPermissionsError> {
+        Ok(HashSet::new())
+    }
+
+    async fn add_roles_to_user(
+        &self,
+        _user_id: &MacroUserIdStr<'_>,
+        _role_ids: &[RoleId],
+    ) -> Result<(), UserRolesAndPermissionsError> {
+        *self.add_roles_to_user_calls.lock().unwrap() += 1;
+        Ok(())
+    }
+
+    async fn remove_roles_from_user(
+        &self,
+        _user_id: &MacroUserIdStr<'_>,
+        role_ids: &[RoleId],
+    ) -> Result<(), UserRolesAndPermissionsError> {
+        self.removed_roles_from_user_calls
+            .lock()
+            .unwrap()
+            .push(role_ids.to_vec());
+        Ok(())
+    }
+}
+
+async fn assert_payment_failure_status_removes_subscription_roles(
+    subscription_status: SubscriptionStatus,
+) -> anyhow::Result<()> {
+    let mock_user_repository = MockUserRepository::default();
+    let mock_user_roles_and_permissions_repository =
+        MockUserRolesAndPermissionsRepository::default();
+
+    let user_service = UserRolesAndPermissionsServiceImpl::new(
+        mock_user_roles_and_permissions_repository.clone(),
+        mock_user_repository,
+    );
+
+    user_service
+        .update_user_roles_and_permissions_for_subscription(
+            Email::parse_from_str("UsEr@uSeR.com")?.lowercase(),
+            subscription_status,
+            ProductTier::Opus,
+        )
+        .await?;
+
+    assert_eq!(
+        mock_user_roles_and_permissions_repository.get_removed_roles_from_user_calls(),
+        vec![vec![RoleId::ProfessionalSubscriber, RoleId::SubOpus]]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_payment_failure_statuses_past_due_removes_roles() -> anyhow::Result<()> {
+    assert_payment_failure_status_removes_subscription_roles(SubscriptionStatus::PastDue).await
+}
+
+#[tokio::test]
+async fn test_payment_failure_statuses_incomplete_expired_removes_roles() -> anyhow::Result<()> {
+    assert_payment_failure_status_removes_subscription_roles(SubscriptionStatus::IncompleteExpired)
+        .await
+}
+
+#[tokio::test]
+async fn test_user_respository_get_user_id_by_email() -> anyhow::Result<()> {
+    let mock_user_repository = MockUserRepository::default();
+    let mock_user_roles_and_permissions_repository =
+        MockUserRolesAndPermissionsRepository::default();
+
+    let user_service = UserRolesAndPermissionsServiceImpl::new(
+        mock_user_roles_and_permissions_repository.clone(),
+        mock_user_repository,
+    );
+
+    user_service
+        .update_user_roles_and_permissions_for_subscription(
+            Email::parse_from_str("UsEr@uSeR.com")?.lowercase(),
+            SubscriptionStatus::Active,
+            ProductTier::Haiku,
+        )
+        .await?;
+
+    assert_eq!(
+        mock_user_roles_and_permissions_repository.get_add_roles_to_user_calls(),
+        1
+    );
+
+    user_service
+        .update_user_roles_and_permissions_for_subscription(
+            Email::parse_from_str("UsEr@uSeR.com")?.lowercase(),
+            SubscriptionStatus::Paused,
+            ProductTier::Haiku,
+        )
+        .await?;
+
+    assert_eq!(
+        mock_user_roles_and_permissions_repository.get_remove_roles_from_user_calls(),
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_user_roles() -> anyhow::Result<()> {
+    let mock_user_repository = MockUserRepository::default();
+    let mock_user_roles_and_permissions_repository =
+        MockUserRolesAndPermissionsRepository::default();
+
+    let user_service = UserRolesAndPermissionsServiceImpl::new(
+        mock_user_roles_and_permissions_repository,
+        mock_user_repository,
+    );
+
+    let roles = user_service
+        .get_user_roles(&MacroUserIdStr::parse_from_str("macro|user@user.com")?)
+        .await?;
+
+    assert_eq!(roles.len(), 2);
+    assert!(roles.contains(&RoleId::SelfServe));
+    assert!(roles.contains(&RoleId::ProfessionalSubscriber));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_user_roles_delegates_to_repository() -> anyhow::Result<()> {
+    let mock_user_repository = MockUserRepository::default();
+    let mock_user_roles_and_permissions_repository =
+        MockUserRolesAndPermissionsRepository::default();
+
+    let user_service = UserRolesAndPermissionsServiceImpl::new(
+        mock_user_roles_and_permissions_repository,
+        mock_user_repository,
+    );
+
+    let roles = user_service
+        .get_user_roles(&MacroUserIdStr::parse_from_str("macro|other@user.com")?)
+        .await?;
+
+    // Mock returns the same roles regardless of user_id
+    assert!(roles.contains(&RoleId::SelfServe));
+    assert!(roles.contains(&RoleId::ProfessionalSubscriber));
+
+    Ok(())
+}

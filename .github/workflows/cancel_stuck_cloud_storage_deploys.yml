@@ -1,5 +1,5 @@
-# DO NOT EDIT — regenerate with `cargo x workflows` (from rust/cloud-storage).
-# Source: rust/cloud-storage/tools/xtask/crates/xtask_workflows/src/workflows/cancel_stuck_cloud_storage_deploys.rs
+# DO NOT EDIT — regenerate with `cargo x workflows` (from the repository root).
+# Source: tooling/xtask/crates/xtask_workflows/src/workflows/cancel_stuck_cloud_storage_deploys.rs
 name: Cancel Stuck Cloud Storage Deploys
 on:
   schedule:
@@ -24,7 +24,7 @@ jobs:
     name: Cancel runs stuck queued or in_progress past threshold
     runs-on: namespace-profile-linux-tiny-no-cache
     env:
-      WORKFLOW_FILE: deploy-cloud-storage-on-push.yml
+      WORKFLOW_FILE: deploy_cloud_storage_on_push.yml
       MAX_AGE_MINUTES: ${{ inputs.max-age-minutes || '90' }}
       DRY_RUN: ${{ inputs.dry-run || 'false' }}
       GH_TOKEN: ${{ github.token }}
