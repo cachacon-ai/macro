@@ -67,6 +67,10 @@ export function BottomReplyButtons(props: { lastMessage: ApiMessage }) {
     return email ? inboxIconProps(email) : { email: '' };
   };
 
+  const markDone = () => {
+    ctx.archiveThread();
+  }
+
   return (
     <Show
       when={isMobile()}
