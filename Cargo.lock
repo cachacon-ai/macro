@@ -2284,7 +2284,7 @@ dependencies = [
 
 [[package]]
 name = "cache-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-lock",
  "cache-core",
@@ -2962,12 +2962,12 @@ dependencies = [
  "itertools 0.14.0",
  "last_online_tracker",
  "macro_auth",
+ "macro_authorization",
  "macro_aws_config",
  "macro_config",
  "macro_entrypoint",
  "macro_env",
  "macro_env_var",
- "macro_middleware",
  "macro_user_id",
  "mockall",
  "model",
@@ -12249,6 +12249,7 @@ dependencies = [
  "doppler-config",
  "futures",
  "macro_auth",
+ "macro_authorization",
  "macro_aws_config",
  "macro_config",
  "macro_cors",
@@ -12256,7 +12257,6 @@ dependencies = [
  "macro_entrypoint",
  "macro_env",
  "macro_env_var",
- "macro_middleware",
  "macro_queues",
  "macro_service_urls",
  "macro_user_id",
@@ -12265,7 +12265,6 @@ dependencies = [
  "model",
  "model-entity",
  "model_notifications",
- "model_user",
  "notification",
  "secretsmanager_client",
  "serde",
@@ -16124,6 +16123,8 @@ dependencies = [
  "num-integer",
  "num-traits",
  "once_cell",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "percent-encoding",
  "phf 0.13.1",
  "phf_shared 0.10.0",

@@ -67,54 +67,51 @@ export function BottomReplyButtons(props: { lastMessage: ApiMessage }) {
     return email ? inboxIconProps(email) : { email: '' };
   };
 
-  const markDone = () => {
-    ctx.archiveThread();
-  };
-
-  if (!isMobile()) {
-    return (
-      <div class="flex w-full items-center pt-4">
-        <button
-          type="button"
-          class="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-ink-placeholder hover:text-ink-muted"
-          onClick={open('reply-all')}
-        >
-          <UserIcon
-            {...currentUserIconProps()}
-            size="md"
-            showTooltip={false}
-            suppressClick
-          />
-          <span class="truncate">Reply...</span>
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <FloatRegionOrInline region="accessory">
-      <div class="w-full p-2 pb-2 pt-4 mobile:px-(--mobile-chrome-gutter) mobile:py-0">
-        <div class="flex flex-row items-center gap2 justify-between mobile:pointer-events-auto">
-          <div class="flex flex-row items-center gap-2">
-            <ReplyActionButton
-              icon={ArrowBendUpLeft}
-              label="Reply"
-              onClick={open('reply-all')}
+    <Show
+      when={isMobile()}
+      fallback={
+        <div class="flex w-full items-center pt-4">
+          <button
+            type="button"
+            class="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-ink-placeholder hover:text-ink-muted"
+            onClick={open('reply-all')}
+          >
+            <UserIcon
+              {...currentUserIconProps()}
+              size="md"
+              showTooltip={false}
+              suppressClick
             />
+            <span class="truncate">Reply...</span>
+          </button>
+        </div>
+      }
+    >
+      <FloatRegionOrInline region="accessory">
+        <div class="w-full p-2 pb-2 pt-4 mobile:px-(--mobile-chrome-gutter) mobile:py-0">
+          <div class="flex flex-row items-center gap-2 justify-between mobile:pointer-events-auto">
+            <div class="flex flex-row items-center gap-2">
+              <ReplyActionButton
+                icon={ArrowBendUpLeft}
+                label="Reply"
+                onClick={open('reply-all')}
+              />
+              <ReplyActionButton
+                icon={ArrowBendUpRight}
+                label="Forward"
+                onClick={open('forward')}
+              />
+            </div>
+
             <ReplyActionButton
-              icon={ArrowBendUpRight}
-              label="Forward"
-              onClick={open('forward')}
+              icon={CheckIcon}
+              ariaLabel="Mark done"
+              onClick={markDone}
             />
           </div>
-
-          <ReplyActionButton
-            icon={CheckIcon}
-            ariaLabel="Mark done"
-            onClick={markDone}
-          />
         </div>
-      </div>
-    </FloatRegionOrInline>
+      </FloatRegionOrInline>
+    </Show>
   );
 }
