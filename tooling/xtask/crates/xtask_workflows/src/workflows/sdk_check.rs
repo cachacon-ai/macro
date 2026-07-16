@@ -9,9 +9,9 @@ pub fn sdk_check() -> Workflow {
             PullRequest::default()
                 .add_branch("main")
                 .add_path("packages/sdk/**")
-                .add_path("rust/cloud-storage/**/*.rs")
-                .add_path("rust/cloud-storage/Cargo.toml")
-                .add_path("rust/cloud-storage/Cargo.lock")
+                .add_path("crates/**/*.rs")
+                .add_path("Cargo.toml")
+                .add_path("Cargo.lock")
                 .add_path("apps/web/scripts/generate-api-schema.ts")
                 .add_path("apps/web/scripts/services.ts")
                 .add_path(".github/workflows/sdk-check.yml"),

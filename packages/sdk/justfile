@@ -1,10 +1,10 @@
 # Macro SDK tasks.
 
 # Fully refresh all generated code: rebuild the OpenAPI specs from the Rust
-# services (via js/app's gen-api), copy them into ./specs, and regenerate
+# services (via apps/web's gen-api), copy them into ./specs, and regenerate
 # ./generated with orval.
 update-generated:
-    cd ../app && bun install && bun run gen-api
+    cd ../../apps/web && bun install && bun run gen-api
     bun install
     bun run sync-specs
     bun run generate
