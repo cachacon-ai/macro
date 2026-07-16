@@ -1,10 +1,3 @@
-//! `SDK Check` — fails a PR if the SDK's generated layer (`packages/sdk/generated`,
-//! `packages/sdk/specs`) has drifted from the Rust services' OpenAPI output, or if
-//! the SDK no longer typechecks. Generated into `sdk-check.yml`.
-//!
-//! The freshness check runs `just update-generated` in `packages/sdk` (the same
-//! command developers run) and fails on any resulting diff under `packages/sdk`.
-
 use gh_workflow::{Concurrency, Event, Expression, Job, PullRequest, Run, Step, Workflow};
 
 use crate::workflows::{runners, steps, vars};
