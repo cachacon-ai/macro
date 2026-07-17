@@ -17,6 +17,7 @@ members = [
   "crates/cowlike",
   "crates/crm",
   "crates/embedding",
+  "crates/entity_mutation",
   "crates/favorites",
   "crates/foreign_entity",
   "crates/graphql_common",

@@ -2396,6 +2396,7 @@ dependencies = [
  "connection",
  "entity_access",
  "entity_access_db_utils",
+ "entity_mutation",
  "filter_ast",
  "futures",
  "item_filters",
@@ -2608,6 +2609,7 @@ dependencies = [
  "contacts",
  "entity_access",
  "entity_access_db_utils",
+ "entity_mutation",
  "filter_ast",
  "frecency",
  "futures",
@@ -2673,6 +2675,7 @@ dependencies = [
  "entity_access",
  "entity_access_db_utils",
  "entity_access_management",
+ "entity_mutation",
  "futures",
  "http-body-util",
  "macro_authorization",
@@ -4448,6 +4451,7 @@ dependencies = [
  "entity_access",
  "entity_access_db_utils",
  "entity_access_management",
+ "entity_mutation",
  "foreign_entity",
  "futures",
  "hex",
@@ -4743,6 +4747,7 @@ dependencies = [
  "email_utils",
  "entity_access",
  "entity_access_management",
+ "entity_mutation",
  "filter_ast",
  "frecency",
  "futures",
@@ -5183,6 +5188,19 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "workspace-hack",
+]
+
+[[package]]
+name = "entity_mutation"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "entity_access",
+ "macro_user_id",
+ "model-entity",
+ "models_permissions",
+ "tracing",
  "workspace-hack",
 ]
 
@@ -11120,6 +11138,7 @@ dependencies = [
  "entity_access",
  "entity_access_db_utils",
  "entity_access_management",
+ "entity_mutation",
  "futures",
  "hex",
  "http-body-util",

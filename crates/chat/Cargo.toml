@@ -33,6 +33,7 @@ entity_access_db_utils = { path = "../entity_access_db_utils", optional = true }
 entity_access_management = { path = "../entity_access_management", default-features = false, features = [
   "ports",
 ] }
+entity_mutation = { path = "../entity_mutation" }
 macro_user_id = { path = "../macro_user_id" }
 model = { path = "../model" }
 non_empty = { path = "../non_empty" }
