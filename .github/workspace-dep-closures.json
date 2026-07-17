@@ -22,6 +22,9 @@
       "crates/remote_env_var",
       "crates/workspace-hack"
     ],
+    "agent_runtime_protocol": [
+      "crates/agent_runtime_protocol"
+    ],
     "ai_projections": [
       "crates/agent",
       "crates/ai_projections",
