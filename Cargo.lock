@@ -71,13 +71,75 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tracing",
  "utoipa",
  "workspace-hack",
+]
+
+[[package]]
+name = "agent-client-protocol"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "882b815ffa67b023e1b40e7ea3bab3f05869654e8565d6811870c5545285e1d3"
+dependencies = [
+ "agent-client-protocol-derive",
+ "agent-client-protocol-schema",
+ "async-process",
+ "blocking",
+ "futures",
+ "futures-concurrency",
+ "rustc-hash 2.1.2",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "agent-client-protocol-derive"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd5ca63f112bd2459bcaf9eda0683b9ba95fc3b5e5fdd9036ca941c6a09345b1"
+dependencies = [
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "agent-client-protocol-schema"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06679e1542356341f4550ccfb16338b64f37f6af70de2105446ef6fbb078234c"
+dependencies = [
+ "anyhow",
+ "derive_more 2.1.1",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "strum 0.28.0",
+ "tracing",
+]
+
+[[package]]
+name = "agent_runtime_protocol"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "futures",
+ "jsonrpsee",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -236,7 +298,7 @@ dependencies = [
  "soup",
  "sqlx",
  "sqs_client",
- "strum",
+ "strum 0.27.2",
  "sync_service_client",
  "system_properties",
  "teams",
@@ -280,7 +342,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -610,6 +672,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-channel"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2"
+dependencies = [
+ "concurrent-queue",
+ "event-listener-strategy",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "async-compression"
 version = "0.4.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -685,7 +759,7 @@ dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
  "quote",
- "strum",
+ "strum 0.27.2",
  "syn 2.0.117",
  "thiserror 2.0.18",
 ]
@@ -783,6 +857,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-process"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc50921ec0055cdd8a16de48773bfeec5c972598674347252c0399676be7da75"
+dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "async-lock",
+ "async-signal",
+ "async-task",
+ "blocking",
+ "cfg-if",
+ "event-listener 5.4.1",
+ "futures-lite 2.6.1",
+ "rustix 1.1.4",
+]
+
+[[package]]
 name = "async-recursion"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -791,6 +883,24 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "async-signal"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52b5aaafa020cf5053a01f2a60e8ff5dccf550f0f77ec54a4e47285ac2bab485"
+dependencies = [
+ "async-io",
+ "async-lock",
+ "atomic-waker",
+ "cfg-if",
+ "futures-core",
+ "futures-io",
+ "rustix 1.1.4",
+ "signal-hook-registry",
+ "slab",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -876,6 +986,12 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
 ]
+
+[[package]]
+name = "async-task"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
 
 [[package]]
 name = "async-trait"
@@ -1027,7 +1143,7 @@ dependencies = [
  "sha1 0.10.6",
  "sqlx",
  "sqs_client",
- "strum",
+ "strum 0.27.2",
  "teams",
  "thiserror 2.0.18",
  "time",
@@ -2058,6 +2174,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "blocking"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e83f8d02be6967315521be875afa792a316e28d57b5a2d401897e2a7921b7f21"
+dependencies = [
+ "async-channel 2.5.0",
+ "async-task",
+ "futures-io",
+ "futures-lite 2.6.1",
+ "piper",
+]
+
+[[package]]
 name = "bollard"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2843,7 +2972,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "tracing",
  "utoipa",
  "uuid",
@@ -2985,8 +3114,8 @@ dependencies = [
  "serde_json",
  "sqlx",
  "stream",
- "strum",
- "strum_macros",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
  "tokio",
  "tower 0.5.3",
  "tower-http",
@@ -4169,7 +4298,7 @@ dependencies = [
  "sqs_worker",
  "static_file",
  "stream",
- "strum",
+ "strum 0.27.2",
  "sync_service_client",
  "thiserror 2.0.18",
  "time",
@@ -4338,7 +4467,7 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "utoipa",
  "workspace-hack",
@@ -4615,7 +4744,7 @@ dependencies = [
  "macro_aws_config",
  "models_bulk_upload",
  "s3_key",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4741,7 +4870,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4937,7 +5066,7 @@ dependencies = [
  "sqs_client",
  "sqs_worker",
  "static_file_service_client",
- "strum_macros",
+ "strum_macros 0.27.2",
  "system_properties",
  "thiserror 2.0.18",
  "tokio",
@@ -5003,7 +5132,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -5537,7 +5666,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5605,6 +5734,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures-concurrency"
+version = "7.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175cd8cca9e1d45b87f18ffa75088f2099e3c4fe5e2f83e42de112560bea8ea6"
+dependencies = [
+ "fixedbitset 0.5.7",
+ "futures-core",
+ "futures-lite 2.6.1",
+ "pin-project",
+ "smallvec",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5659,7 +5801,10 @@ version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
 dependencies = [
+ "fastrand 2.4.1",
  "futures-core",
+ "futures-io",
+ "parking",
  "pin-project-lite",
 ]
 
@@ -5853,7 +5998,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yml",
- "strum_macros",
+ "strum_macros 0.27.2",
 ]
 
 [[package]]
@@ -6622,7 +6767,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e9b187a72d63adbfba487f48095306ac823049cb504ee195541e91c7775f5ad"
 dependencies = [
  "anyhow",
- "async-channel",
+ "async-channel 1.9.0",
  "base64 0.13.1",
  "futures-lite 1.13.0",
  "http 0.2.12",
@@ -7310,7 +7455,7 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "utoipa",
  "uuid",
@@ -7475,6 +7620,122 @@ dependencies = [
  "regex",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "jsonrpsee"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f3f48dc3e6b8bd21e15436c1ddd0bc22a6a54e8ec46fedd6adf3425f396ec6a"
+dependencies = [
+ "jsonrpsee-core",
+ "jsonrpsee-server",
+ "jsonrpsee-types",
+ "jsonrpsee-ws-client",
+ "tokio",
+]
+
+[[package]]
+name = "jsonrpsee-client-transport"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf36eb27f8e13fa93dcb50ccb44c417e25b818cfa1a481b5470cd07b19c60b98"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "http 1.4.0",
+ "jsonrpsee-core",
+ "pin-project",
+ "rustls 0.23.40",
+ "rustls-pki-types",
+ "rustls-platform-verifier 0.5.3",
+ "soketto",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "jsonrpsee-core"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "316c96719901f05d1137f19ba598b5fe9c9bc39f4335f67f6be8613921946480"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures-timer",
+ "futures-util",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "jsonrpsee-types",
+ "parking_lot",
+ "pin-project",
+ "rand 0.9.4",
+ "rustc-hash 2.1.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tower 0.5.3",
+ "tracing",
+]
+
+[[package]]
+name = "jsonrpsee-server"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c51b7c290bb68ce3af2d029648148403863b982f138484a73f02a9dd52dbd7f"
+dependencies = [
+ "futures-util",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "hyper 1.9.0",
+ "hyper-util",
+ "jsonrpsee-core",
+ "jsonrpsee-types",
+ "pin-project",
+ "route-recognizer",
+ "serde",
+ "serde_json",
+ "soketto",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower 0.5.3",
+ "tracing",
+]
+
+[[package]]
+name = "jsonrpsee-types"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc88ff4688e43cc3fa9883a8a95c6fa27aa2e76c96e610b737b6554d650d7fd5"
+dependencies = [
+ "http 1.4.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jsonrpsee-ws-client"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b6fceceeb05301cc4c065ab3bd2fa990d41ff4eb44e4ca1b30fa99c057c3e79"
+dependencies = [
+ "http 1.4.0",
+ "jsonrpsee-client-transport",
+ "jsonrpsee-core",
+ "jsonrpsee-types",
+ "tower 0.5.3",
+ "url",
 ]
 
 [[package]]
@@ -8316,7 +8577,7 @@ version = "0.1.0"
 dependencies = [
  "macro_env_var",
  "serde",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tracing",
  "workspace-hack",
@@ -8988,7 +9249,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tracing",
  "utoipa",
@@ -9004,7 +9265,7 @@ dependencies = [
  "cowlike",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "utoipa",
  "workspace-hack",
 ]
@@ -9024,7 +9285,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "utoipa",
  "workspace-hack",
@@ -9047,7 +9308,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "tracing",
  "utoipa",
  "uuid",
@@ -9080,7 +9341,7 @@ name = "models_bulk_upload"
 version = "0.1.0"
 dependencies = [
  "serde",
- "strum",
+ "strum 0.27.2",
  "utoipa",
  "workspace-hack",
 ]
@@ -9110,7 +9371,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "utoipa",
  "uuid",
@@ -9141,7 +9402,7 @@ name = "models_opensearch"
 version = "0.1.0"
 dependencies = [
  "serde",
- "strum",
+ "strum 0.27.2",
  "workspace-hack",
 ]
 
@@ -9171,7 +9432,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "utoipa",
  "workspace-hack",
 ]
@@ -9208,7 +9469,7 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "utoipa",
  "uuid",
  "workspace-hack",
@@ -9256,7 +9517,7 @@ dependencies = [
  "models_properties",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "utoipa",
  "uuid",
  "workspace-hack",
@@ -9270,7 +9531,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "utoipa",
  "uuid",
  "workspace-hack",
@@ -9394,7 +9655,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
@@ -9544,7 +9805,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
@@ -10062,7 +10323,7 @@ dependencies = [
  "opensearch_query_builder",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -10691,6 +10952,17 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "piper"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c835479a4443ded371d6c535cbfd8d31ad92c5d23ae9770a61bc155e4992a3c1"
+dependencies = [
+ "atomic-waker",
+ "fastrand 2.4.1",
+ "futures-io",
+]
 
 [[package]]
 name = "piston-float"
@@ -11790,7 +12062,7 @@ dependencies = [
  "quinn",
  "rustls 0.23.40",
  "rustls-pki-types",
- "rustls-platform-verifier",
+ "rustls-platform-verifier 0.7.0",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -11975,6 +12247,12 @@ checksum = "4d0df4f84d119d09b5c9c9e8db0fe9bfb5b47b04d0bb95b0763cf81bd9baa559"
 dependencies = [
  "triomphe",
 ]
+
+[[package]]
+name = "route-recognizer"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 
 [[package]]
 name = "rowan"
@@ -12165,6 +12443,27 @@ dependencies = [
 
 [[package]]
 name = "rustls-platform-verifier"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19787cda76408ec5404443dc8b31795c87cd8fec49762dc75fa727740d34acc1"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "jni 0.21.1",
+ "log",
+ "once_cell",
+ "rustls 0.23.40",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki 0.103.13",
+ "security-framework",
+ "security-framework-sys",
+ "webpki-root-certs 0.26.11",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "rustls-platform-verifier"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0"
@@ -12180,7 +12479,7 @@ dependencies = [
  "rustls-webpki 0.103.13",
  "security-framework",
  "security-framework-sys",
- "webpki-root-certs",
+ "webpki-root-certs 1.0.7",
  "windows-sys 0.61.2",
 ]
 
@@ -12481,7 +12780,7 @@ dependencies = [
  "sqlx",
  "sqs_client",
  "sqs_worker",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -12534,7 +12833,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.27.2",
  "system_properties",
  "thiserror 2.0.18",
  "tokio",
@@ -12820,6 +13119,7 @@ version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
+ "indexmap 2.14.0",
  "itoa",
  "memchr",
  "serde",
@@ -13120,6 +13420,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
+
+[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13306,6 +13612,22 @@ checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "soketto"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e859df029d160cb88608f5d7df7fb4753fd20fdfb4de5644f3d8b8440841721"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "futures",
+ "http 1.4.0",
+ "httparse",
+ "log",
+ "rand 0.8.6",
+ "sha1 0.10.6",
 ]
 
 [[package]]
@@ -13604,7 +13926,7 @@ dependencies = [
  "s3_key",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.27.2",
  "tracing",
  "uuid",
  "workspace-hack",
@@ -13696,7 +14018,7 @@ dependencies = [
  "serde",
  "serde_dynamo",
  "serde_json",
- "strum_macros",
+ "strum_macros 0.27.2",
  "thiserror 2.0.18",
  "tokio",
  "tower-http",
@@ -13834,7 +14156,16 @@ version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.27.2",
+]
+
+[[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros 0.28.0",
 ]
 
 [[package]]
@@ -13842,6 +14173,18 @@ name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -14337,6 +14680,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -15530,6 +15874,15 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75c7f0ef91146ebfb530314f5f1d24528d7f0767efbfd31dce919275413e393e"
+dependencies = [
+ "webpki-root-certs 1.0.7",
+]
+
+[[package]]
+name = "webpki-root-certs"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31141ce3fc3e300ae89b78c0dd67f9708061d1d2eda54b8209346fd6be9a92c"
@@ -16067,7 +16420,7 @@ dependencies = [
  "async-trait",
  "proc-macro2",
  "quote",
- "strum",
+ "strum 0.27.2",
  "syn 2.0.117",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -16350,7 +16703,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2 0.10.9",
- "strum",
+ "strum 0.27.2",
  "tokio",
  "xtask_paths",
 ]

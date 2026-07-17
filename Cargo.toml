@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
   "crates/agent",
+  "crates/agent_runtime_protocol",
   "crates/ai_projections",
   "crates/ai_usage",
   "crates/bot_id",
@@ -89,6 +90,7 @@ members = [
 anyhow = "1.0.100"
 apollo-compiler = "1"
 apollo-parser = "0.8"
+agent-client-protocol = "1.2.0"
 askama = "0.14"
 async-graphql = "7.2.1"
 async-lock = "3"
@@ -144,6 +146,7 @@ image = "0.25"
 indexmap = "2"
 inquire = "0.7"
 itertools = "0.14"
+jsonrpsee = { version = "0.26", features = ["server"] }
 jsonwebtoken = { git = "https://github.com/whutchinson98/jsonwebtoken", features = [
   "rust_crypto",
 ] }
