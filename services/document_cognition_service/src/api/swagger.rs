@@ -15,7 +15,7 @@ use crate::api::{
 };
 use crate::model::{
     response::attachments::GetChatsForAttachmentResponse,
-    stream::{ChatStream, SendChatMessagePayload, StreamError, ToolSet},
+    stream::{SendChatMessagePayload, ToolSet},
 };
 use ai_projections::domain::model::{Expiry, ProjectionStatus, RefreshCadence, TargetType};
 use ai_projections::inbound::axum_router::upsert_projection::{
@@ -30,7 +30,7 @@ use memory::inbound::axum_router::{self as memory_api, MemoryErrorBody, MemoryRe
 
 use crate::api::preview::get_batch_preview::{GetBatchPreviewRequest, GetBatchPreviewResponse};
 
-use chat::domain::models::{ChatResponse, GetChatResponse, WebCitation};
+use chat::domain::models::{ChatResponse, ChatStream, GetChatResponse, StreamError, WebCitation};
 use chat::inbound::http::router::{
     self as chat_router, CallToolRequest, CallToolResponse, CreateChatRequest,
     GetChatPermissionsResponse, PatchChatRequest, RejectToolCallRequest, UpdateToolCallRequest,

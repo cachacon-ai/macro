@@ -3,9 +3,9 @@ use super::*;
 #[test]
 fn local_binaries_are_unique_and_complete() {
     let bins = local_binaries();
-    // 13 distinct binaries (the bundled set, including the local-only
-    // search_processing_service).
-    assert_eq!(bins.len(), 13, "{bins:?}");
+    // 14 distinct binaries (the bundled set, including the local-only
+    // search_processing_service and agent_proxy_service).
+    assert_eq!(bins.len(), 14, "{bins:?}");
     assert!(bins.contains(&"pubsub_workers"));
     assert!(bins.contains(&"document_upload_finalizer_local_worker"));
     assert!(bins.contains(&"search_processing_service"));
