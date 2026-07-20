@@ -51,8 +51,12 @@ topics! {
     MacroExampleTopic => "macro.example",
     /// Document lifecycle events (created / updated / deleted / copied).
     MacroDocumentsTopic => "macro.documents",
+    /// Project lifecycle events (created, updated, deleted, restored, permanently deleted, and uploaded).
+    MacroProjectsTopic => "macro.projects",
     /// Channel lifecycle, message, participant, and attachment events.
     MacroChannelsTopic => "macro.channels",
     /// Email lifecycle events (links, messages, threads, labels).
     MacroEmailTopic => "macro.email",
+    /// Webhook configuration lifecycle events (created / updated / deleted / validated).
+    MacroWebhooksTopic => "macro.webhooks",
 }

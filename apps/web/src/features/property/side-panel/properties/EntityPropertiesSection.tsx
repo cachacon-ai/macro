@@ -1,5 +1,4 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
-import { isReservedPropertyDefinitionName } from '@companies/crm/team-crm-config';
 import { SidePanel } from '@components/app/side-panel/SidePanel';
 import type { BlockAlias, BlockName } from '@core/block';
 import { PopupPreview } from '@core/component/DocumentPreview';
@@ -39,6 +38,7 @@ import {
   type JSX,
   Match,
   Show,
+  Suspense,
   Switch,
 } from 'solid-js';
 
@@ -71,6 +71,13 @@ export interface EntityPropertiesSectionProps {
   hidePropertyDefinitionIds?: string[];
 }
 
+export interface EntityTagsSectionProps {
+  entityId: string;
+  entityType: EntityType;
+  canEdit: boolean;
+  order?: number;
+}
+
 const TAGGABLE_ENTITY_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
   'DOCUMENT',
   'TASK',
@@ -79,6 +86,31 @@ const TAGGABLE_ENTITY_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
   'CHAT',
   'CALL_RECORD',
 ]);
+
+export function EntityTagsSection(props: EntityTagsSectionProps) {
+  const tagsFlag = useFeatureFlag(ENABLE_TAGS_FE_FLAG, {
+    enabledOverride: ENABLE_TAGS_FE_OVERRIDE,
+  });
+
+  return (
+    <Show
+      when={tagsFlag().enabled && TAGGABLE_ENTITY_TYPES.has(props.entityType)}
+    >
+      <SidePanel.Section id="tags" title="Tags" defaultOpen order={props.order}>
+        <Suspense fallback={<SidePanel.Loading />}>
+          <div class="text-xs">
+            <TagsRow
+              entityId={props.entityId}
+              entityType={props.entityType}
+              canEdit={props.canEdit}
+              triggerVariant="pill"
+            />
+          </div>
+        </Suspense>
+      </SidePanel.Section>
+    </Show>
+  );
+}
 
 export function EntityPropertiesSection(props: EntityPropertiesSectionProps) {
   const { properties, isLoading, error, refetch } = useEntityProperties(
@@ -102,14 +134,12 @@ export function EntityPropertiesSection(props: EntityPropertiesSectionProps) {
   );
 
   // Fetched properties merged with any default placeholders whose
-  // definition the entity doesn't carry yet. Hidden definitions and
-  // reserved internal definitions (`__macro:*`) are dropped first.
+  // definition the entity doesn't carry yet. Hidden definitions are
+  // dropped first.
   const mergedProperties = createMemo(() => {
     const hiddenDefinitionIds = new Set(props.hidePropertyDefinitionIds ?? []);
     const fetched = properties().filter(
-      (property) =>
-        !hiddenDefinitionIds.has(property.propertyDefinitionId) &&
-        !isReservedPropertyDefinitionName(property.displayName)
+      (property) => !hiddenDefinitionIds.has(property.propertyDefinitionId)
     );
     const defaults = props.defaultProperties?.() ?? [];
     if (defaults.length === 0) return fetched;

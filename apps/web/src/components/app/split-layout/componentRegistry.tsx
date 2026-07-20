@@ -19,6 +19,7 @@ import { useIsAuthenticated } from '@core/auth';
 import { LoadingBlock } from '@core/component/LoadingBlock';
 import {
   DEV_MODE_ENV,
+  ENABLE_ACTIVITY,
   ENABLE_CRM,
   LOCAL_ONLY,
 } from '@core/constant/featureFlags';
@@ -156,6 +157,34 @@ registerComponent(
     );
   })
 );
+
+const ActivityView = lazy(() =>
+  import('@app/features/activity-timeline/activity-view').then((module) => ({
+    default: module.ActivityView,
+  }))
+);
+
+registerComponent(
+  'activity',
+  withAuth(() => {
+    // Keep the registration so direct navigation and restored splits can
+    // recover safely without loading the data-owning Activity view.
+    if (!ENABLE_ACTIVITY) {
+      return <RedirectSplit to={{ type: 'component', id: 'inbox' }} />;
+    }
+    usePageViewTracking('activity');
+    return <ActivityView />;
+  })
+);
+
+// The Activity tab briefly shipped as two separate views; restored splits
+// may still reference their ids.
+registerComponent('firehose', () => (
+  <RedirectSplit to={{ type: 'component', id: 'activity' }} />
+));
+registerComponent('my-activity', () => (
+  <RedirectSplit to={{ type: 'component', id: 'activity' }} />
+));
 
 registerComponent(
   'agents',

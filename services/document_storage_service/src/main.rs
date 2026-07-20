@@ -1,6 +1,11 @@
 #![recursion_limit = "256"]
 use crate::{
-    api::context::{ApiContext, DocumentStorageServiceAuthKey, TaskPropertiesAdapter},
+    api::{
+        MACRO_INTERNAL_USER_ID,
+        context::{
+            ApiContext, AuthorizationService, DocumentStorageServiceAuthKey, TaskPropertiesAdapter,
+        },
+    },
     config::{
         CalEventTypeContentNamesKey, CalWebhookSecretKey, MetaAccessToken, MetaPixelId,
         MetaTestEventCode,
@@ -18,8 +23,11 @@ use call::{
     domain::service::CallServiceImpl,
     inbound::axum_router::{CallRouterState, InternalCallRouterState, WebhookRouterState},
     outbound::{
-        ai_call_summarizer::AiCallSummarizer, livekit_rtc_client::LivekitRtcClient,
-        pg_call_repo::PgCallRepo, pg_voice_repo::PgVoiceRepo,
+        ai_call_summarizer::AiCallSummarizer,
+        livekit_rtc_client::LivekitRtcClient,
+        pg_call_repo::PgCallRepo,
+        pg_voice_repo::PgVoiceRepo,
+        s3_recording_storage::{RecordingCloudFrontConfig, S3RecordingStorage},
     },
 };
 use channels::{
@@ -69,6 +77,7 @@ use github::outbound::github_sync_client::GithubSyncClientImpl;
 use github::outbound::pg_github_sync_repo::PgGithubSyncRepo;
 use lexical_client::LexicalClient;
 use macro_auth::middleware::decode_jwt::JwtValidationArgs;
+use macro_authorization::{InternalAuthConfig, MacroAuthJwtValidator, MacroAuthorizationState};
 use macro_entrypoint::MacroEntrypoint;
 use macro_env_var::maybe_env_vars;
 use macro_event_broker::{KafkaEventPublisher, MacroEventBrokerService};
@@ -81,6 +90,14 @@ use notification::domain::service::SqsNotificationIngress;
 use notification::domain::service::{NotificationReaderService, PlatformArnConfig};
 use notification::outbound::queue::SqsQueue;
 use opensearch_client::OpensearchClient;
+use projects_hex::{
+    domain::service::ProjectServiceImpl,
+    inbound::axum_router::ProjectRouterState,
+    outbound::{
+        DynamoBulkUploadAdapter, PgProjectRepo, S3ProjectUploadAdapter, ShaCountAdapter,
+        SqsProjectSearchIndexer,
+    },
+};
 use properties::{
     NotificationServiceImpl, PermissionServiceImpl, PropertiesPgRepo, PropertiesServiceImpl,
 };
@@ -238,6 +255,13 @@ async fn main() -> anyhow::Result<()> {
     let jwt_validation_args =
         JwtValidationArgs::new_with_secret_manager(config.environment, &secretsmanager_client)
             .await?;
+    let authorization_state = MacroAuthorizationState::new(Arc::new(AuthorizationService::new(
+        MacroAuthJwtValidator::new(jwt_validation_args.clone()),
+        InternalAuthConfig {
+            api_key: dss_auth_key.as_ref().to_string(),
+            default_user_id: Some(MACRO_INTERNAL_USER_ID.to_string()),
+        },
+    )));
 
     // Initialize OpenSearch client
     let opensearch_client = OpensearchClient::new(
@@ -340,11 +364,14 @@ async fn main() -> anyhow::Result<()> {
         frecency_storage.clone(),
     );
     // Create the legacy channel list router state for routes mounted under /comms.
-    let channel_list_state = ChannelListRouterState::new(ChannelListServiceImpl::new(
-        PgChannelsRepo::new(db.clone()),
-        PgChannelsRepo::new(db.clone()),
-        frecency_storage.clone(),
-    ));
+    let channel_list_state = ChannelListRouterState::new(
+        ChannelListServiceImpl::new(
+            PgChannelsRepo::new(db.clone()),
+            PgChannelsRepo::new(db.clone()),
+            frecency_storage.clone(),
+        ),
+        authorization_state.clone(),
+    );
 
     let s3 = Arc::new(S3::new(
         s3_client,
@@ -398,6 +425,26 @@ async fn main() -> anyhow::Result<()> {
             .context("failed to create kafka event publisher")?,
     );
 
+    let project_service = Arc::new(ProjectServiceImpl::new(
+        PgProjectRepo::new(db.clone()),
+        S3ProjectUploadAdapter::new(
+            macro_aws_config::s3_client().await,
+            config.document_storage_bucket.as_ref(),
+            config.docx_document_upload_bucket.as_ref(),
+            config.upload_staging_bucket.as_ref(),
+        ),
+        DynamoBulkUploadAdapter::new(dynamodb_client.clone()),
+        ShaCountAdapter::new(Redis::new(redis_client.clone())),
+        entity_access_management_service.clone(),
+        SqsProjectSearchIndexer::new(Arc::new(sqs_client.clone())),
+        if cfg!(feature = "local") {
+            Some(uuid::uuid!("d50676e2-0a12-4c62-bc07-4b1cb6d8e9bc"))
+        } else {
+            None
+        },
+        macro_event_broker.clone(),
+    ));
+
     let document_service = Arc::new(
         DocumentServiceImpl::new(
             document_repo,
@@ -442,6 +489,7 @@ async fn main() -> anyhow::Result<()> {
     let foreign_entity_state = ForeignEntityRouterState::new(
         foreign_entity_service.clone(),
         entity_access_service.clone(),
+        authorization_state.clone(),
     );
 
     // Cal.com webhooks → Meta Lead events. Both secrets are loaded here
@@ -515,10 +563,25 @@ async fn main() -> anyhow::Result<()> {
         _ => None,
     };
     let recording_storage = match &egress_config {
-        Some(config) => Some(
-            call::outbound::s3_recording_storage::S3RecordingStorage::new(config.bucket.clone())
-                .await,
-        ),
+        Some(egress_config) => {
+            let cloudfront_config = RecordingCloudFrontConfig {
+                distribution_url: config
+                    .document_storage_service_cloudfront_distribution_url
+                    .as_ref()
+                    .to_string(),
+                signer_public_key_id: config
+                    .document_storage_service_cloudfront_signer_public_key_id
+                    .as_ref()
+                    .to_string(),
+                signer_private_key: config
+                    .document_storage_service_cloudfront_signer_private_key
+                    .as_ref()
+                    .to_string(),
+                presigned_url_expiry_seconds: config
+                    .document_storage_service_presigned_url_expiry_seconds,
+            };
+            Some(S3RecordingStorage::new(egress_config.bucket.clone(), cloudfront_config).await)
+        }
         None => None,
     };
     let mut call_service_builder = CallServiceImpl::<_, _, _, _, _, _, AiCallSummarizer>::new(
@@ -587,7 +650,11 @@ async fn main() -> anyhow::Result<()> {
             .with_voice_repo(PgVoiceRepo::new(db.clone())),
     );
 
-    let call_state = CallRouterState::new(call_service.clone(), entity_access_service.clone());
+    let call_state = CallRouterState::new(
+        call_service.clone(),
+        entity_access_service.clone(),
+        authorization_state.clone(),
+    );
     let call_webhook_state = WebhookRouterState::new(call_service.clone());
 
     let webhook_repository = webhook::outbound::PgRepository::new(db.clone());
@@ -606,6 +673,7 @@ async fn main() -> anyhow::Result<()> {
             webhook_repository.clone(),
             webhook_http_client.clone(),
             webhook_endpoint_scheme_policy,
+            macro_event_broker.clone(),
         );
     let webhook_rate_limiter = RateLimitServiceImpl {
         repo: RedisRateLimitAdapter {
@@ -615,6 +683,7 @@ async fn main() -> anyhow::Result<()> {
     let webhook_state = webhook::inbound::axum_router::WebhookRouterState::new(
         webhook_service,
         webhook_rate_limiter,
+        authorization_state.clone(),
     );
 
     let webhook_ingestion_service =
@@ -765,6 +834,7 @@ async fn main() -> anyhow::Result<()> {
             bots_service.clone(),
             channels_service.clone(),
             (*entity_access_service).clone(),
+            authorization_state.clone(),
         );
 
     let soup_service = Arc::new(SoupImpl::new(
@@ -785,6 +855,7 @@ async fn main() -> anyhow::Result<()> {
             soup_service.clone(),
             email_service,
             entity_access_service.clone(),
+            authorization_state.clone(),
         )
         .with_favorites_reader(Arc::new(
             service::soup_favorites_reader::DssSoupFavoritesReader(favorites_service.clone()),
@@ -792,6 +863,7 @@ async fn main() -> anyhow::Result<()> {
         favorites_state: FavoritesRouterState::new(
             favorites_service.clone(),
             entity_access_service.clone(),
+            authorization_state.clone(),
         ),
         favorites_service,
         #[cfg(feature = "graphql")]
@@ -813,15 +885,22 @@ async fn main() -> anyhow::Result<()> {
         system_properties_service: system_properties_service.clone(),
         properties_service: properties_service.clone(),
         opensearch_client: Arc::new(opensearch_client),
+        authorization_state: authorization_state.clone(),
         jwt_validation_args,
         dss_auth_key,
         // Shared frecency storage and legacy channel list routes.
         frecency_storage,
         channel_list_state,
         entity_access_service: entity_access_service.clone(),
+        projects_state: ProjectRouterState {
+            service: project_service,
+            access_service: entity_access_service.clone(),
+            authorization_state: authorization_state.clone(),
+        },
         documents_state: DocumentRouterState {
             service: document_service.clone(),
             access_service: entity_access_service.clone(),
+            authorization_state: authorization_state.clone(),
             pool: db.clone(),
             task_dedup_service,
             lexical_client: lexical_client.clone(),
@@ -836,10 +915,12 @@ async fn main() -> anyhow::Result<()> {
         channels_state: ChannelsRouterState::from_arc(
             channels_service,
             (*entity_access_service).clone(),
+            authorization_state.clone(),
         ),
         bots_state: bots::inbound::axum_router::BotsRouterState::new(
             bots_service.clone(),
             (*entity_access_service).clone(),
+            authorization_state.clone(),
         ),
         channel_bot_webhook_state,
         call_state,
@@ -851,6 +932,7 @@ async fn main() -> anyhow::Result<()> {
         crm_state: crm::inbound::axum_router::CrmRouterState {
             service: Arc::new(crm_service),
             entity_access_service: entity_access_service.clone(),
+            authorization_state: authorization_state.clone(),
         },
     };
 

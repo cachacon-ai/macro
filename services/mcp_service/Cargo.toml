@@ -37,7 +37,6 @@ http = { workspace = true }
 lexical_client = { path = "../../crates/lexical_client" }
 mcp_auth_proxy = { path = "../mcp_auth_proxy" }
 macro_auth = { path = "../../crates/macro_auth" }
-macro_db_client = { path = "../../crates/macro_db_client" }
 macro_aws_config = { path = "../../crates/macro_aws_config", features = ["s3"] }
 macro_entrypoint = { path = "../../crates/macro_entrypoint" }
 macro_config = { path = "../../crates/macro_config" }
@@ -57,7 +56,6 @@ notification = { path = "../../crates/notification", features = ["ai_tool"] }
 prompt = { path = "../../crates/prompt" }
 readonly_pool = { path = "../../crates/readonly_pool" }
 redis = { workspace = true, features = ["aio", "tokio-comp"] }
-roles_and_permissions = { path = "../../crates/roles_and_permissions" }
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 search_service_client = { path = "../../crates/search_service_client" }
 secretsmanager_client = { path = "../../crates/secretsmanager_client" }

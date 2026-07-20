@@ -5,7 +5,6 @@ use axum::extract::FromRef;
 use axum::extract::Request;
 use axum::http::Method;
 use axum::middleware::Next;
-use context::InternalFlag;
 use github::inbound::github_sync_router::GithubSyncRouterState;
 use macro_axum_utils::compose_layers;
 use macro_tower_layers::MacroRequestIdAndTracingLayer;
@@ -38,7 +37,6 @@ mod instructions;
 mod internal;
 mod notification;
 mod pins;
-mod projects;
 mod recents;
 mod user;
 mod user_document_view_location;
@@ -55,8 +53,6 @@ pub static MACRO_DOCUMENT_STORAGE_SERVICE_AUTH_HEADER_KEY: &str =
 pub static MACRO_INTERNAL_USER_ID_HEADER_KEY: &str = "x-document-storage-service-user-id";
 
 pub const MACRO_INTERNAL_USER_ID: &str = "macro|INTERNAL@macro.com";
-// permission based constants
-pub static MACRO_READ_PROFESSIONAL_PERMISSION_ID: &str = "read:professional_features";
 
 pub async fn setup_and_serve(state: ApiContext) -> anyhow::Result<()> {
     let app = api_router(state.clone())
@@ -166,23 +162,24 @@ fn api_router(state: ApiContext) -> Router {
         )
         .nest(
             "/projects",
-            projects::router(state.clone()).layer(ServiceBuilder::new().layer(
-                axum::middleware::from_fn(|req: Request, next: Next| async move {
-                    match req.method() {
-                        &Method::PUT | &Method::POST | &Method::PATCH | &Method::DELETE => {
-                            let uri = req.uri().to_string();
-                            // We do not want the upload a folder in the background
-                            // If a user cancels the call we need to make sure we aren't
-                            // creating documents/projects
-                            if !uri.contains("/upload") {
-                                return next.run(req).await;
+            projects_hex::inbound::axum_router::projects_router(state.projects_state.clone())
+                .layer(ServiceBuilder::new().layer(axum::middleware::from_fn(
+                    |req: Request, next: Next| async move {
+                        match req.method() {
+                            &Method::PUT | &Method::POST | &Method::PATCH | &Method::DELETE => {
+                                let uri = req.uri().to_string();
+                                // We do not want the upload a folder in the background
+                                // If a user cancels the call we need to make sure we aren't
+                                // creating documents/projects
+                                if !uri.contains("/upload") {
+                                    return next.run(req).await;
+                                }
+                                tokio::task::spawn(next.run(req)).await.unwrap()
                             }
-                            tokio::task::spawn(next.run(req)).await.unwrap()
+                            _ => next.run(req).await,
                         }
-                        _ => next.run(req).await,
-                    }
-                }),
-            )),
+                    },
+                ))),
         )
         .nest(
             "/annotations",
@@ -246,17 +243,6 @@ fn api_router(state: ApiContext) -> Router {
             "/crm",
             crm::inbound::axum_router::crm_router(state.crm_state.clone()),
         )
-        .layer(
-            ServiceBuilder::new()
-                .layer(axum::middleware::from_fn(
-                    macro_middleware::auth::initialize_user_context::handler,
-                ))
-                .layer(axum::middleware::from_fn_with_state(
-                    state.jwt_validation_args.clone(),
-                    macro_middleware::auth::attach_user::handler,
-                )),
-        )
-        // Merge after the user-auth layer so webhook calls authenticate only with the bot token.
         .merge(
             bots::inbound::channel_webhook_router::channel_bot_webhook_router(
                 state.channel_bot_webhook_state.clone(),
@@ -287,32 +273,11 @@ fn api_router(state: ApiContext) -> Router {
                         ))
                         .layer(axum::middleware::from_fn(
                             macro_middleware::connection_drop_prevention_handler,
-                        ))
-                        .layer(axum::middleware::from_fn(
-                            |mut req: Request, next: Next| async move {
-                                req.extensions_mut().insert(InternalFlag { internal: true });
-                                next.run(req).await
-                            },
                         )),
                 ),
         )
-        .nest(
-            "/recents",
-            recents::router().layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                macro_middleware::auth::decode_jwt::handler, // The user has to exist for all recents calls
-            )),
-        )
-        .nest(
-            "/saved_views",
-            saved_views::router().layer(compose_layers![
-                axum::middleware::from_fn(macro_middleware::auth::initialize_user_context::handler),
-                axum::middleware::from_fn_with_state(
-                    state.clone(),
-                    macro_middleware::auth::attach_user::handler
-                ),
-            ]),
-        )
+        .nest("/recents", recents::router())
+        .nest("/saved_views", saved_views::router())
         .with_state(state);
     Router::new()
         .nest("/{version}", internal_router.clone())

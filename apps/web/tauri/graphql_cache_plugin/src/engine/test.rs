@@ -57,6 +57,12 @@ fn read(handle: &EngineHandle, op_id: Option<&str>) -> ReadResultWire {
     .unwrap()
 }
 
+fn claim(handle: &EngineHandle) -> ClaimedMutationWire {
+    block_on(handle.claim_next_mutation("runner".to_string(), 10, 1_000))
+        .unwrap()
+        .expect("queue head")
+}
+
 #[test]
 fn write_then_read_round_trips() {
     let handle = spawn_handle();
@@ -70,6 +76,36 @@ fn write_then_read_round_trips() {
         panic!("expected hit");
     };
     assert_eq!(data, soup_data(false));
+}
+
+#[test]
+fn query_inspection_serializes_generated_variables_and_value() {
+    let handle = spawn_handle();
+    write(&handle, None, soup_data(false), None);
+
+    let instances = block_on(handle.inspect_query(
+        QUERY.to_string(),
+        Some("Soup".to_string()),
+        vec!["user".to_string(), "soup".to_string()],
+    ))
+    .unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].variables, variables());
+    assert_eq!(
+        instances[0].value.as_ref().unwrap()["hasMore"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
+        serde_json::to_value(&instances).unwrap(),
+        serde_json::json!([{
+            "variables": {"input": {"limit": 1}},
+            "value": {
+                "nextCursor": null,
+                "hasMore": false,
+                "items": [{"id": "doc-1"}]
+            }
+        }])
+    );
 }
 
 #[test]
@@ -112,6 +148,9 @@ fn optimistic_layer_commits_durably() {
         Some("Soup".to_string()),
         variables(),
         soup_data(true),
+        vec![],
+        vec![],
+        0,
     ))
     .unwrap();
     assert_eq!(optimistic.result.affected_ops, vec!["client:1".to_string()]);
@@ -122,8 +161,11 @@ fn optimistic_layer_commits_durably() {
     };
     assert_eq!(data, soup_data(true));
 
+    let claimed = claim(&handle);
     let committed = block_on(handle.commit_optimistic_write(
         optimistic.transaction_id,
+        "runner".to_string(),
+        claimed.lease_generation,
         QUERY.to_string(),
         Some("Soup".to_string()),
         variables(),
@@ -149,10 +191,19 @@ fn rollback_drops_optimistic_contribution() {
         Some("Soup".to_string()),
         variables(),
         soup_data(true),
+        vec![],
+        vec![],
+        0,
     ))
     .unwrap();
 
-    block_on(handle.rollback_optimistic_write(optimistic.transaction_id)).unwrap();
+    let claimed = claim(&handle);
+    block_on(handle.rollback_optimistic_write(
+        optimistic.transaction_id,
+        "runner".to_string(),
+        claimed.lease_generation,
+    ))
+    .unwrap();
     let ReadResultWire::Hit { data } = read(&handle, None) else {
         panic!("expected hit");
     };
@@ -180,6 +231,11 @@ fn clear_wipes_everything() {
 #[test]
 fn bad_transaction_id_is_an_error() {
     let handle = spawn_handle();
-    let error = block_on(handle.rollback_optimistic_write("not-a-number".to_string())).unwrap_err();
+    let error = block_on(handle.rollback_optimistic_write(
+        "not-a-number".to_string(),
+        "runner".to_string(),
+        "1".to_string(),
+    ))
+    .unwrap_err();
     assert!(error.contains("invalid optimistic transaction id"));
 }

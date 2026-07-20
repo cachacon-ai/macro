@@ -12,6 +12,7 @@ use crate::domain::model::{
     PatchTeamCrmSettingsResponse, PatchTeamRequest, RemoveTeamInviteError, RemoveUserFromTeamError,
     RestorePermissionsForTeamMembersError, RevokePermissionsForTeamMembersError, Team, TeamError,
     TeamInvite, TeamInviteDetails, TeamMember, TeamMembers, TeamPlan, TeamRole, TeamWithMembers,
+    ToggleAutoJoinDomainError, TryJoinTeamByDomainError,
 };
 
 /// The TeamChannelsRepository defines a set of actions related to team channels
@@ -57,12 +58,19 @@ pub trait TeamRepository: Clone + Send + Sync + 'static {
         team_id: &uuid::Uuid,
     ) -> impl Future<Output = Result<bool, TeamError>> + Send;
 
-    /// Creates a new team
+    /// Returns whether the team uses enterprise billing.
+    fn get_team_enterprise_status(
+        &self,
+        team_id: &uuid::Uuid,
+    ) -> impl Future<Output = Result<bool, TeamError>> + Send;
+
+    /// Creates a new team. `subscription_id` is `None` for free teams
+    /// (capped at [`crate::domain::model::FREE_TEAM_MAX_MEMBERS`] members).
     fn create_team(
         &self,
         user_id: &MacroUserIdStr<'_>,
         team_name: &str,
-        subscription_id: &stripe::SubscriptionId,
+        subscription_id: Option<&stripe::SubscriptionId>,
     ) -> impl Future<Output = Result<Team, CreateTeamError>> + Send;
 
     /// Moves any user-owned GitHub App installation rows to the given team.
@@ -263,6 +271,41 @@ pub trait TeamRepository: Clone + Send + Sync + 'static {
         team_id: &uuid::Uuid,
         team_plan: TeamPlan,
     ) -> impl Future<Output = Result<(), TeamError>> + Send;
+
+    /// Toggles the team's automatic domain joining.
+    ///
+    /// When the team currently has no auto-join domain, sets it to the
+    /// domain of the team owner's email — unless that domain is a generic
+    /// email provider domain (see
+    /// [`crate::domain::model::GENERIC_EMAIL_DOMAINS`]), which is rejected.
+    /// When a domain is already set, unsets it.
+    ///
+    /// Returns the team's auto-join domain after the toggle (None when it
+    /// was unset).
+    fn toggle_auto_join_domain(
+        &self,
+        team_id: &uuid::Uuid,
+    ) -> impl Future<Output = Result<Option<String>, ToggleAutoJoinDomainError>> + Send;
+
+    /// Gets the id of the team whose auto-join domain matches the email
+    /// domain of the provided user id, if any.
+    fn get_team_id_by_domain(
+        &self,
+        user_id: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<Option<uuid::Uuid>, TeamError>> + Send;
+
+    /// Adds the user directly to the team as a member (no invite involved),
+    /// bumping the team's seat count. Returns None when the user is already
+    /// on the team.
+    ///
+    /// NOTE: this only touches team membership — billing, roles, and
+    /// channel membership are handled by the service (see
+    /// `TeamService::try_join_team_by_domain`).
+    fn add_user_to_team(
+        &self,
+        team_id: &uuid::Uuid,
+        user_id: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<Option<TeamMember<'static>>, TeamError>> + Send;
 }
 
 /// The TeamMembersService defines read-only team membership queries.
@@ -276,12 +319,13 @@ pub trait TeamMembersService: Clone + Send + Sync + 'static {
 
 /// The TeamService defines a set of actions to perform on the teams
 pub trait TeamService: Clone + Send + Sync + 'static {
-    /// Creates a new team
+    /// Creates a new team. `subscription_id` is `None` for free teams
+    /// (capped at [`crate::domain::model::FREE_TEAM_MAX_MEMBERS`] members).
     fn create_team(
         &self,
         user_id: &MacroUserIdStr<'_>,
         team_name: &str,
-        subscription_id: &stripe::SubscriptionId,
+        subscription_id: Option<&stripe::SubscriptionId>,
     ) -> impl Future<Output = Result<Team, CreateTeamError>> + Send;
 
     /// Returns the user's active stripe subscription id when the user is premium.
@@ -292,10 +336,11 @@ pub trait TeamService: Clone + Send + Sync + 'static {
 
     /// Invites users to a team
     /// This will also handle the teams subscription.
+    /// Any team member may invite; removals stay admin-only.
     /// Returns the team invites created.
     fn invite_users_to_team(
         &self,
-        entity_access_receipt: EntityAccessReceipt<AdminTeamRole>,
+        entity_access_receipt: EntityAccessReceipt<MemberTeamRole>,
         invites: non_empty::NonEmpty<&[Email<Lowercase<'_>>]>,
     ) -> impl Future<Output = Result<Vec<TeamInvite<'_>>, InviteUsersToTeamError>> + Send;
 
@@ -418,4 +463,28 @@ pub trait TeamService: Clone + Send + Sync + 'static {
         enabled: bool,
         backfill: bool,
     ) -> impl Future<Output = Result<PatchTeamCrmSettingsResponse, TeamError>> + Send;
+
+    /// Toggles the team's automatic domain joining: sets the auto-join
+    /// domain from the team owner's email domain when unset, removes it
+    /// when set. Only team admins and above may do this.
+    ///
+    /// Returns the team's auto-join domain after the toggle (None when it
+    /// was unset).
+    fn toggle_auto_join_domain(
+        &self,
+        entity_access_receipt: EntityAccessReceipt<AdminTeamRole>,
+    ) -> impl Future<Output = Result<Option<String>, ToggleAutoJoinDomainError>> + Send;
+
+    /// Automatically joins the user to the team whose auto-join domain
+    /// matches the user's email domain, if such a team exists. The user is
+    /// added to the team directly (no invite), with the same billing /
+    /// roles / channel side effects as `join_team`.
+    ///
+    /// Returns the new team member, or None when no team matched or the
+    /// user could not be joined (already a member, team at its seat cap,
+    /// ...).
+    fn try_join_team_by_domain(
+        &self,
+        user_id: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<Option<TeamMember<'static>>, TryJoinTeamByDomainError>> + Send;
 }
