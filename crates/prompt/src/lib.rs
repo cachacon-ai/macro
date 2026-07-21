@@ -10,6 +10,7 @@ pub mod channel_mention;
 pub mod citations;
 pub mod connected_toolsets;
 pub mod do_not;
+pub mod document_content_links;
 pub mod email;
 pub mod math;
 pub mod mcp_item_links;
@@ -29,32 +30,42 @@ pub static BASE_PROMPT: ComposedPrompt = tone::PROMPT
     .compose(&do_not::PROMPT)
     .compose(&about_macro::PROMPT);
 
-/// The tool-enabled prompt: [`BASE_PROMPT`] with the tool use instructions and
-/// email inbox behavior appended.
+/// The tool-enabled prompt: [`BASE_PROMPT`] with the tool use instructions,
+/// document-content linking rules, and email inbox behavior appended.
 pub static TOOL_USE_PROMPT: ComposedPrompt = BASE_PROMPT
     .compose(&tool_usage::PROMPT)
+    .compose(&document_content_links::PROMPT)
     .compose(&email::PROMPT);
 
-/// Citation, do-not, and Macro-terms rules surfaced to external MCP clients,
-/// composed together. These are static; the item-linking rules are not, because
-/// they depend on the runtime app base URL — see [`mcp_instructions`].
+/// Citation, do-not, Macro-terms, and document-content-linking rules surfaced
+/// to external MCP clients, composed together. These are static; the
+/// item-linking rules for the model's own replies are not, because they
+/// depend on the runtime app base URL — see [`mcp_instructions`].
 ///
 /// Deliberately omits the in-app [`mentions`] section (MCP clients cannot render
-/// `<m-document-mention>` tags) as well as chat tone/style and tool-use
-/// instructions, which belong to the host client, not to Macro.
+/// `<m-document-mention>` tags in a chat reply) as well as chat tone/style and
+/// general tool-use instructions, which belong to the host client, not to Macro.
+/// [`document_content_links`] is the exception: it still applies over MCP
+/// because it governs content written *into* a Macro document (via
+/// `CreateDocument`/`EditDocument`), not the model's chat replies.
 static MCP_STATIC_INSTRUCTIONS: ComposedPrompt = citations::PROMPT
     .compose(&do_not::PROMPT)
-    .compose(&about_macro::PROMPT);
+    .compose(&about_macro::PROMPT)
+    .compose(&document_content_links::PROMPT);
 
 /// Builds the instructions surfaced to external MCP clients via the server
 /// `instructions` field.
 ///
 /// Carries the formatting/correctness rules Macro features depend on so that AI
-/// used through MCP produces valid output. Item links are rendered as plain
-/// Markdown URLs (built from `base_url`, the runtime `APP_BASE_URL` value) and
-/// lists of items as Markdown tables — NOT the in-app `<m-document-mention>`
-/// markup, which MCP clients cannot render. `base_url` should already have any
-/// trailing slash trimmed.
+/// used through MCP produces valid output. Item links in the model's own chat
+/// replies are rendered as plain Markdown URLs (built from `base_url`, the
+/// runtime `APP_BASE_URL` value) and lists of items as Markdown tables — NOT
+/// the in-app `<m-document-mention>` markup, which MCP clients cannot render.
+/// Content the model writes *into* a Macro document via `CreateDocument` or
+/// `EditDocument` is the opposite: it must still use `<m-document-mention>`
+/// tags (see [`document_content_links`]), since the Macro app renders that
+/// content regardless of which surface created it. `base_url` should already
+/// have any trailing slash trimmed.
 pub fn mcp_instructions(base_url: &str) -> String {
     format!(
         "{}\n{MCP_STATIC_INSTRUCTIONS}",
@@ -99,5 +110,35 @@ mod tests {
                 "instructions should describe the {column} table column"
             );
         }
+    }
+
+    #[test]
+    fn mcp_instructions_still_require_mention_tags_inside_document_content() {
+        let instructions = mcp_instructions("https://macro.com");
+
+        // Even though the model's own MCP replies must use plain URLs, content
+        // written into a Macro document via CreateDocument/EditDocument must
+        // still use `<m-document-mention>` tags — the fix for the "CreateDocument
+        // over MCP can't link docs correctly" bug.
+        assert!(instructions.contains("CreateDocument"));
+        assert!(instructions.contains(
+            r#"<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"md","blockParams":{}}</m-document-mention>"#
+        ));
+
+        // The plain-URL rule and the mention-tag rule must not silently
+        // contradict each other: the plain-URL section explicitly scopes
+        // itself to the model's own replies, not to document content.
+        assert!(instructions.contains("does NOT apply to content you write into a Macro document"));
+    }
+
+    #[test]
+    fn tool_use_prompt_also_carries_document_content_link_rules() {
+        // The in-app prompt should keep the same guidance so behavior doesn't
+        // diverge between surfaces.
+        let in_app = TOOL_USE_PROMPT.to_string();
+        assert!(in_app.contains("CreateDocument"));
+        assert!(in_app.contains(
+            r#"<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"md","blockParams":{}}</m-document-mention>"#
+        ));
     }
 }

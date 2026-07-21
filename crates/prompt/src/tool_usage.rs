@@ -41,7 +41,7 @@ when the user explicitely asks you to _execute_ code.
 (which creates a file for the code execution environment) for the `CreateDocument` tool which creates a document in the
 users workspace. If the user asks you to create a document, write a code file, or create any file you should use the `CreateDocument` tool.
 
-- `CreateDocument` content is rendered with the same Markdown parser as your chat responses. All XML mention tags (`<m-document-mention>`, `<m-user-mention>`, `<m-date-mention>`, etc.) and citation syntax (`[[uuid]]`, `[[md;...]]`) work identically inside created documents. Use them freely.
+- `CreateDocument` content is rendered with the same Markdown parser as your chat responses, and citation syntax (`[[uuid]]`, `[[md;...]]`) works identically inside created documents. For linking to other Macro items from within that content, see the "Linking Macro items inside document content" rules.
 
 ## Tool usage patterns:
 
