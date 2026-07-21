@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod test;
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{borrow::Cow, fmt, marker::PhantomData, sync::Arc};
 
 use ::axum::{
     Json,
     extract::{FromRef, FromRequestParts, Query},
     http::{HeaderMap, StatusCode, header, request::Parts},
+    response::{IntoResponse, Response},
 };
 use macro_auth::headers::AccessTokenExtractor;
 #[cfg(feature = "local_auth")]
@@ -36,7 +37,28 @@ pub const LEGACY_DSS_INTERNAL_API_KEY_HEADER: &str = "x-document-storage-service
 pub const LEGACY_DSS_INTERNAL_MACRO_USER_ID_HEADER: &str = "x-document-storage-service-user-id";
 
 /// Rejection returned when request credentials cannot authorize a user.
-pub type MacroAuthorizationRejection = (StatusCode, Json<ErrorResponse<'static>>);
+#[derive(Clone, Debug)]
+pub struct MacroAuthorizationRejection {
+    /// HTTP status returned to the client.
+    pub status: StatusCode,
+    /// Client-safe error message returned in the response body.
+    pub message: Cow<'static, str>,
+}
+
+impl fmt::Display for MacroAuthorizationRejection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for MacroAuthorizationRejection {}
+
+impl IntoResponse for MacroAuthorizationRejection {
+    fn into_response(self) -> Response {
+        let Self { status, message } = self;
+        (status, Json(ErrorResponse { message })).into_response()
+    }
+}
 
 /// Axum state containing the service used by authorization extractors.
 pub struct MacroAuthorizationState<Svc> {
@@ -103,11 +125,16 @@ static INTERNAL_HEADER_CONVENTIONS: [InternalHeaderConvention; 2] = [
     },
 ];
 
-/// Extracts and authorizes credentials for a required authenticated user.
+/// Extracts and authorizes a required acting user.
 ///
-/// Internal service credentials are checked first. User credentials are read
-/// from the `macro-api-token` query parameter, followed by a bearer header or
-/// access-token cookie. The authorization service is resolved from Axum state.
+/// This extractor automatically supports both direct user access and internal
+/// service access. Internal credentials are checked first and must resolve to
+/// an acting user through an identity header or the configured default user.
+/// User credentials are read from the `macro-api-token` query parameter,
+/// followed by a bearer header or access-token cookie. Use
+/// [`InternalMacroAuthorizationExtractor`] instead only when the endpoint must
+/// be exclusively internal and does not require an acting user. The
+/// authorization service is resolved from Axum state.
 #[non_exhaustive]
 pub struct MacroAuthorizationExtractor<Svc> {
     /// The validated Macro user identifier.
@@ -153,11 +180,19 @@ where
     }
 }
 
-/// Authorizes an internal service request using its internal API key.
+/// Authorizes an exclusively internal service endpoint using an internal API key.
+///
+/// Use this extractor only for endpoints that will never accept direct user
+/// access. Do not use it merely to support internal callers:
+/// [`MacroAuthorizationExtractor`] and [`OptionalMacroAuthorizationExtractor`]
+/// already accept internal credentials automatically. This extractor does not
+/// accept user credentials as a substitute and intentionally exposes no user
+/// identity.
 ///
 /// Both the standard and legacy DSS internal API key headers are accepted.
 /// Acting-user identity headers are forwarded to the authorization service so
-/// it can construct a user context, but only the internal API key is required.
+/// it can validate any supplied identity, but only the internal API key is
+/// required.
 #[non_exhaustive]
 pub struct InternalMacroAuthorizationExtractor<Svc> {
     _service: PhantomData<fn() -> Svc>,
@@ -191,10 +226,16 @@ where
     }
 }
 
-/// Extracts and authorizes credentials when an authenticated user is present.
+/// Extracts and authorizes an optional acting user.
 ///
-/// Requests without credentials succeed with an empty [`UserContext`]. Any
-/// supplied credential must still pass authorization.
+/// This extractor automatically supports anonymous callers, direct user
+/// credentials, and internal service credentials. Internal credentials are
+/// checked first and set `is_internal_access` even when they establish no user
+/// identity. Requests without credentials succeed with an empty
+/// [`UserContext`]. Any supplied credential must still pass authorization; an
+/// invalid credential is never treated as anonymous. Use
+/// [`InternalMacroAuthorizationExtractor`] instead only when the endpoint must
+/// be exclusively internal.
 #[non_exhaustive]
 pub struct OptionalMacroAuthorizationExtractor<Svc> {
     /// The validated Macro user identifier, or `None` for an anonymous request.
@@ -412,10 +453,8 @@ fn internal_authorization_rejection(
 }
 
 fn rejection(message: &'static str) -> MacroAuthorizationRejection {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(ErrorResponse {
-            message: message.into(),
-        }),
-    )
+    MacroAuthorizationRejection {
+        status: StatusCode::UNAUTHORIZED,
+        message: message.into(),
+    }
 }

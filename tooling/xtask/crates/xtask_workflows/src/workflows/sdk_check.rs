@@ -36,7 +36,7 @@ fn check_sdk() -> Job {
         .add_step(steps::mount_web_cache_volume(true))
         .add_step(steps::setup_nix())
         .add_step(steps::setup_reqs_web("Setup Prereqs", false))
-        .add_step(steps::pin_sccache_dir())
+        .add_step(steps::configure_namespace_sccache(vars::WEB_SCCACHE_NAME))
         .add_step(update_generated())
         .add_step(steps::show_sccache_stats())
         .add_step(verify_fresh())
