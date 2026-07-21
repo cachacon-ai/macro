@@ -1156,6 +1156,14 @@ export const storageServiceClient = {
     });
   },
 
+  async getDocumentByTeamSlug(params: { slug: string }) {
+    return (
+      await dssFetch<{
+        data: GetDocumentResponseData;
+      }>(`/documents/slug/${encodeURIComponent(params.slug)}`)
+    ).map((result) => result.data);
+  },
+
   async createDocument(request: CreateDocumentRequest) {
     const result = await fetchWithToken<
       CreateDocumentResponse,

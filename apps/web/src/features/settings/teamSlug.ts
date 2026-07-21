@@ -67,3 +67,11 @@ export function getTeamSlugError(input: string): string | undefined {
 
   return undefined;
 }
+
+/** Builds the target URL template GitHub requires for numeric autolinks. */
+export function buildTeamTaskAutolinkTargetUrl(
+  teamSlug: string,
+  webOrigin: string
+): string {
+  return `${webOrigin.replace(/\/$/, '')}/app/task/${teamSlug}-<num>`;
+}

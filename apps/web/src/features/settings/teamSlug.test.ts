@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildTeamTaskAutolinkTargetUrl,
   getTeamSlugError,
   normalizeTeamSlugInput,
   TEAM_SLUG_ALLOWED_INPUT_REGEX,
@@ -70,6 +71,14 @@ describe('team slug validation', function () {
 
     expect(getTeamSlugError('AAAAA_BBBBB_CCCCC_DDD')).toBe(
       `team slug cannot be longer than ${TEAM_SLUG_MAX_LENGTH} characters`
+    );
+  });
+});
+
+describe('GitHub autolink target URL', function () {
+  it('builds the numeric target template for the team slug', function () {
+    expect(buildTeamTaskAutolinkTargetUrl('ENG', 'https://macro.com/')).toBe(
+      'https://macro.com/app/task/ENG-<num>'
     );
   });
 });

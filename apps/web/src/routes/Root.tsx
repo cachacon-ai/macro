@@ -112,6 +112,7 @@ import {
   Suspense,
   Switch,
 } from 'solid-js';
+import { TaskRoute } from './TaskRoute';
 
 /** Syncs login cookie with auth state. Only updates on successful query (not errors/loading). */
 function useSyncLoginCookie() {
@@ -297,6 +298,10 @@ const { EmailCallback, CALLBACK_PATH, EmailLinkCallback, LINK_CALLBACK_PATH } =
   });
 
 const ROUTES: RouteDefinition[] = [
+  {
+    path: '/task/:taskIdOrSlug',
+    component: TaskRoute,
+  },
   LAYOUT_ROUTE,
   /** BEGIN - APP ROUTES */
   {
