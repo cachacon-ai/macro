@@ -2887,7 +2887,10 @@ dependencies = [
  "entity_access",
  "graphql_common",
  "graphql_email",
+ "graphql_entity_mutation",
+ "graphql_favorite",
  "graphql_notification",
+ "graphql_permission",
  "graphql_properties",
  "graphql_soup",
  "macro_authorization",
@@ -4239,6 +4242,7 @@ dependencies = [
  "call",
  "channel_bots",
  "channels",
+ "chat",
  "chrono",
  "clap",
  "cloudfront_sign",
@@ -4258,6 +4262,7 @@ dependencies = [
  "embedding",
  "entity_access",
  "entity_access_management",
+ "entity_mutation",
  "favorites",
  "foreign_entity",
  "frecency",
@@ -4313,6 +4318,7 @@ dependencies = [
  "redis",
  "regex",
  "reqwest 0.13.4",
+ "rootcause",
  "s3_key",
  "saved_views",
  "schemars 1.2.1",
@@ -6016,6 +6022,7 @@ name = "graphql_common"
 version = "0.1.0"
 dependencies = [
  "async-graphql",
+ "async-trait",
  "axum",
  "axum-extra",
  "filter_ast",
@@ -6047,6 +6054,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "graphql_entity_mutation"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "entity_mutation",
+ "graphql_common",
+ "graphql_permission",
+ "macro_user_id",
+ "model-entity",
+ "models_permissions",
+ "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "graphql_favorite"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "favorites",
+ "macro_user_id",
+ "model-entity",
+ "rootcause",
+ "tokio",
+ "tracing",
+ "workspace-hack",
+]
+
+[[package]]
 name = "graphql_notification"
 version = "0.1.0"
 dependencies = [
@@ -6057,6 +6093,20 @@ dependencies = [
  "notification",
  "rootcause",
  "serde_json",
+ "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "graphql_permission"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "entity_access",
+ "futures",
+ "macro_user_id",
+ "model-entity",
+ "rootcause",
  "tokio",
  "workspace-hack",
 ]
@@ -6095,6 +6145,7 @@ dependencies = [
  "filter_ast",
  "futures",
  "graphql_common",
+ "graphql_permission",
  "item_filters",
  "macro_authorization",
  "macro_user_id",
@@ -16298,7 +16349,6 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "aho-corasick",
- "async-graphql",
  "aws-config",
  "aws-credential-types",
  "aws-runtime",
