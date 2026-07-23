@@ -1,9 +1,8 @@
-fragment QuickAccessSoupItemFields on GraphqlSoupItem {
+fragment QuickAccessSoupItemFields on GraphqlSoupEntity {
+	__typename
 	id
 	entityType
 	frecencyScore
-	entity {
-		__typename
 		... on GraphqlSoupDocument {
 			id
 			documentName: name
@@ -93,7 +92,7 @@ fragment QuickAccessSoupItemFields on GraphqlSoupItem {
 				...SoupNotificationFields
 			}
 		}
-		... on GraphqlSoupChannelThread {
+		... on GraphqlSoupChannelMessage {
 			id
 			channelId
 			senderId
@@ -155,12 +154,11 @@ fragment QuickAccessSoupItemFields on GraphqlSoupItem {
 			foreignEntitySource
 			storedForId
 			storedForAuthEntity
-			metadata
+			sourceMetadata
 			createdAt
 			updatedAt
 			notifications {
 				...SoupNotificationFields
 			}
 		}
-	}
 }
