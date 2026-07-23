@@ -82,7 +82,7 @@ num-integer = { version = "0.1", features = ["i128"] }
 num-traits = { version = "0.2", features = ["i128", "libm"] }
 once_cell = { version = "1" }
 opentelemetry = { version = "0.31", features = ["testing"] }
-opentelemetry_sdk = { version = "0.31", features = ["testing"] }
+opentelemetry_sdk = { version = "0.32", features = ["testing"] }
 percent-encoding = { version = "2" }
 phf = { version = "0.13", features = ["macros"] }
 phf_shared-594e8ee84c453af0 = { package = "phf_shared", version = "0.13" }
@@ -205,7 +205,7 @@ num-integer = { version = "0.1", features = ["i128"] }
 num-traits = { version = "0.2", features = ["i128", "libm"] }
 once_cell = { version = "1" }
 opentelemetry = { version = "0.31", features = ["testing"] }
-opentelemetry_sdk = { version = "0.31", features = ["testing"] }
+opentelemetry_sdk = { version = "0.32", features = ["testing"] }
 percent-encoding = { version = "2" }
 phf = { version = "0.13", features = ["macros"] }
 phf_shared-594e8ee84c453af0 = { package = "phf_shared", version = "0.13" }
