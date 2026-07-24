@@ -6,7 +6,7 @@ use crate::domain::{
     models::{
         AccessError, AccessLevel, BotId, CallChannelInfo, ChannelRoleResult, CrmEntityAccess,
         Entity, EntityAccessAuth, EntityAccessReceipt, EntityPermission, EntityType,
-        RequiredPermission, UserTeamInfo, ViewAccessLevel,
+        RequiredPermission, TeamRole, UserTeamInfo, ViewAccessLevel,
     },
     ports::{AccessRepository, EntityAccessService},
 };
@@ -423,10 +423,10 @@ where
         user_id: Option<&MacroUserId<Lowercase<'_>>>,
         entity_id: &str,
         entity_type: EntityType,
-    ) -> Result<(EntityPermission, Uuid), AccessError> {
-        // Resolve permission and owning team from one ownership lookup, so the
-        // team is the entity's owner (and the user is a member of it) rather
-        // than the user's default team.
+    ) -> Result<(EntityPermission, Uuid, TeamRole), AccessError> {
+        // Resolve permission, owning team, and team role from one ownership
+        // lookup, so the team is the entity's owner (and the user is a member
+        // of it) rather than the user's default team.
         let access = match entity_type {
             EntityType::CrmCompany => self.get_crm_company_access(entity_id, user_id).await?,
             EntityType::CrmContact => self.get_crm_contact_access(entity_id, user_id).await?,
@@ -442,6 +442,7 @@ where
                 access_level: access.access_level,
             },
             access.team_id,
+            access.team_role,
         ))
     }
 
@@ -509,6 +510,7 @@ fn channel_role_result_to_permission(
 ) -> Result<EntityPermission, AccessError> {
     match result {
         ChannelRoleResult::Role(role) => Ok(EntityPermission::ChannelRole { role }),
+        ChannelRoleResult::ViewOnly => Ok(EntityPermission::ChannelViewOnly),
         ChannelRoleResult::NoAccess => Err(AccessError::Unauthorized),
         ChannelRoleResult::NotFound => Err(AccessError::NotFound("Channel not found")),
     }

@@ -15,8 +15,8 @@ use axum::{
     response::IntoResponse,
 };
 use entity_access::inbound::axum_extractors::DocumentAccessExtractor;
-use entity_access::inbound::axum_extractors::ProjectBodyAccessLevelExtractor;
-use macro_authorization::MacroAuthorizationExtractor;
+use entity_access::inbound::axum_extractors::ProjectBodyAccessLevelExtractorV2;
+use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
 use model::document::response::DocumentResponseMetadata;
 use model::{
     document::{DocumentBasic, FileType, FileTypeExt},
@@ -48,17 +48,18 @@ pub struct Params {
             (status = 500, body=GenericErrorResponse),
         )
     )]
-#[tracing::instrument(skip(ctx, user, document_context, _access, project), fields(user_id=?user.macro_user_id))]
+#[tracing::instrument(skip(ctx, user, document_context, _access, project), fields(user_id=?user.authorization.user.macro_user_id))]
 pub async fn save_document_handler(
     _access: DocumentAccessExtractor<EditAccessLevel, EntityAccessService, AuthorizationService>,
     State(ctx): State<ApiContext>,
-    user: MacroAuthorizationExtractor<AuthorizationService>,
+    user: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     document_context: Extension<DocumentBasic>,
     Path(Params { document_id }): Path<Params>,
-    project: ProjectBodyAccessLevelExtractor<
+    project: ProjectBodyAccessLevelExtractorV2<
         EditAccessLevel,
         SaveDocumentRequest,
         EntityAccessService,
+        AuthorizationService,
     >,
 ) -> impl IntoResponse {
     let req = project.into_inner();

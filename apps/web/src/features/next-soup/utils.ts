@@ -12,8 +12,10 @@ import { URL_PARAMS as MD_PARAMS } from '@block-md/constants';
 import { URL_PARAMS as PDF_PARAMS } from '@block-pdf/constants';
 import type {
   ReferredFrom,
+  SplitContent,
   SplitHandle,
 } from '@components/app/split-layout/layoutManager';
+import { toast } from '@core/component/Toast/Toast';
 import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { USE_MACRO_PR_SUMMARY_BLOCK } from '@core/constant/featureFlags';
 import {
@@ -28,9 +30,13 @@ import { openExternalUrl } from '@core/util/url';
 import {
   type ChannelClickTarget,
   type EntityData,
+  emailQueryKeyExcludesDone,
   getSnippetHit,
+  isChannelEntity,
+  isEmailEntity,
   isGithubPrEntity,
   isHitSnippetEntity,
+  isNonMemberChannelEntity,
   isSearchEntity,
   isWithNotification,
   queryKeys,
@@ -62,10 +68,12 @@ import {
   invalidateSoupEntity,
   optimisticUpdateSoupEntity,
   removeSoupEntities,
+  removeSoupEntitiesFromDoneFilteredQueries,
 } from '@queries/soup/cache';
 import { emailClient } from '@service-email/client';
 import { isAfter } from 'date-fns';
 import { match } from 'ts-pattern';
+import { withPreviewSourceEntityId } from './preview-history';
 
 const mergeSearchEntities = <T extends EntityData>(
   first: WithSearch<T>,
@@ -180,6 +188,13 @@ const isNewerEntity = (
   return isAfter(getEntityTimestamp(newEntity), getEntityTimestamp(existing));
 };
 
+/**
+ * Opens an entity via {@link openExternalUrl}. On web this is a new browser
+ * tab; inside the native Tauri shell a same-origin Macro `/app` link is routed
+ * in-app (in place) instead — `window.open` there would kick the user out to
+ * the system browser. So despite the name, this does not guarantee a separate
+ * tab/pane under Tauri.
+ */
 export const openEntityInNewTab = ({
   entity,
   location,
@@ -268,7 +283,7 @@ export const openEntityInNewTab = ({
     }
   }
 
-  window.open(entityUrl.toString(), '_blank', 'noopener');
+  openExternalUrl(entityUrl.toString());
 };
 
 /**
@@ -278,23 +293,15 @@ export const openEntityInNewTab = ({
  * like 'escape' won't work.
  *
  * @param entityId - Optional entity ID to focus on. If not provided, focuses the first entity in the list.
- * @param inPreview - Whether to check for the soup view in a preview panel
  */
-export const restoreSoupFocus = async (
-  entityId?: string,
-  inPreview = false
-): Promise<void> => {
+export const restoreSoupFocus = async (entityId?: string): Promise<void> => {
   // Get the active split's soup view DOM reference
   const activeSplitId = globalSplitManager()?.activeSplitId();
   if (!activeSplitId) return;
 
-  let domRef = document.querySelector(`[data-soup-view-id="${activeSplitId}"]`);
-
-  if (inPreview) {
-    domRef = document.querySelector(
-      `[data-soup-view-id="${activeSplitId}-preview"]`
-    );
-  }
+  const domRef = document.querySelector(
+    `[data-soup-view-id="${activeSplitId}"]`
+  );
 
   if (!(domRef instanceof HTMLElement)) return;
 
@@ -328,6 +335,37 @@ interface OpenEntityOptions {
   mergeHistory?: boolean;
   allowDuplicate?: boolean;
   referredFrom?: ReferredFrom;
+}
+
+const DUPLICATE_CONTENT_MESSAGE = 'Content already open.';
+
+/** Whether this entity is open outside the controller's own preview viewer. */
+export function isDuplicatePreviewEntityOpen(
+  entity: EntityData,
+  controller: SplitHandle
+): boolean {
+  const splitManager = globalSplitManager();
+  const viewerId = controller.viewerId();
+  if (!splitManager || !viewerId) return false;
+
+  const content = getEntitySplitContent(entity);
+  const existing = splitManager.getSplitByContent(content.type, content.id);
+  return existing !== undefined && existing.id !== viewerId;
+}
+
+/** Show the standard duplicate-content notification. */
+export function notifyDuplicateContentOpen() {
+  toast.alert(DUPLICATE_CONTENT_MESSAGE);
+}
+
+/** Reject and notify for an entity already owned by another split. */
+export function preventDuplicatePreviewEntityOpen(
+  entity: EntityData,
+  controller: SplitHandle
+): boolean {
+  if (!isDuplicatePreviewEntityOpen(entity, controller)) return false;
+  notifyDuplicateContentOpen();
+  return true;
 }
 
 /**
@@ -452,6 +490,19 @@ export async function navigateChannelEntityToTarget(
 }
 
 /**
+ * Location a plain row click falls back to when no explicit location is given.
+ * Email rows open like plain soup rows — at the latest message, expanded —
+ * so only non-email snippet entities (calls) fall back to their row hit.
+ * Clicking a specific content hit still passes an explicit location.
+ */
+export const getRowClickFallbackLocation = (
+  entity: EntityData
+): SearchLocation | undefined =>
+  isHitSnippetEntity(entity) && !isEmailEntity(entity)
+    ? getSnippetHit(entity)?.location
+    : undefined;
+
+/**
  * Opens an entity in a split, handling navigation to specific locations within the entity.
  * Supports both regular entities (channel, email, etc.) and document entities.
  *
@@ -465,14 +516,40 @@ export const openEntityInSplitFromUnifiedList = async (
   const { allowDuplicate, openInNewSplit, splitHandle, mergeHistory } = options;
   let { location } = options;
 
-  if (!location && isHitSnippetEntity(entity)) {
-    location = getSnippetHit(entity)?.location;
+  if (!location) {
+    location = getRowClickFallbackLocation(entity);
   }
 
   // Get dependencies internally
   const splitManager = globalSplitManager();
   if (!splitManager) {
     console.error('No split manager found');
+    return;
+  }
+
+  // Channels the viewer hasn't joined can't be read. In a Preview Pair, offer
+  // the Join prompt in the Viewer; otherwise the row's inline Join button is
+  // the only affordance.
+  if (isNonMemberChannelEntity(entity)) {
+    if (isChannelEntity(entity) && splitHandle?.isControllerSplit()) {
+      const joinPromptContent = withPreviewSourceEntityId(
+        {
+          type: 'component',
+          id: 'non-member-channel',
+          params: {
+            channelId: entity.id,
+            channelName: entity.name,
+            memberCount: entity.participantIds?.length ?? 0,
+          },
+        },
+        entity.id
+      );
+      splitManager.openWithSplit(joinPromptContent, {
+        referredFrom: options.referredFrom,
+        activate: true,
+        handle: splitHandle,
+      });
+    }
     return;
   }
 
@@ -498,6 +575,15 @@ export const openEntityInSplitFromUnifiedList = async (
   const blockOrchestrator = splitManager.getOrchestrator();
 
   const content = getEntitySplitContent(entity);
+
+  if (
+    !allowDuplicate &&
+    !openInNewSplit &&
+    splitHandle &&
+    preventDuplicatePreviewEntityOpen(entity, splitHandle)
+  ) {
+    return;
+  }
 
   const channelTarget = getChannelEntityTarget(entity);
   const channelMessageTarget =
@@ -525,21 +611,23 @@ export const openEntityInSplitFromUnifiedList = async (
       : undefined;
   const referredFrom = options.referredFrom ?? sourceListView;
 
-  splitManager.openWithSplit(
-    { ...content, params },
-    {
-      referredFrom,
-      activate: true,
-      preferNewSplit: openInNewSplit,
-      handle: splitHandle,
-      mergeHistory,
-      allowDuplicate,
-      reopen:
-        entity.type === 'channel' && !location && openChannelAtLatest
-          ? 'latest'
-          : undefined,
-    }
-  );
+  let splitContent: SplitContent = { ...content, params };
+  if (splitHandle?.isControllerSplit()) {
+    splitContent = withPreviewSourceEntityId(splitContent, entity.id);
+  }
+
+  splitManager.openWithSplit(splitContent, {
+    referredFrom,
+    activate: true,
+    preferNewSplit: openInNewSplit,
+    handle: splitHandle,
+    mergeHistory,
+    allowDuplicate,
+    reopen:
+      entity.type === 'channel' && !location && openChannelAtLatest
+        ? 'latest'
+        : undefined,
+  });
 
   // Navigate to specific location if provided
   if (location) {
@@ -956,9 +1044,10 @@ export function resolveMarkEntitiesDoneVariables(args: {
 }
 
 /**
- * Applies the optimistic UI state for marking entities as done — removes
- * emails from the soup + email caches and flips the notification `done`
- * override. Returns a context the mutation uses for rollback / reapply.
+ * Applies the optimistic UI state for marking entities as done — removes the
+ * entities from done-filtered soup/email caches, flips surviving email rows
+ * to the done state, and sets the notification `done` override. Returns a
+ * context the mutation uses for rollback / reapply.
  */
 export function applyEntitiesDoneOptimistic(args: {
   entityIds: string[];
@@ -985,6 +1074,8 @@ export function applyEntitiesDoneOptimistic(args: {
       queryKey: queryKeys.all.email,
     })) {
       if (!data) continue;
+      // Views that show done threads keep their rows.
+      if (!emailQueryKeyExcludesDone(key)) continue;
       const bucket = removedEmails.get(key) ?? new Map<string, EntityData>();
       let mutated = false;
       const pages = data.pages.map((page) => {
@@ -1034,26 +1125,45 @@ export function applyEntitiesDoneOptimistic(args: {
   };
 
   let soupTxn: ReturnType<typeof removeSoupEntities> | null = null;
+  let emailRowTxns: { rollback: () => void }[] = [];
 
   const reapply = () => {
-    // Remove every marked entity from the soup feed cache so the hide is
-    // authoritative for all types; undo restores them via this transaction's
-    // rollback.
-    soupTxn = entityIds.length > 0 ? removeSoupEntities(entityIdSet) : null;
+    // Remove the marked entities from done-filtered soup queries (inbox,
+    // mail Important/Noise); views that show done content (e.g. mail All)
+    // keep their rows. Undo restores them via this transaction's rollback.
+    soupTxn =
+      entityIds.length > 0
+        ? removeSoupEntitiesFromDoneFilteredQueries(entityIdSet)
+        : null;
+    // Rows that remain visible flip to the done state.
+    emailRowTxns = emailIds.map((id) =>
+      optimisticUpdateSoupEntity({
+        tag: 'emailThread',
+        data: { id, inboxVisible: false },
+        frecency_score: getSoupEntityById(id)?.frecency_score ?? 0,
+      })
+    );
     filterEmailCache();
     setDoneOverride(notificationIds, true);
   };
 
-  const rollback = () => {
+  const rollbackSoup = () => {
+    for (const txn of [...emailRowTxns].reverse()) {
+      txn.rollback();
+    }
+    emailRowTxns = [];
     soupTxn?.rollback();
     soupTxn = null;
+  };
+
+  const rollback = () => {
+    rollbackSoup();
     restoreEmailCache();
     setDoneOverride(notificationIds, undefined);
   };
 
   const applyUndone = () => {
-    soupTxn?.rollback();
-    soupTxn = null;
+    rollbackSoup();
     restoreEmailCache();
     restoreUserNotifications(notificationSnapshots);
     // Force `done=false` — cache may have reconciled to `done=true` from the
@@ -1064,6 +1174,37 @@ export function applyEntitiesDoneOptimistic(args: {
   reapply();
 
   return { rollback, reapply, applyUndone };
+}
+
+/**
+ * Optimistic UI for marking entities as not done — flips email rows back to
+ * inbox-visible and forces the notification `done` override off. Rows are
+ * patched in place; done-filtered views regain the entities when the caller
+ * invalidates after the server confirms.
+ */
+export function applyEntitiesNotDoneOptimistic(args: {
+  emailIds: string[];
+  notificationIds: string[];
+}): { rollback: () => void } {
+  const { emailIds, notificationIds } = args;
+
+  const emailRowTxns = emailIds.map((id) =>
+    optimisticUpdateSoupEntity({
+      tag: 'emailThread',
+      data: { id, inboxVisible: true },
+      frecency_score: getSoupEntityById(id)?.frecency_score ?? 0,
+    })
+  );
+  setDoneOverride(notificationIds, false);
+
+  return {
+    rollback: () => {
+      for (const txn of [...emailRowTxns].reverse()) {
+        txn.rollback();
+      }
+      setDoneOverride(notificationIds, undefined);
+    },
+  };
 }
 
 /**
@@ -1166,5 +1307,11 @@ export async function executeMarkEntitiesUndone(args: {
       queryKey: notificationKeys.user._def,
       refetchType: 'none',
     }),
+    // Refetch open thread views so the unarchive restores `inbox_visible`.
+    ...emailIds.map((id) =>
+      queryClient.invalidateQueries({
+        queryKey: emailKeys.threadMessages(id).queryKey,
+      })
+    ),
   ]);
 }

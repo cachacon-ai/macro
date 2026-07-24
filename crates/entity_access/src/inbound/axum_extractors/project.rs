@@ -13,11 +13,12 @@ use axum::{
 };
 use macro_authorization::{
     MacroAuthorizationService, MacroAuthorizationState, OptionalMacroAuthorizationExtractor,
+    UserOrInternalService, UserOrInternalServiceAuthorization,
 };
 use macro_user_id::user_id::MacroUserIdStr;
 use serde::de::DeserializeOwned;
 
-use super::{ExtractorError, InternalUser, RequiredPermission};
+use super::{ExtractorError, RequiredPermission};
 use crate::domain::{
     models::{
         AccessLevel, Entity, EntityAccessAuth, EntityAccessReceipt, EntityPermission, EntityType,
@@ -25,7 +26,6 @@ use crate::domain::{
     ports::EntityAccessService,
 };
 use model::project::BasicProject;
-use model_user::axum_extractor::OptionalMacroUserExtractor;
 
 /// Validates that the user has at least the required access level to a project.
 ///
@@ -58,13 +58,21 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let service = <Arc<Svc>>::from_ref(state);
 
-        let OptionalMacroAuthorizationExtractor {
-            macro_user_id,
-            is_internal_access,
-            ..
-        } = OptionalMacroAuthorizationExtractor::<Auth>::from_request_parts(parts, state)
+        let authorization =
+            OptionalMacroAuthorizationExtractor::<Auth, UserOrInternalService>::from_request_parts(
+                parts, state,
+            )
             .await
             .map_err(ExtractorError::from)?;
+        let is_internal_access = authorization
+            .authorization
+            .as_ref()
+            .is_some_and(UserOrInternalServiceAuthorization::is_internal);
+        let macro_user_id = authorization
+            .authorization
+            .as_ref()
+            .and_then(UserOrInternalServiceAuthorization::acting_user)
+            .map(|user| user.macro_user_id.clone());
 
         let project_context: Extension<BasicProject> = parts
             .extract()
@@ -198,94 +206,12 @@ impl ProjectOrParentId {
 
 /// Extractor which checks the body for a project and validates the access level if it exists.
 ///
-/// Downstream consumers also use the body (which is an antipattern) so we need to keep the value around.
-#[derive(Debug)]
-pub enum ProjectBodyAccessLevelExtractor<T: RequiredPermission, V, Svc> {
-    /// A project was found in the body and access was validated.
-    FoundProject {
-        /// The project ID that was found.
-        project: ProjectOrParentId,
-        /// Marker for the desired access level.
-        desired: PhantomData<(T, Svc)>,
-        /// The entity access receipt
-        entity_access_receipt: EntityAccessReceipt<T>,
-        /// The parsed body.
-        body: V,
-    },
-    /// No project was found in the body.
-    ProjectNotInBody {
-        /// The parsed body.
-        body: V,
-        /// Marker for type parameters.
-        _marker: PhantomData<(T, Svc)>,
-    },
-}
-
-impl<T: RequiredPermission, V, Svc> ProjectBodyAccessLevelExtractor<T, V, Svc> {
-    /// Extract the body from this extractor.
-    pub fn into_inner(self) -> V {
-        match self {
-            Self::FoundProject { body, .. } | Self::ProjectNotInBody { body, .. } => body,
-        }
-    }
-
-    fn from_outcome(outcome: ProjectBodyAccessOutcome<T, V>) -> Self {
-        match outcome {
-            ProjectBodyAccessOutcome::FoundProject {
-                project,
-                entity_access_receipt,
-                body,
-            } => Self::FoundProject {
-                project,
-                desired: PhantomData,
-                entity_access_receipt,
-                body,
-            },
-            ProjectBodyAccessOutcome::ProjectNotInBody { body } => Self::ProjectNotInBody {
-                body,
-                _marker: PhantomData,
-            },
-        }
-    }
-}
-
-impl<T, S, V, Svc> FromRequest<S> for ProjectBodyAccessLevelExtractor<T, V, Svc>
-where
-    T: RequiredPermission,
-    Arc<Svc>: FromRef<S>,
-    Svc: EntityAccessService,
-    S: Send + Sync + 'static,
-    V: DeserializeOwned,
-{
-    type Rejection = ExtractorError;
-
-    async fn from_request(mut req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let service = <Arc<Svc>>::from_ref(state);
-        let OptionalMacroUserExtractor { macro_user_id, .. } = req
-            .extract_parts()
-            .await
-            .map_err(|_| ExtractorError::Internal)?;
-        let internal_user: Option<Extension<InternalUser>> = if macro_user_id.is_none() {
-            req.extract_parts()
-                .await
-                .map_err(|_| ExtractorError::Internal)?
-        } else {
-            None
-        };
-
-        extract_project_body_access(req, service, macro_user_id, internal_user.is_some())
-            .await
-            .map(Self::from_outcome)
-    }
-}
-
-/// V2 of [`ProjectBodyAccessLevelExtractor`], backed by state-resolved authorization.
-///
-/// This preserves the V1 body and receipt semantics while resolving identity
-/// through [`OptionalMacroAuthorizationExtractor`] and using native internal
-/// authorization instead of request extensions. Type parameter `T` specifies
-/// the required project access level, `V` is the request body, `Svc` is the
-/// entity access service, and `Auth` is the authorization service.
+/// Downstream consumers also use the body (which is an antipattern) so we need
+/// to keep the value around. Identity is resolved through
+/// [`OptionalMacroAuthorizationExtractor`], which natively supports internal
+/// authorization. Type parameter `T` specifies the required project access
+/// level, `V` is the request body, `Svc` is the entity access service, and
+/// `Auth` is the authorization service.
 #[derive(Debug)]
 pub enum ProjectBodyAccessLevelExtractorV2<T: RequiredPermission, V, Svc, Auth> {
     /// A project was found in the body and access was validated.
@@ -308,7 +234,6 @@ pub enum ProjectBodyAccessLevelExtractorV2<T: RequiredPermission, V, Svc, Auth> 
     },
 }
 
-#[allow(dead_code)]
 impl<T: RequiredPermission, V, Svc, Auth> ProjectBodyAccessLevelExtractorV2<T, V, Svc, Auth> {
     /// Extract the body from this extractor.
     pub fn into_inner(self) -> V {
@@ -351,14 +276,19 @@ where
 
     async fn from_request(mut req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let service = <Arc<Svc>>::from_ref(state);
-        let OptionalMacroAuthorizationExtractor {
-            macro_user_id,
-            is_internal_access,
-            ..
-        } = req
+        let authorization: OptionalMacroAuthorizationExtractor<Auth, UserOrInternalService> = req
             .extract_parts_with_state(state)
             .await
             .map_err(ExtractorError::from)?;
+        let is_internal_access = authorization
+            .authorization
+            .as_ref()
+            .is_some_and(UserOrInternalServiceAuthorization::is_internal);
+        let macro_user_id = authorization
+            .authorization
+            .as_ref()
+            .and_then(UserOrInternalServiceAuthorization::acting_user)
+            .map(|user| user.macro_user_id.clone());
         let has_internal_owner_access = macro_user_id.is_none() && is_internal_access;
 
         extract_project_body_access(req, service, macro_user_id, has_internal_owner_access)

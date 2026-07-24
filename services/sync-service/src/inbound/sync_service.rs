@@ -25,7 +25,7 @@ use crate::{
     mutex::Mutex,
     outbound::{
         d1::{BlameEvent, get_blame_for_node, get_user_id_from_peer_id, insert_user_mapping},
-        dss_internal::{DssInternal, DssInternalClient},
+        dss_internal::{DssInternal, DssInternalClient, InteractionReason},
         storage::{
             SessionStorage, backends::durable_kv::DurableKVStorage, get_snapshot_storage,
             snapshot::SnapshotStorage,
@@ -53,6 +53,20 @@ pub(crate) async fn report_new_doc_state(document_id: &DocumentId, snapshot: &[u
     #[cfg(feature = "search-service")]
     if let Err(err) = crate::outbound::sps::update(document_id, env).await {
         warn!(error=?err, "failed to update search index");
+    }
+}
+
+/// Report an interaction (join/leave/periodic edit) to DSS.
+pub(crate) async fn report_interaction(
+    document_id: &DocumentId,
+    env: &Env,
+    reason: InteractionReason,
+) {
+    if let Err(err) = DssInternalClient::new(env)
+        .publish_interaction(document_id.as_str(), reason)
+        .await
+    {
+        warn!(error=?err, "failed to push interaction to DSS");
     }
 }
 
@@ -383,6 +397,10 @@ impl SyncServiceCore for SyncServiceImpl {
             //  Below is websocket stuff only i.e connect
             let pair = WebSocketPair::new().context("failed to create websocket pair")?;
 
+            // Whether this peer is the first to join the session (used to
+            // decide whether to report a `FirstJoin` interaction below).
+            let is_first_join = self.state.get_websockets().is_empty();
+
             // create tag for ws and store it
             let ws_id = new_ws_id();
             trace!(ws_id = ws_id, "websocket connect");
@@ -421,6 +439,17 @@ impl SyncServiceCore for SyncServiceImpl {
                     document_id = document_id.as_str(),
                     "snapshot not yet available; deferring initial sync until /initialize"
                 );
+            }
+
+            // This is the single source of truth for `FirstJoin`: whenever
+            // the peer count genuinely transitions 0 -> 1, regardless of
+            // whether the document already has content.
+            if is_first_join {
+                let document_id_owned = document_id.clone();
+                let env = self.env.clone();
+                self.state.wait_until(async move {
+                    report_interaction(&document_id_owned, &env, InteractionReason::FirstJoin).await;
+                });
             }
 
             Response::from_websocket(pair.client).context("failed to create websocket response")?

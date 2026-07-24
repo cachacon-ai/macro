@@ -1,9 +1,10 @@
+use crate::domain::models::TeamRole;
 use std::sync::{Arc, Mutex};
 
 use axum::extract::FromRef;
 use macro_authorization::{
-    InternalIdentityClaims, MacroAuthorizationError, MacroAuthorizationService,
-    MacroAuthorizationState,
+    BotActingUserClaims, BotAuthentication, BotScope, InternalIdentityClaims,
+    MacroAuthorizationError, MacroAuthorizationService, MacroAuthorizationState,
 };
 use macro_user_id::{
     lowercased::Lowercase,
@@ -24,6 +25,7 @@ use crate::domain::{
 
 pub(super) const INTERNAL_KEY: &str = "valid-internal-key";
 pub(super) const USER_ID: &str = "macro|user@example.com";
+pub(super) const VALID_BOT_TOKEN: &str = "valid-bot-token";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AccessCall {
@@ -123,7 +125,7 @@ impl EntityAccessService for FakeEntityAccessService {
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
         _entity_id: &str,
         _entity_type: EntityType,
-    ) -> Result<(EntityPermission, Uuid), AccessError> {
+    ) -> Result<(EntityPermission, Uuid, TeamRole), AccessError> {
         panic!("unexpected get_crm_entity_permission_with_team call")
     }
 
@@ -169,6 +171,19 @@ impl MacroAuthorizationService for FakeAuthorizationService {
         }
     }
 
+    async fn authorize_bot(
+        &self,
+        token: &str,
+        bot_scope: BotScope,
+        _claims: Option<BotActingUserClaims>,
+    ) -> Result<BotAuthentication, Report<MacroAuthorizationError>> {
+        if token != VALID_BOT_TOKEN {
+            return Err(Report::new(MacroAuthorizationError::InvalidCredentials));
+        }
+
+        Ok(valid_bot_authentication(bot_scope))
+    }
+
     async fn authorize_internal(
         &self,
         provided_key: &str,
@@ -179,6 +194,16 @@ impl MacroAuthorizationService for FakeAuthorizationService {
         }
 
         Ok(claims.user_id.as_deref().map(user_context))
+    }
+}
+
+pub(super) fn valid_bot_authentication(bot_scope: BotScope) -> BotAuthentication {
+    BotAuthentication {
+        bot_id: BotId::new_from_uuid(Uuid::from_u128(1)),
+        token_id: Uuid::from_u128(2),
+        bot_scope,
+        team_id: (bot_scope == BotScope::Team).then_some(Uuid::from_u128(3)),
+        acting_user: None,
     }
 }
 

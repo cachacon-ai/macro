@@ -5,7 +5,8 @@
 use super::models::EntityType;
 use crate::domain::models::{
     AccessError, AccessLevel, BotId, CallChannelInfo, ChannelRoleResult, CrmEntityAccess,
-    EntityAccessReceipt, EntityPermission, RequiredPermission, UserTeamInfo, ViewAccessLevel,
+    EntityAccessReceipt, EntityPermission, RequiredPermission, TeamRole, UserTeamInfo,
+    ViewAccessLevel,
 };
 use macro_user_id::{lowercased::Lowercase, user_id::MacroUserId, user_id::MacroUserIdStr};
 use std::{collections::HashMap, future::Future};
@@ -95,11 +96,11 @@ pub trait AccessRepository: Clone + Send + Sync + 'static {
     /// owning `team_id`.
     ///
     /// Access derives from the user's role on the team that owns the company:
-    /// `Owner` → [`AccessLevel::Owner`], `Admin` → [`AccessLevel::Edit`],
-    /// `Member` → [`AccessLevel::View`]. Hidden companies are invisible to
-    /// plain members (returns `None`) but reachable by admins and owners. The
-    /// returned `team_id` is the company's owning team, resolved from the same
-    /// row that grants access.
+    /// `Owner` → [`AccessLevel::Owner`], `Admin` and `Member` →
+    /// [`AccessLevel::Edit`]. Hidden companies are invisible to plain members
+    /// (returns `None`) but reachable by admins and owners. The returned
+    /// `team_id` is the company's owning team and `team_role` the user's role
+    /// on it, both resolved from the same row that grants access.
     fn get_crm_company_access(
         &self,
         company_id: &str,
@@ -131,7 +132,8 @@ pub trait AccessRepository: Clone + Send + Sync + 'static {
     /// Get the user's role in a channel.
     ///
     /// Returns a [`ChannelRoleResult`] that distinguishes between:
-    /// - User has a role (considering channel type rules)
+    /// - User has an active participant role (considering channel type rules)
+    /// - User has view-only access without an active participant role
     /// - Channel exists but user has no access
     /// - Channel does not exist
     fn get_channel_role(
@@ -282,8 +284,9 @@ pub trait EntityAccessService: Clone + Send + Sync + 'static {
 
     /// Get the user's permission for an entity.
     ///
-    /// Returns `EntityPermission::AccessLevel` for items (documents, chats, projects, threads)
-    /// and `EntityPermission::ChannelRole` for channels.
+    /// Returns `EntityPermission::AccessLevel` for items (documents, chats, projects, threads).
+    /// Channels return `EntityPermission::ChannelRole` for active participants or
+    /// `EntityPermission::ChannelViewOnly` for view-only access.
     ///
     /// Returns `AccessError::Unauthorized` if the user has no access.
     fn get_entity_permission(
@@ -295,12 +298,14 @@ pub trait EntityAccessService: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<EntityPermission, AccessError>> + Send;
 
     /// Resolve a user's permission for a CRM company or contact **together
-    /// with the entity's owning `team_id`** — the team that owns the entity
-    /// and that the user belongs to, resolved from the same ownership lookup
-    /// that grants access. Mint team-scoped CRM receipts off this rather than
-    /// pairing [`Self::get_entity_permission`] with [`Self::get_user_team`],
-    /// so the bundled team can't drift from the authorized entity for a
-    /// multi-team user. Errors `AccessError::Unauthorized` when access fails.
+    /// with the entity's owning `team_id` and the user's role on that team**
+    /// — all resolved from the same ownership lookup that grants access.
+    /// Mint team-scoped CRM receipts off this rather than pairing
+    /// [`Self::get_entity_permission`] with [`Self::get_user_team`], so the
+    /// bundled team can't drift from the authorized entity for a multi-team
+    /// user. The role rides along so CRM receipts can gate hidden-row
+    /// visibility and governance actions on admin/owner without a second
+    /// lookup. Errors `AccessError::Unauthorized` when access fails.
     ///
     /// No default impl on purpose: implementors must derive the team from the
     /// entity's ownership row (not the user's default team), so the invariant
@@ -310,7 +315,7 @@ pub trait EntityAccessService: Clone + Send + Sync + 'static {
         user_id: Option<&MacroUserId<Lowercase<'_>>>,
         entity_id: &str,
         entity_type: EntityType,
-    ) -> impl Future<Output = Result<(EntityPermission, Uuid), AccessError>> + Send;
+    ) -> impl Future<Output = Result<(EntityPermission, Uuid, TeamRole), AccessError>> + Send;
 
     /// Get all user IDs that have access to a given entity.
     ///
@@ -418,7 +423,7 @@ impl EntityAccessService for NoOpEntityAccessService {
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
         _entity_id: &str,
         _entity_type: EntityType,
-    ) -> Result<(EntityPermission, Uuid), AccessError> {
+    ) -> Result<(EntityPermission, Uuid, TeamRole), AccessError> {
         Err(AccessError::Internal)
     }
 

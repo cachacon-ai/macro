@@ -1,3 +1,4 @@
+use crate::domain::models::TeamRole;
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -8,6 +9,7 @@ use axum::{
     routing::get,
 };
 use macro_authorization::{
+    BOT_SCOPE_HEADER, BOT_TOKEN_HEADER, BotActingUserClaims, BotAuthentication, BotScope,
     INTERNAL_API_KEY_HEADER, INTERNAL_MACRO_USER_ID_HEADER, InternalIdentityClaims,
     MacroAuthorizationError, MacroAuthorizationService, MacroAuthorizationState,
 };
@@ -21,9 +23,12 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use super::*;
-use crate::domain::models::{
-    AccessError, AccessLevel, AdminParticipantRole, BotId, CallChannelInfo, MemberParticipantRole,
-    OwnerParticipantRole, UserTeamInfo,
+use crate::{
+    domain::models::{
+        AccessError, AccessLevel, AdminParticipantRole, BotId, CallChannelInfo,
+        MemberParticipantRole, OwnerParticipantRole, UserTeamInfo, ViewOnly,
+    },
+    inbound::axum_extractors::test_support::{VALID_BOT_TOKEN, valid_bot_authentication},
 };
 
 const CHANNEL_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
@@ -132,7 +137,7 @@ impl EntityAccessService for FakeEntityAccessService {
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
         _entity_id: &str,
         _entity_type: EntityType,
-    ) -> Result<(EntityPermission, Uuid), AccessError> {
+    ) -> Result<(EntityPermission, Uuid, TeamRole), AccessError> {
         panic!("unexpected get_crm_entity_permission_with_team call")
     }
 
@@ -188,6 +193,19 @@ impl MacroAuthorizationService for FakeAuthorizationService {
         }
     }
 
+    async fn authorize_bot(
+        &self,
+        token: &str,
+        bot_scope: BotScope,
+        _claims: Option<BotActingUserClaims>,
+    ) -> Result<BotAuthentication, Report<MacroAuthorizationError>> {
+        if token != VALID_BOT_TOKEN {
+            return Err(Report::new(MacroAuthorizationError::InvalidCredentials));
+        }
+
+        Ok(valid_bot_authentication(bot_scope))
+    }
+
     async fn authorize_internal(
         &self,
         provided_key: &str,
@@ -238,17 +256,19 @@ impl FromRef<TestState> for MacroAuthorizationState<FakeAuthorizationService> {
     }
 }
 
-type V2Member = ChannelAccessLevelExtractorV2<
+type ViewOnlyExtractor =
+    ChannelAccessLevelExtractor<ViewOnly, FakeEntityAccessService, FakeAuthorizationService>;
+type MemberExtractor = ChannelAccessLevelExtractor<
     MemberParticipantRole,
     FakeEntityAccessService,
     FakeAuthorizationService,
 >;
-type V2Admin = ChannelAccessLevelExtractorV2<
+type AdminExtractor = ChannelAccessLevelExtractor<
     AdminParticipantRole,
     FakeEntityAccessService,
     FakeAuthorizationService,
 >;
-type V2Owner = ChannelAccessLevelExtractorV2<
+type OwnerExtractor = ChannelAccessLevelExtractor<
     OwnerParticipantRole,
     FakeEntityAccessService,
     FakeAuthorizationService,
@@ -305,12 +325,20 @@ fn assert_member_receipt(receipt: &EntityAccessReceipt<MemberParticipantRole>) {
     ));
 }
 
-async fn member_handler(extractor: V2Member) -> StatusCode {
+async fn view_only_handler(extractor: ViewOnlyExtractor) -> StatusCode {
+    assert_eq!(
+        extractor.entity_access_receipt.entity().entity_id,
+        CHANNEL_ID
+    );
+    StatusCode::OK
+}
+
+async fn member_handler(extractor: MemberExtractor) -> StatusCode {
     assert_member_receipt(&extractor.entity_access_receipt);
     StatusCode::OK
 }
 
-async fn authenticated_member_handler(extractor: V2Member) -> StatusCode {
+async fn authenticated_member_handler(extractor: MemberExtractor) -> StatusCode {
     let receipt = extractor.entity_access_receipt;
     assert_member_receipt(&receipt);
     assert!(matches!(
@@ -320,11 +348,11 @@ async fn authenticated_member_handler(extractor: V2Member) -> StatusCode {
     StatusCode::OK
 }
 
-async fn admin_handler(_extractor: V2Admin) -> StatusCode {
+async fn admin_handler(_extractor: AdminExtractor) -> StatusCode {
     StatusCode::OK
 }
 
-async fn owner_handler(extractor: V2Owner) -> StatusCode {
+async fn owner_handler(extractor: OwnerExtractor) -> StatusCode {
     assert!(matches!(
         extractor.entity_access_receipt.auth(),
         EntityAccessAuth::Internal
@@ -371,6 +399,44 @@ async fn authenticated_access_forwards_organization_and_mints_receipt() {
 }
 
 #[tokio::test]
+async fn view_only_permission_satisfies_view_only_extractor() {
+    let state = TestState::new(EntityPermission::ChannelViewOnly);
+    let response = app(state.clone(), view_only_handler)
+        .oneshot(request(Some("valid")))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(state.entity_access.calls().len(), 1);
+}
+
+#[tokio::test]
+async fn member_permission_satisfies_view_only_extractor() {
+    let state = TestState::new(EntityPermission::ChannelRole {
+        role: ParticipantRole::Member,
+    });
+    let response = app(state.clone(), view_only_handler)
+        .oneshot(request(Some("valid")))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(state.entity_access.calls().len(), 1);
+}
+
+#[tokio::test]
+async fn view_only_permission_does_not_satisfy_member_extractor() {
+    let state = TestState::new(EntityPermission::ChannelViewOnly);
+    let response = app(state.clone(), member_handler)
+        .oneshot(request(Some("valid")))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(state.entity_access.calls().len(), 1);
+}
+
+#[tokio::test]
 async fn insufficient_permission_is_rejected() {
     let state = TestState::new(EntityPermission::ChannelRole {
         role: ParticipantRole::Member,
@@ -395,6 +461,36 @@ async fn missing_credentials_are_rejected_without_acl_call() {
         .expect("request should complete");
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(state.entity_access.calls().is_empty());
+}
+
+#[tokio::test]
+async fn bot_credentials_are_forbidden_without_permission_lookup() {
+    let state = TestState::new(EntityPermission::ChannelRole {
+        role: ParticipantRole::Owner,
+    });
+    let mut request = request(None);
+    request.headers_mut().insert(
+        BOT_TOKEN_HEADER,
+        VALID_BOT_TOKEN.parse().expect("bot token should be valid"),
+    );
+    request.headers_mut().insert(
+        BOT_SCOPE_HEADER,
+        BotScope::User
+            .as_str()
+            .parse()
+            .expect("bot scope should be valid"),
+    );
+    let response = app(state.clone(), member_handler)
+        .oneshot(request)
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    assert_eq!(body.as_ref(), br#"{"message":"forbidden"}"#);
     assert!(state.entity_access.calls().is_empty());
 }
 
@@ -464,38 +560,4 @@ async fn default_internal_identity_uses_ordinary_acl_evaluation() {
         FakeAuthorizationService::with_default_internal_user(),
     );
     assert_internal_identity_uses_acl(state, internal_request(None), DEFAULT_INTERNAL_ID).await;
-}
-
-async fn v1_handler(
-    _extractor: crate::inbound::axum_extractors::ChannelAccessLevelExtractor<
-        MemberParticipantRole,
-        FakeEntityAccessService,
-    >,
-) -> StatusCode {
-    StatusCode::OK
-}
-
-#[tokio::test]
-async fn v1_remains_exported_and_uses_middleware_user_context() {
-    let state = TestState::new(EntityPermission::ChannelRole {
-        role: ParticipantRole::Member,
-    });
-    let mut request = request(None);
-    request
-        .extensions_mut()
-        .insert(user_context(USER_ID, Some(ORGANIZATION_ID)));
-    let response = app(state.clone(), v1_handler)
-        .oneshot(request)
-        .await
-        .expect("request should complete");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        state.entity_access.calls()[0].user_id.as_deref(),
-        Some(USER_ID)
-    );
-    assert_eq!(
-        state.entity_access.calls()[0].organization_id,
-        Some(i64::from(ORGANIZATION_ID))
-    );
 }

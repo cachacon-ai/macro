@@ -158,6 +158,11 @@ async fn connect_route<S: SyncServiceCore>(
     AxumPath(document_id): AxumPath<DocumentId>,
     Extension(claims): Extension<AuthToken>,
 ) -> HandlerResult {
+    // The query-token guard only proves the token is valid; it must also grant
+    // access to *this* document before we upgrade the connection.
+    if !claims.has_document_id_access(&document_id) {
+        return Ok(StatusCode::UNAUTHORIZED.into_response());
+    }
     Ok(state.connect(claims, &document_id).await?.into())
 }
 

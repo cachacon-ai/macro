@@ -22,11 +22,11 @@ use crate::{
         auth::Authenticator,
         router::do_router,
         socket::websocket,
-        sync_service::{SyncServiceImpl, Wsm, report_new_doc_state},
+        sync_service::{SyncServiceImpl, Wsm, report_interaction, report_new_doc_state},
     },
     keepalive::{DEFAULT_TIME_TO_LIVE, keepalive},
     mutex::Mutex,
-    outbound::secrets::Secrets,
+    outbound::{dss_internal::InteractionReason, secrets::Secrets},
     tags::get_ws_id_from_tags,
 };
 
@@ -193,6 +193,7 @@ impl DurableObject for DocumentSyncSession {
                 {
                     // best effort
                     report_new_doc_state(&document_id, &snapshot, &env).await;
+                    report_interaction(&document_id, &env, InteractionReason::Edited).await;
                 }
             });
         }
@@ -245,6 +246,7 @@ impl DurableObject for DocumentSyncSession {
             let env = self.session.env.clone();
             self.session.state.wait_until(async move {
                 report_new_doc_state(&document_id, &snapshot, &env).await;
+                report_interaction(&document_id, &env, InteractionReason::LastLeave).await;
             });
         }
         Ok(())

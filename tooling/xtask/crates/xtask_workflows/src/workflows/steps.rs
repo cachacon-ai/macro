@@ -9,6 +9,18 @@ use xtask_paths::{RepoDir, RuntimePath};
 
 use crate::workflows::vars;
 
+#[cfg(test)]
+mod test;
+
+/// Namespace's sccache setup mints a short-lived workspace credential. GitHub
+/// withholds repository secrets from fork PRs, but this runner-minted token is
+/// not a `secrets.*` value, so enforce the equivalent trust boundary here.
+const TRUSTED_NAMESPACE_SCCACHE_CONTEXT: &str = concat!(
+    "(github.event_name != 'pull_request' && ",
+    "github.event_name != 'pull_request_target') || ",
+    "github.event.pull_request.head.repo.full_name == github.repository"
+);
+
 /// `.map` / `.when` combinators for fluent conditional composition
 /// ("push ifs up"): centralize branching in the builder chain instead of
 /// building values imperatively.
@@ -76,9 +88,20 @@ pub fn setup_nix() -> Step<Use> {
 }
 
 /// Enter the repo's Nix dev shell (toolchain, mold, just, the sccache binary,
-/// and `RUSTC_WRAPPER=sccache`). We pass NO `sccache-bucket`, so sccache runs in
-/// local-disk mode instead of talking to S3. Requires [`setup_nix`] first.
+/// and `RUSTC_WRAPPER=sccache`) without selecting an sccache provider or
+/// configuring an external Nix binary cache. Jobs that compile Rust can follow
+/// this with [`configure_namespace_sccache`] to use Namespace's official remote
+/// cache. Requires [`setup_nix`] first.
 pub fn setup_dev_shell() -> Step<Use> {
+    uses_local(
+        "Setup Nix dev shell",
+        xtask_paths::repo_dir!(".github/actions/setup-nix-dev-shell"),
+    )
+}
+
+/// Configure Cachix and enter the repo's Nix dev shell. This is retained for
+/// workflow families that have not yet migrated to Namespace's Nix cache.
+pub fn setup_cachix_dev_shell() -> Step<Use> {
     uses_local(
         "Setup Nix dev shell",
         xtask_paths::repo_dir!(".github/actions/setup-cachix"),
@@ -88,10 +111,10 @@ pub fn setup_dev_shell() -> Step<Use> {
 }
 
 /// Mount the Namespace profile's persisted cache volume: `cache: rust` persists
-/// the cargo registry/git, and `path:` persists the sccache dir plus the Nix
-/// store. `continue-on-error` because the cache is a pure optimization — a
-/// missing/failed volume just means a cold build, never a wrong one (mirrors the
-/// deploy workflows' `/nix` mounts).
+/// the cargo registry/git, and `path:` persists the Nix store. Compiled objects
+/// deliberately use Namespace's official remote sccache instead of this volume.
+/// `continue-on-error` because the volume is a pure optimization — a failure
+/// just means cold Cargo/Nix state, never a wrong build.
 pub fn mount_cache_volume() -> Step<Use> {
     Step::new("Mount Namespace cache volume")
         .uses(
@@ -100,7 +123,7 @@ pub fn mount_cache_volume() -> Step<Use> {
             "15799a6b54e5765f85b2aac25b3f0df43ed571c0", // v1.4.3
         )
         .add_with(("cache", "rust"))
-        .add_with(("path", format!("{}\n/nix", vars::SCCACHE_VOLUME_DIR)))
+        .add_with(("path", xtask_paths::runtime_path!("/nix").as_str()))
         .continue_on_error(true)
 }
 
@@ -119,26 +142,56 @@ pub fn mount_cache_volume_with_cargo_target() -> Step<Use> {
             "nscloud-cache-action",
             "15799a6b54e5765f85b2aac25b3f0df43ed571c0", // v1.4.3
         )
-        .add_with(("cache", "rust"))
+        .add_with(("cache", "nix"))
         .add_with((
             "path",
             format!(
-                "/nix\n${{{{ github.workspace }}}}/target\n{}",
+                "${{{{ github.workspace }}}}/target\n{}\n/home/runner/.cargo/registry\n/home/runner/.cargo/git",
                 vars::PREVIEW_SNAPSHOT_VOLUME_DIR,
             ),
         ))
         .continue_on_error(true)
 }
 
-/// Configure Namespace's artifact-backed remote sccache. `setup-reqs-web`
-/// already installs sccache and exports `RUSTC_WRAPPER=sccache`; this replaces
-/// the local-disk backend with short-lived WebDAV credentials that work across
-/// runners and cache-volume misses.
+/// Configure Namespace's official artifact-backed remote sccache. Call this
+/// after [`setup_dev_shell`] or [`setup_reqs_web`], which install sccache and
+/// export `RUSTC_WRAPPER=sccache`. The short-lived WebDAV credentials work
+/// across runners and cache-volume misses. Fork PRs skip this step and retain
+/// the setup action's local fallback so untrusted code never receives the
+/// runner-minted Namespace workspace token.
 pub fn configure_namespace_sccache(cache_name: &str) -> Step<Run> {
+    namespace_sccache_step(cache_name)
+        .if_condition(Expression::new(TRUSTED_NAMESPACE_SCCACHE_CONTEXT))
+}
+
+/// Configure Namespace's remote sccache in a trusted context when
+/// `additional_condition` is also true.
+pub fn configure_namespace_sccache_when(cache_name: &str, additional_condition: &str) -> Step<Run> {
+    namespace_sccache_step(cache_name).if_condition(Expression::new(format!(
+        "({TRUSTED_NAMESPACE_SCCACHE_CONTEXT}) && ({additional_condition})"
+    )))
+}
+
+fn namespace_sccache_step(cache_name: &str) -> Step<Run> {
     Step::new("Configure Namespace remote sccache").run(format!(
         r#"set -euo pipefail
-env_file="$RUNNER_TEMP/namespace-sccache.env"
+env_file="$(mktemp "$RUNNER_TEMP/namespace-sccache.XXXXXX")"
+trap 'rm -f "$env_file"' EXIT
 if nsc cache sccache setup --cache_name {cache_name} > "$env_file"; then
+  # Register credential values as masked BEFORE exporting: GitHub only
+  # masks `secrets.*`, so without this SCCACHE_WEBDAV_TOKEN — a broad,
+  # ~24h Namespace workspace token (registry + cache write) — printed
+  # verbatim in every subsequent step's env dump. Masking is selective by
+  # key name: masking non-secrets like the endpoint URL or key prefix
+  # would redact those strings everywhere in the logs.
+  while IFS= read -r line; do
+    k="${{line%%=*}}"
+    v="${{line#*=}}"
+    [ -n "$v" ] && [ "$k" != "$line" ] || continue
+    case "$k" in
+      *TOKEN*|*SECRET*|*PASSWORD*) echo "::add-mask::$v" ;;
+    esac
+  done < "$env_file"
   cat "$env_file" >> "$GITHUB_ENV"
   # Force the next compiler invocation to start a server with the new remote
   # backend even if a setup hook happened to launch one already.
@@ -149,20 +202,11 @@ fi"#
     ))
 }
 
-/// Repoint sccache at the persisted volume. Runs AFTER `setup-cachix`; this keeps
-/// the compiled artifact cache directory aligned with the Namespace mounted path.
-pub fn pin_sccache_dir() -> Step<Run> {
-    Step::new("Point sccache at the cache volume").run(format!(
-        "echo \"SCCACHE_DIR={dir}\" >> \"$GITHUB_ENV\"\n\
-         echo \"SCCACHE_CACHE_SIZE={size}\" >> \"$GITHUB_ENV\"",
-        dir = vars::SCCACHE_VOLUME_DIR,
-        size = vars::SCCACHE_CACHE_SIZE,
-    ))
-}
-
-/// Mount the web-app cache volume: bun's install cache plus the Nix store
-/// (dev shell closure). `with_rust` additionally persists the cargo
-/// registry/git and the sccache dir for the `gen-api` OpenAPI-binary build.
+/// Mount the web-app cache volume using Namespace's native Nix integration.
+/// Bun's install cache is mounted as an explicit path because Bun comes from
+/// the Nix dev shell and is not available when this step runs. `with_rust`
+/// additionally persists cargo registry/git data for the `gen-api`
+/// OpenAPI-binary build; compiled objects live in Namespace's remote sccache.
 /// `continue-on-error` for the same reason as [`mount_cache_volume`].
 pub fn mount_web_cache_volume(with_rust: bool) -> Step<Use> {
     Step::new("Mount Namespace cache volume")
@@ -171,26 +215,31 @@ pub fn mount_web_cache_volume(with_rust: bool) -> Step<Use> {
             "nscloud-cache-action",
             "15799a6b54e5765f85b2aac25b3f0df43ed571c0", // v1.4.3
         )
-        .add_with(("cache", if with_rust { "bun,rust" } else { "bun" }))
+        .add_with(("cache", "nix"))
         .map(|step| {
             if with_rust {
-                step.add_with(("path", format!("{}\n/nix", vars::SCCACHE_VOLUME_DIR)))
+                step.add_with((
+                    "path",
+                    format!(
+                        "{}\n/home/runner/.cargo/registry\n/home/runner/.cargo/git",
+                        vars::BUN_CACHE_VOLUME_DIR,
+                    ),
+                ))
             } else {
-                step.add_with(("path", xtask_paths::runtime_path!("/nix").as_str()))
+                step.add_with(("path", vars::BUN_CACHE_VOLUME_DIR))
             }
         })
         .continue_on_error(true)
 }
 
 /// The web-app composite: Nix dev shell (bun, biome, just) + `bun install`.
-/// We pass NO `sccache-bucket`, so the gen-api build's sccache stays on the
-/// cache volume. Requires [`setup_nix`] first.
+/// Jobs that run `gen-api` follow this with [`configure_namespace_sccache`].
+/// Requires [`setup_nix`] first.
 pub fn setup_reqs_web(name: &str, playwright: bool) -> Step<Use> {
     uses_local(
         name,
         xtask_paths::repo_dir!(".github/actions/setup-reqs-web"),
     )
-    .add_with(("cachix-auth-token", vars::CACHIX_AUTH_TOKEN))
     .when(playwright, |step| step.add_with(("playwright", "true")))
 }
 
@@ -325,7 +374,7 @@ pub fn mount_nix_cache_volume() -> Step<Use> {
             "nscloud-cache-action",
             "15799a6b54e5765f85b2aac25b3f0df43ed571c0", // v1.4.3
         )
-        .add_with(("path", xtask_paths::runtime_path!("/nix").as_str()))
+        .add_with(("cache", "nix"))
         .continue_on_error(true)
 }
 

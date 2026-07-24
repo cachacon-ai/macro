@@ -55,8 +55,8 @@ export const VIEW_TAB_LISTS: Record<TabbedListView, TabItem[]> = {
   mail: [
     { value: 'important', label: 'Signal' },
     { value: 'noise', label: 'Noise' },
-    { value: 'calendar', label: 'Calendar' },
     { value: 'sent', label: 'Sent' },
+    { value: 'calendar', label: 'Calendar' },
     { value: 'drafts', label: 'Drafts' },
     { value: 'shared', label: 'Shared' },
     { value: 'all', label: 'All' },
@@ -108,8 +108,15 @@ export const shouldPreserveFiltersOnTabChange = (view: ListView) =>
 
 export const useApplyPreset = () => {
   const soup = useSoup();
-  const { queryFilters, setActiveTab, activeTab, assigneeFilter } =
-    useSoupView();
+  const panel = useSplitPanelOrThrow();
+  const {
+    queryFilters,
+    restorePersistedQueryFilters,
+    restorePersistedPredicates,
+    setActiveTab,
+    activeTab,
+    assigneeFilter,
+  } = useSoupView();
   const user = useUserContext();
   const isTeamAdmin = useIsTeamAdmin();
 
@@ -195,10 +202,27 @@ export const useApplyPreset = () => {
 
     batch(() => {
       setActiveTab(tabId);
-      queryFilters.replace(nextFilters);
-      soup.predicates.set(nextClientFilters);
+      if (!restorePersistedQueryFilters(tabId)) {
+        queryFilters.replace(nextFilters);
+      }
+      if (!restorePersistedPredicates(tabId)) {
+        soup.predicates.set(nextClientFilters);
+      }
       soup.grouping.setActiveGroupId(preset.groupBy);
     });
+
+    // The new tab replaces the dataset wholesale, and row focus only follows
+    // a row that survives into it (see soup.setRows). When it doesn't,
+    // nothing is selected anymore, so the Preview Pair's Viewer returns to
+    // its placeholder instead of lingering on the previous tab's entity.
+    const focusedRow = soup.focus.row();
+    if (
+      !focusedRow ||
+      focusedRow.getIsGrouped() ||
+      focusedRow.getIsLoadMore()
+    ) {
+      panel.handle.resetPreview();
+    }
     return true;
   };
 

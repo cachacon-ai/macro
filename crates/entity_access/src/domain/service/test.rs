@@ -5,7 +5,7 @@ use super::*;
 use crate::domain::models::{
     AdminParticipantRole, BotId, CallChannelInfo, CommentAccessLevel, EditAccessLevel,
     EntityAccessAuth, MemberParticipantRole, OwnerParticipantRole, ParticipantRole, UserTeamInfo,
-    ViewAccessLevel,
+    ViewAccessLevel, ViewOnly,
 };
 use macro_user_id::user_id::MacroUserIdStr;
 use models_permissions::share_permission::access_level::OwnerAccessLevel;
@@ -270,11 +270,12 @@ impl AccessRepository for MockRepo {
         _company_id: &str,
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
     ) -> Result<Option<CrmEntityAccess>, AccessError> {
-        // Owning team is irrelevant to these access-level tests; pair with nil.
+        // Owning team / role are irrelevant to these access-level tests.
         Ok(
             (*self.crm_company_access.lock().await).map(|access_level| CrmEntityAccess {
                 access_level,
                 team_id: Uuid::nil(),
+                team_role: TeamRole::Member,
             }),
         )
     }
@@ -284,11 +285,12 @@ impl AccessRepository for MockRepo {
         _contact_id: &str,
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
     ) -> Result<Option<CrmEntityAccess>, AccessError> {
-        // Owning team is irrelevant to these access-level tests; pair with nil.
+        // Owning team / role are irrelevant to these access-level tests.
         Ok(
             (*self.crm_contact_access.lock().await).map(|access_level| CrmEntityAccess {
                 access_level,
                 team_id: Uuid::nil(),
+                team_role: TeamRole::Member,
             }),
         )
     }
@@ -628,6 +630,25 @@ async fn test_get_entity_permission_channel_returns_role() {
             role: ParticipantRole::Admin
         }
     ));
+}
+
+#[tokio::test]
+async fn test_get_entity_permission_channel_returns_view_only() {
+    let repo = MockRepo::new().with_channel_role(ChannelRoleResult::ViewOnly);
+    let service = EntityAccessServiceImpl::new(repo);
+    let user_id = test_user_id();
+
+    let result = service
+        .get_entity_permission(
+            Some(&user_id),
+            "11111111-1111-1111-1111-111111111111",
+            EntityType::Channel,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(result, EntityPermission::ChannelViewOnly));
 }
 
 #[tokio::test]
@@ -1248,6 +1269,46 @@ async fn test_generate_receipt_channel_with_role() {
             role: ParticipantRole::Admin
         }
     ));
+}
+
+#[tokio::test]
+async fn test_generate_receipt_channel_view_only_satisfies_view_only_requirement() {
+    let repo = MockRepo::new().with_channel_role(ChannelRoleResult::ViewOnly);
+    let service = EntityAccessServiceImpl::new(repo);
+    let user_id = test_user_id();
+
+    let receipt = service
+        .generate_entity_access_receipt::<ViewOnly>(
+            &user_id,
+            None,
+            "11111111-1111-1111-1111-111111111111",
+            EntityType::Channel,
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        receipt.entity_permission(),
+        EntityPermission::ChannelViewOnly
+    ));
+}
+
+#[tokio::test]
+async fn test_generate_receipt_channel_view_only_fails_member_requirement() {
+    let repo = MockRepo::new().with_channel_role(ChannelRoleResult::ViewOnly);
+    let service = EntityAccessServiceImpl::new(repo);
+    let user_id = test_user_id();
+
+    let result = service
+        .generate_entity_access_receipt::<MemberParticipantRole>(
+            &user_id,
+            None,
+            "11111111-1111-1111-1111-111111111111",
+            EntityType::Channel,
+        )
+        .await;
+
+    assert!(matches!(result, Err(AccessError::Unauthorized)));
 }
 
 #[tokio::test]

@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const { toastAlert } = vi.hoisted(() => ({ toastAlert: vi.fn() }));
 
 // utils.ts transitively imports the websocket client modules, which open real
 // sockets at module scope and reject under jsdom.
@@ -12,10 +14,29 @@ vi.mock('@service-connection/websocket', () => ({
   createConnectionBlockWebsocketEffect: vi.fn(),
   createConnectionWebsocketEffect: vi.fn(),
 }));
+vi.mock('@core/component/Toast/Toast', () => ({
+  toast: { alert: toastAlert },
+}));
 
+import { setGlobalSplitManager } from '@app/signal/splitLayout';
+import type {
+  SplitHandle,
+  SplitManager,
+} from '@components/app/split-layout/layoutManager';
 import type { ChannelEntityTarget, EntityData } from '@entity';
 import type { UnifiedNotification } from '@notifications';
-import { getChannelEntityTarget } from './utils';
+import { previewSourceEntityId } from './preview-history';
+import {
+  getChannelEntityTarget,
+  getRowClickFallbackLocation,
+  openEntityInSplitFromUnifiedList,
+  preventDuplicatePreviewEntityOpen,
+} from './utils';
+
+afterEach(() => {
+  setGlobalSplitManager(undefined);
+  toastAlert.mockClear();
+});
 
 const sendNotification = (id: string, messageId: string): UnifiedNotification =>
   ({
@@ -89,6 +110,64 @@ const channelThreadRow = (opts?: {
     ...(opts?.target ? { target: opts.target } : {}),
     ...(opts?.notifications ? { notifications: () => opts.notifications } : {}),
   }) as unknown as EntityData;
+
+describe('preview duplicate navigation', () => {
+  it('rejects content owned by a different preview viewer and notifies', () => {
+    const controller = {
+      viewerId: () => 'viewer-1',
+    } as unknown as SplitHandle;
+    setGlobalSplitManager({
+      getSplitByContent: vi.fn(() => ({ id: 'viewer-2' })),
+    } as unknown as SplitManager);
+
+    expect(preventDuplicatePreviewEntityOpen(channelRow(), controller)).toBe(
+      true
+    );
+    expect(toastAlert).toHaveBeenCalledWith('Content already open.');
+  });
+
+  it('allows content already displayed by the controller own viewer', () => {
+    const controller = {
+      viewerId: () => 'viewer-1',
+    } as unknown as SplitHandle;
+    setGlobalSplitManager({
+      getSplitByContent: vi.fn(() => ({ id: 'viewer-1' })),
+    } as unknown as SplitManager);
+
+    expect(preventDuplicatePreviewEntityOpen(channelRow(), controller)).toBe(
+      false
+    );
+    expect(toastAlert).not.toHaveBeenCalled();
+  });
+});
+
+describe('preview history source', () => {
+  it('stamps the originating controller entity on viewer content', async () => {
+    const openWithSplit = vi.fn();
+    const controller = {
+      content: () => ({ type: 'component', id: 'inbox' }),
+      isControllerSplit: () => true,
+      viewerId: () => 'viewer-1',
+    } as unknown as SplitHandle;
+    setGlobalSplitManager({
+      activeSplit: vi.fn(),
+      getOrchestrator: vi.fn(() => ({})),
+      getSplitByContent: vi.fn(),
+      openWithSplit,
+    } as unknown as SplitManager);
+
+    await openEntityInSplitFromUnifiedList(
+      {
+        type: 'document',
+        id: 'doc-1',
+        fileType: 'md',
+      } as EntityData,
+      { splitHandle: controller }
+    );
+
+    expect(previewSourceEntityId(openWithSplit.mock.calls[0][0])).toBe('doc-1');
+  });
+});
 
 describe('getChannelEntityTarget', () => {
   it('activates a stamped target over attached channel notifications (search message hit)', () => {
@@ -208,5 +287,73 @@ describe('getChannelEntityTarget', () => {
   it('returns undefined for non-channel entities', () => {
     const entity = { type: 'email', id: 'e1' } as unknown as EntityData;
     expect(getChannelEntityTarget(entity)).toBeUndefined();
+  });
+});
+
+const emailHit = (messageId: string, content: string) => ({
+  type: 'email' as const,
+  content,
+  sender: 'Sender',
+  senderId: 'sender-1',
+  sentAt: '2026-07-14T00:00:00.000Z',
+  location: { type: 'email' as const, messageId },
+});
+
+const callHit = (transcriptId: string) => ({
+  type: 'call_record' as const,
+  id: transcriptId,
+  content: 'hit content',
+  senderId: 'speaker-1',
+  sentAt: '2026-07-14T00:00:00.000Z',
+  videoSeconds: 0,
+  location: { type: 'call_record' as const, callId: 'call-1', transcriptId },
+});
+
+const searchEntity = (
+  type: 'email' | 'call',
+  contentHitData: unknown[] | null
+): EntityData =>
+  ({
+    type,
+    id: `${type}-1`,
+    search: {
+      nameHighlight: null,
+      senderHighlightTerms: null,
+      contentHitData,
+      source: 'service',
+    },
+  }) as unknown as EntityData;
+
+describe('getRowClickFallbackLocation', () => {
+  it('returns no location for an email row, even with content hits', () => {
+    const entity = searchEntity('email', [
+      emailHit('old-msg', 'a long matched snippet of text'),
+      emailHit('newer-msg', 'short'),
+    ]);
+    expect(getRowClickFallbackLocation(entity)).toBeUndefined();
+  });
+
+  it('returns no location for an email row without search data', () => {
+    const entity = { type: 'email', id: 'e1' } as unknown as EntityData;
+    expect(getRowClickFallbackLocation(entity)).toBeUndefined();
+  });
+
+  it('keeps the snippet-hit fallback for call rows', () => {
+    const entity = searchEntity('call', [callHit('seg-1'), callHit('seg-2')]);
+    expect(getRowClickFallbackLocation(entity)).toEqual({
+      type: 'call_record',
+      callId: 'call-1',
+      transcriptId: 'seg-1',
+    });
+  });
+
+  it('returns no location for a call row without content hits', () => {
+    const entity = searchEntity('call', null);
+    expect(getRowClickFallbackLocation(entity)).toBeUndefined();
+  });
+
+  it('returns no location for non-snippet entities', () => {
+    const entity = { type: 'document', id: 'd1' } as unknown as EntityData;
+    expect(getRowClickFallbackLocation(entity)).toBeUndefined();
   });
 });

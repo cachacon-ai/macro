@@ -1,3 +1,4 @@
+use crate::domain::models::TeamRole;
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -7,6 +8,7 @@ use axum::{
     response::IntoResponse,
 };
 use macro_authorization::{
+    BOT_SCOPE_HEADER, BOT_TOKEN_HEADER, BotActingUserClaims, BotAuthentication, BotScope,
     INTERNAL_API_KEY_HEADER, INTERNAL_MACRO_USER_ID_HEADER, InternalIdentityClaims,
     MacroAuthorizationError, MacroAuthorizationService, MacroAuthorizationState,
 };
@@ -24,9 +26,12 @@ use rootcause::Report;
 use uuid::Uuid;
 
 use super::*;
-use crate::domain::models::{
-    AccessError, BotId, CallChannelInfo, EditAccessLevel, EntityAccessAuth, UserTeamInfo,
-    ViewAccessLevel,
+use crate::{
+    domain::models::{
+        AccessError, BotId, CallChannelInfo, EditAccessLevel, EntityAccessAuth, UserTeamInfo,
+        ViewAccessLevel,
+    },
+    inbound::axum_extractors::test_support::{VALID_BOT_TOKEN, valid_bot_authentication},
 };
 
 const DOCUMENT_ID: &str = "document-1";
@@ -134,7 +139,7 @@ impl EntityAccessService for FakeEntityAccessService {
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
         _entity_id: &str,
         _entity_type: EntityType,
-    ) -> Result<(EntityPermission, Uuid), AccessError> {
+    ) -> Result<(EntityPermission, Uuid, TeamRole), AccessError> {
         panic!("unexpected get_crm_entity_permission_with_team call")
     }
 
@@ -189,6 +194,19 @@ impl MacroAuthorizationService for FakeAuthorizationService {
             "expired" => Err(Report::new(MacroAuthorizationError::CredentialsExpired)),
             _ => Err(Report::new(MacroAuthorizationError::InvalidCredentials)),
         }
+    }
+
+    async fn authorize_bot(
+        &self,
+        token: &str,
+        bot_scope: BotScope,
+        _claims: Option<BotActingUserClaims>,
+    ) -> Result<BotAuthentication, Report<MacroAuthorizationError>> {
+        if token != VALID_BOT_TOKEN {
+            return Err(Report::new(MacroAuthorizationError::InvalidCredentials));
+        }
+
+        Ok(valid_bot_authentication(bot_scope))
     }
 
     async fn authorize_internal(
@@ -482,6 +500,34 @@ async fn invalid_internal_credentials_are_rejected_without_acl_lookup() {
     let response = error.into_response();
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(state.entity_access.calls().is_empty());
+}
+
+#[tokio::test]
+async fn bot_credentials_are_forbidden_without_acl_lookup() {
+    let state = TestState::new(Some(AccessLevel::Owner));
+    let mut request = request(None, document(false));
+    request.headers_mut().insert(
+        BOT_TOKEN_HEADER,
+        VALID_BOT_TOKEN.parse().expect("bot token should be valid"),
+    );
+    request.headers_mut().insert(
+        BOT_SCOPE_HEADER,
+        BotScope::User
+            .as_str()
+            .parse()
+            .expect("bot scope should be valid"),
+    );
+    let error = extract::<ViewAccessLevel>(request, &state)
+        .await
+        .expect_err("bot credentials should be forbidden");
+    let response = error.into_response();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    assert_eq!(body.as_ref(), br#"{"message":"forbidden"}"#);
     assert!(state.entity_access.calls().is_empty());
 }
 

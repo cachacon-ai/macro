@@ -12,7 +12,7 @@ mod schema;
 mod sdl_test;
 
 pub use edges::{SoupEdges, SoupEmailThreadEdges};
-pub use graphql_common::GraphqlSoupRequestParts;
+pub use graphql_common::GraphqlRequestParts;
 pub use graphql_email::{
     EmailContentKey, EmailContentLoad, EmailContentLoader, EmailServiceEmailContentReader,
     NoOpSoupEmailContentEdgeReader, SoupEmailContentEdgeReader, email_content_loader,
@@ -27,5 +27,6 @@ pub use graphql_properties::{
 };
 pub use schema::{
     SchemaOnlySoupSchema, SchemaOnlyState, SharedSoupSchema, SoupQueryRoot, SoupSchema,
-    build_schema, build_schema_from_arc, build_schema_with_service,
+    SoupSubscriptionRoot, build_schema, build_schema_from_arc, build_schema_from_arcs,
+    build_schema_with_service, build_schema_with_services,
 };

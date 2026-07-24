@@ -12,7 +12,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use connection_gateway_client::ConnectionGatewayClient;
-use macro_authorization::MacroAuthorizationExtractor;
+use entity_access::domain::models::{EntityAccessReceipt, ViewAccessLevel};
+use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
 use macro_db_client::annotations::create_comment::create_document_comment;
 use macro_user_id::user_id::MacroUserIdStr;
 use model::{
@@ -60,12 +61,12 @@ pub async fn create_comment_handler(
     State(properties_service): State<Arc<crate::api::context::PropertiesService>>,
     State(db): State<PgPool>,
     State(conn_gateway_client): State<Arc<ConnectionGatewayClient>>,
-    user: MacroAuthorizationExtractor<AuthorizationService>,
+    user: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     document_context: Extension<DocumentBasic>,
     Path(Params { document_id }): Path<Params>,
     Json(req): Json<CreateCommentRequest>,
 ) -> Result<Response, Response> {
-    let user_id = user.macro_user_id.to_string();
+    let user_id = user.authorization.user.macro_user_id.to_string();
     if document_context.deleted_at.is_some() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -110,9 +111,9 @@ pub async fn create_comment_handler(
                 // outside the commenting user's session. The comment itself was
                 // already authorized by the document middleware.
                 let task_properties_access =
-                    properties::PropertiesAccessReceipt::dangerously_assert_internal(
+                    EntityAccessReceipt::<ViewAccessLevel>::dangerously_assert_internal_user(
                         &document_id,
-                        models_properties::EntityType::Task,
+                        model_entity::EntityType::Document,
                     );
                 let task_assignee_ids: Vec<String> = match properties_service
                     .get_system_property_value(

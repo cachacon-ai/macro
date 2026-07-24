@@ -13,6 +13,7 @@ use axum::{
 };
 use macro_authorization::{
     MacroAuthorizationService, MacroAuthorizationState, OptionalMacroAuthorizationExtractor,
+    UserOrInternalService, UserOrInternalServiceAuthorization,
 };
 
 use super::{ExtractorError, RequiredPermission};
@@ -66,11 +67,19 @@ where
     async fn from_request(mut req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let service = <Arc<Svc>>::from_ref(state);
 
-        let OptionalMacroAuthorizationExtractor { macro_user_id, .. } = req
-            .extract_parts_with_state::<OptionalMacroAuthorizationExtractor<Auth>, _>(state)
+        let authorization = req
+            .extract_parts_with_state::<
+                OptionalMacroAuthorizationExtractor<Auth, UserOrInternalService>,
+                _,
+            >(state)
             .await
             .map_err(ExtractorError::from)?;
-        let macro_user_id = macro_user_id.ok_or(ExtractorError::Unauthorized)?;
+        let macro_user_id = authorization
+            .authorization
+            .as_ref()
+            .and_then(UserOrInternalServiceAuthorization::acting_user)
+            .map(|user| user.macro_user_id.clone())
+            .ok_or(ExtractorError::Unauthorized)?;
 
         let Path(PinParams { pinned_item_id }) = req
             .extract_parts_with_state(state)
