@@ -18,21 +18,22 @@ const AI_EDITING_WORKER_HOST =
  * Model fallback chains per worker role. Mirrors the chains the backend
  * EditDocument tool sends (crates/documents editing_worker_client.rs).
  *
- * FORK (BYOK): chains lead with Kimi, fall back to MiniMax. Both providers
- * must be registered in the worker (see its PROVIDERS map) with their
- * `*_API_KEY` secrets set, otherwise the entry errors and the chain advances.
+ * FORK (BYOK): chains lead with Kimi (Kimi Code endpoint ids), fall back to
+ * MiniMax. Both providers must be registered in the worker (see its PROVIDERS
+ * map) with their `*_API_KEY` secrets set, otherwise the entry errors and the
+ * chain advances.
  */
 const MODELS = {
   supervisor: [
-    { provider: 'kimi', model: 'kimi-k3' },
+    { provider: 'kimi', model: 'k3' },
     { provider: 'minimax', model: 'MiniMax-M3' },
   ],
   interpret: [
-    { provider: 'kimi', model: 'kimi-k2.7-code-highspeed' },
+    { provider: 'kimi', model: 'kimi-for-coding' },
     { provider: 'minimax', model: 'MiniMax-M2.7-highspeed' },
   ],
   coding: [
-    { provider: 'kimi', model: 'kimi-k2.7-code-highspeed' },
+    { provider: 'kimi', model: 'kimi-for-coding' },
     { provider: 'minimax', model: 'MiniMax-M2.7-highspeed' },
   ],
 } as const;
