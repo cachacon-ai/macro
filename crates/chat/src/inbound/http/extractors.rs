@@ -160,15 +160,15 @@ mod test {
         assert_eq!(free.best_model(), FREE_MODEL);
         assert!(free.has_access(FREE_MODEL));
         assert!(!free.has_access("anthropic/claude-opus-4-8"));
-        assert!(!free.has_access("kimi/kimi-k3"));
+        assert!(!free.has_access("kimi/k3"));
     }
 
     #[test]
     fn professional_user_defaults_to_smart_and_has_everything() {
         let pro = access(&[PermissionId::ReadProfessionalFeatures]);
         // FORK: the professional default is Kimi K3.
-        assert_eq!(pro.best_model(), "kimi/kimi-k3");
-        assert!(pro.has_access("kimi/kimi-k3"));
+        assert_eq!(pro.best_model(), "kimi/k3");
+        assert!(pro.has_access("kimi/k3"));
         assert!(pro.has_access("minimax/MiniMax-M3"));
         assert!(pro.has_access("anthropic/claude-sonnet-5"));
         assert!(pro.has_access("anthropic/claude-opus-4-8"));
