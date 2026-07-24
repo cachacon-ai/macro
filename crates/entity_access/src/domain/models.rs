@@ -16,6 +16,97 @@ pub use models_permissions::share_permission::access_level::{
     CommentAccessLevel, EditAccessLevel, OwnerAccessLevel, ViewAccessLevel,
 };
 
+/// The access scope under which a bot-authorized request is resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BotAccessScope {
+    /// Resolve access as the verified acting user.
+    User {
+        /// The verified acting user's identifier.
+        user_id: MacroUserIdStr<'static>,
+        /// The verified acting user's organization identifier, when present.
+        user_org_id: Option<i64>,
+    },
+    /// Resolve access from a team's shared access pool.
+    Team {
+        /// The owning team's identifier.
+        team_id: Uuid,
+    },
+}
+
+impl BotAccessScope {
+    /// Returns the verified acting user's identifier for user scope.
+    pub fn user_id(&self) -> Option<&MacroUserIdStr<'static>> {
+        match self {
+            Self::User { user_id, .. } => Some(user_id),
+            Self::Team { .. } => None,
+        }
+    }
+
+    /// Returns the verified acting user's organization identifier for user scope.
+    pub fn user_org_id(&self) -> Option<i64> {
+        match self {
+            Self::User { user_org_id, .. } => *user_org_id,
+            Self::Team { .. } => None,
+        }
+    }
+
+    /// Returns the owning team's identifier for team scope.
+    pub fn team_id(&self) -> Option<Uuid> {
+        match self {
+            Self::Team { team_id } => Some(*team_id),
+            Self::User { .. } => None,
+        }
+    }
+}
+
+/// The bot scope context retained in an entity-access receipt.
+///
+/// User organization identifiers are intentionally omitted because they are
+/// request-time authorization context rather than receipt identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum BotReceiptScope {
+    /// Access was resolved as a verified acting user.
+    User {
+        /// The verified acting user's identifier.
+        acting_user: MacroUserIdStr<'static>,
+    },
+    /// Access was resolved from a team's shared access pool.
+    Team {
+        /// The owning team's identifier.
+        team_id: Uuid,
+    },
+}
+
+impl BotReceiptScope {
+    /// Returns the verified acting user's identifier for user scope.
+    pub fn acting_user_id(&self) -> Option<&MacroUserIdStr<'static>> {
+        match self {
+            Self::User { acting_user } => Some(acting_user),
+            Self::Team { .. } => None,
+        }
+    }
+
+    /// Returns the owning team's identifier for team scope.
+    pub fn team_id(&self) -> Option<Uuid> {
+        match self {
+            Self::Team { team_id } => Some(*team_id),
+            Self::User { .. } => None,
+        }
+    }
+}
+
+impl From<&BotAccessScope> for BotReceiptScope {
+    fn from(scope: &BotAccessScope) -> Self {
+        match scope {
+            BotAccessScope::User { user_id, .. } => Self::User {
+                acting_user: user_id.clone(),
+            },
+            BotAccessScope::Team { team_id } => Self::Team { team_id: *team_id },
+        }
+    }
+}
+
 /// A user's resolved access to a CRM entity (company or contact) paired with
 /// the entity's owning team — both produced by the same ownership lookup, so
 /// the team is guaranteed to be the one that granted access (not the user's
@@ -94,6 +185,10 @@ pub struct MemberParticipantRole;
 #[derive(Debug, Clone, Copy)]
 pub struct ViewOnly;
 
+/// Permission marker that accepts every valid entity permission.
+#[derive(Debug, Clone, Copy)]
+pub struct AnyEntityPermission;
+
 /// Trait implemented by marker types that encode a permission requirement.
 pub trait RequiredPermission: std::fmt::Debug + Send + Sync + 'static {
     /// Returns whether the provided permission satisfies this requirement.
@@ -170,6 +265,12 @@ impl EntityPermission {
     /// Returns whether this permission satisfies the provided marker type.
     pub fn satisfies<T: RequiredPermission>(&self) -> bool {
         T::is_satisfied_by(self)
+    }
+}
+
+impl RequiredPermission for AnyEntityPermission {
+    fn is_satisfied_by(_permission: &EntityPermission) -> bool {
+        true
     }
 }
 

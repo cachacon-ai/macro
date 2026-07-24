@@ -4,10 +4,102 @@ fn bot_id() -> BotId {
     BotId::new_from_uuid(uuid::uuid!("00000000-0000-0000-0000-000000000123"))
 }
 
+fn user_id() -> MacroUserIdStr<'static> {
+    MacroUserIdStr::try_from_email("bot-user@example.com").unwrap()
+}
+
 fn document() -> Entity {
     Entity {
         entity_id: "document-1".to_string(),
         entity_type: EntityType::Document,
+    }
+}
+
+#[test]
+fn user_access_scope_preserves_organization_and_converts_to_receipt_scope() {
+    let user_id = user_id();
+    let access_scope = BotAccessScope::User {
+        user_id: user_id.clone(),
+        user_org_id: Some(42),
+    };
+
+    assert_eq!(access_scope.user_id(), Some(&user_id));
+    assert_eq!(access_scope.user_org_id(), Some(42));
+    assert_eq!(access_scope.team_id(), None);
+
+    let receipt_scope = BotReceiptScope::from(&access_scope);
+
+    assert_eq!(receipt_scope.acting_user_id(), Some(&user_id));
+    assert_eq!(receipt_scope.team_id(), None);
+    assert_eq!(
+        serde_json::to_value(receipt_scope).unwrap(),
+        serde_json::json!({
+            "scope": "user",
+            "acting_user": "macro|bot-user@example.com"
+        })
+    );
+}
+
+#[test]
+fn team_access_scope_converts_to_serializable_receipt_scope() {
+    let team_id = uuid::uuid!("00000000-0000-0000-0000-000000000456");
+    let access_scope = BotAccessScope::Team { team_id };
+
+    assert_eq!(access_scope.user_id(), None);
+    assert_eq!(access_scope.user_org_id(), None);
+    assert_eq!(access_scope.team_id(), Some(team_id));
+
+    let receipt_scope = BotReceiptScope::from(&access_scope);
+
+    assert_eq!(receipt_scope.acting_user_id(), None);
+    assert_eq!(receipt_scope.team_id(), Some(team_id));
+    assert_eq!(
+        serde_json::to_value(receipt_scope).unwrap(),
+        serde_json::json!({
+            "scope": "team",
+            "team_id": "00000000-0000-0000-0000-000000000456"
+        })
+    );
+}
+
+#[test]
+fn any_entity_permission_accepts_every_permission() {
+    let permissions = [
+        EntityPermission::AccessLevel {
+            access_level: AccessLevel::View,
+        },
+        EntityPermission::AccessLevel {
+            access_level: AccessLevel::Comment,
+        },
+        EntityPermission::AccessLevel {
+            access_level: AccessLevel::Edit,
+        },
+        EntityPermission::AccessLevel {
+            access_level: AccessLevel::Owner,
+        },
+        EntityPermission::ChannelViewOnly,
+        EntityPermission::ChannelRole {
+            role: ParticipantRole::Member,
+        },
+        EntityPermission::ChannelRole {
+            role: ParticipantRole::Admin,
+        },
+        EntityPermission::ChannelRole {
+            role: ParticipantRole::Owner,
+        },
+        EntityPermission::TeamRole {
+            role: TeamRole::Member,
+        },
+        EntityPermission::TeamRole {
+            role: TeamRole::Admin,
+        },
+        EntityPermission::TeamRole {
+            role: TeamRole::Owner,
+        },
+    ];
+
+    for permission in permissions {
+        assert!(permission.satisfies::<AnyEntityPermission>());
     }
 }
 
