@@ -30,11 +30,24 @@ impl<'a> AnthropicModel<'a> {
     /// - Opus / Fable / Mythos / Sonnet: `adaptive` (the model chooses when to
     ///   think; avoids the `budget_tokens < max_tokens` constraint).
     /// - Haiku: no adaptive support, so `enabled` + `budget_tokens`.
+    /// - Kimi K2.7 Code (`kimi-for-coding`, FORK): the Kimi Code endpoint
+    ///   *requires* thinking — requests without it are rejected — so
+    ///   `enabled` + `budget_tokens`.
+    /// - Kimi K3 (`k3`, FORK): thinks by default; sending nothing is correct.
     ///
     /// `temperature` is never set: it is rejected on Opus 4.7+ and constrained
     /// to 1 with extended thinking elsewhere, so we let the API default apply.
     pub fn thinking_params(&self) -> Option<serde_json::Value> {
         let model = self.model.name().to_lowercase();
+
+        if model.starts_with("kimi-for-coding") {
+            return Some(serde_json::json!({
+                "thinking": { "type": "enabled", "budget_tokens": 10_000 }
+            }));
+        }
+        if model == "k3" {
+            return None;
+        }
 
         if model.contains("opus")
             || model.contains("fable")
