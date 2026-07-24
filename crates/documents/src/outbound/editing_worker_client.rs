@@ -43,23 +43,25 @@ impl EditingWorkerService for ReqwestEditingWorkerClient {
         document_token: &DocumentPermissionToken,
         instructions: &str,
     ) -> anyhow::Result<EditResult> {
+        // FORK: edit-role fallback chains lead with the BYOK providers (Kimi
+        // primary, MiniMax fallback). Mirrors the frontend chains in
+        // apps/web/src/lib/service-clients/ai-editing-worker/client.ts.
         let request_body = serde_json::json!({
             "documentToken": document_token.as_str(),
             "documentId": document_id,
             "prompt": instructions,
             "models": {
                 "supervisor": [
-                    { "provider": "anthropic", "model": "claude-opus-4-8" },
-                    { "provider": "anthropic", "model": "claude-sonnet-4-6" },
-                    { "provider": "openai", "model": "gpt-5.5" },
+                    { "provider": "kimi", "model": "kimi-k3" },
+                    { "provider": "minimax", "model": "MiniMax-M3" },
                 ],
                 "interpret": [
-                    { "provider": "cerebras", "model": "zai-glm-4.7" },
-                    { "provider": "anthropic", "model": "claude-sonnet-4-6" },
+                    { "provider": "kimi", "model": "kimi-k2.7-code-highspeed" },
+                    { "provider": "minimax", "model": "MiniMax-M2.7-highspeed" },
                 ],
                 "coding": [
-                    { "provider": "cerebras", "model": "gpt-oss-120b" },
-                    { "provider": "anthropic", "model": "claude-haiku-4-5" },
+                    { "provider": "kimi", "model": "kimi-k2.7-code-highspeed" },
+                    { "provider": "minimax", "model": "MiniMax-M2.7-highspeed" },
                 ],
             },
             "interpret": false,
