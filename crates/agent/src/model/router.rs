@@ -656,7 +656,6 @@ pub(crate) trait DynStreamAgent: Send + Sync {
         prompt: Message,
         history: Vec<Message>,
         max_turns: usize,
-        max_tokens: u64,
         routing: ToolRouter,
         loaded_buffer: Arc<Mutex<Vec<SearchableTool>>>,
         register_loaded: RegisterFn,
@@ -680,7 +679,6 @@ where
         prompt: Message,
         history: Vec<Message>,
         max_turns: usize,
-        max_tokens: u64,
         routing: ToolRouter,
         loaded_buffer: Arc<Mutex<Vec<SearchableTool>>>,
         register_loaded: RegisterFn,
@@ -692,7 +690,7 @@ where
         Box<dyn std::future::Future<Output = ChatCompletionStream<'static>> + Send + 'a>,
     > {
         Box::pin(drive_stream(
-            model,
+            self,
             prompt,
             history,
             max_turns,
