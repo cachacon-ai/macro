@@ -1,7 +1,7 @@
 use super::*;
 
-const KIMI_K3: &str = "kimi/kimi-k3";
-const KIMI_FAST: &str = "kimi/kimi-k2.7-code-highspeed";
+const KIMI_K3: &str = "kimi/k3";
+const KIMI_FAST: &str = "kimi/kimi-for-coding";
 const MINIMAX_M3: &str = "minimax/MiniMax-M3";
 const MINIMAX_FAST: &str = "minimax/MiniMax-M2.7-highspeed";
 const HAIKU: &str = "anthropic/claude-haiku-4-5";
