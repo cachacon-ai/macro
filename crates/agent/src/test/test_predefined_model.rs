@@ -1,7 +1,5 @@
 use rig_core::providers::{
-    anthropic::completion::{
-        CLAUDE_HAIKU_4_5, CLAUDE_OPUS_4_7, CLAUDE_OPUS_4_8, CLAUDE_SONNET_4_6,
-    },
+    anthropic::completion::CLAUDE_OPUS_4_7,
     openai::GPT_5_5,
 };
 
@@ -13,25 +11,23 @@ fn default_is_smart() {
 }
 
 #[test]
-fn smart_is_opus_4_8() {
-    // `Smart` resolves to Opus 4.8 — both as the router id (`to_string`,
+fn smart_is_kimi_k3() {
+    // FORK: `Smart` resolves to Kimi K3 — both as the router id (`to_string`,
     // provider-qualified) and as the serialize-only wire id (bare api id).
-    assert_eq!(
-        PredefinedModel::Smart.to_string(),
-        format!("anthropic/{CLAUDE_OPUS_4_8}")
-    );
+    assert_eq!(PredefinedModel::Smart.to_string(), "kimi/kimi-k3");
     assert_eq!(
         serde_json::to_string(&PredefinedModel::Smart).unwrap(),
-        r#""claude-opus-4-8""#
+        r#""kimi-k3""#
     );
 }
 
 #[test]
-fn fast_is_haiku() {
-    // `Fast` resolves to the same model as `Haiku4_5` (Claude Haiku 4.5).
+fn fast_is_kimi_highspeed() {
+    // FORK: `Fast` resolves to the same model as `Haiku4_5` (Kimi K2.7 Code
+    // HighSpeed).
     assert_eq!(
         PredefinedModel::Fast.to_string(),
-        format!("anthropic/{CLAUDE_HAIKU_4_5}")
+        "kimi/kimi-k2.7-code-highspeed"
     );
     assert_eq!(
         PredefinedModel::Fast.to_string(),
@@ -49,11 +45,10 @@ fn retired_uses_default_api_id() {
 
 #[test]
 fn variants_serialize_to_their_api_id() {
-    fn ant(m: &str) -> String {
-        format!("anthropic/{}", m)
-    }
-
-    assert_eq!(PredefinedModel::Opus4_7.to_string(), ant(CLAUDE_OPUS_4_7));
+    assert_eq!(
+        PredefinedModel::Opus4_7.to_string(),
+        format!("anthropic/{}", CLAUDE_OPUS_4_7)
+    );
     assert_eq!(
         PredefinedModel::Sonnet5.to_string(),
         "anthropic/claude-sonnet-5"
@@ -62,10 +57,10 @@ fn variants_serialize_to_their_api_id() {
         serde_json::to_string(&PredefinedModel::Sonnet5).unwrap(),
         r#""claude-sonnet-5""#
     );
-    assert_eq!(PredefinedModel::Haiku4_5.to_string(), ant(CLAUDE_HAIKU_4_5));
+    // FORK: the Sonnet4_6 mid tier is MiniMax M2.7.
     assert_eq!(
         PredefinedModel::Sonnet4_6.to_string(),
-        ant(CLAUDE_SONNET_4_6)
+        "minimax/MiniMax-M2.7"
     );
     assert_eq!(
         PredefinedModel::Gpt5_5.to_string(),
@@ -80,4 +75,11 @@ fn sonnet_5_uses_adaptive_thinking() {
     assert!(params["thinking"].get("budget_tokens").is_none());
     assert!(params.get("temperature").is_none());
     assert_eq!(PredefinedModel::Sonnet5.context_window(), 1_000_000);
+}
+
+#[test]
+fn fork_tier_context_windows() {
+    assert_eq!(PredefinedModel::Smart.context_window(), 1_000_000);
+    assert_eq!(PredefinedModel::Fast.context_window(), 262_144);
+    assert_eq!(PredefinedModel::Sonnet4_6.context_window(), 204_800);
 }
