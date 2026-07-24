@@ -2,6 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createCerebras } from '@ai-sdk/cerebras';
 import { createOpenAI } from '@ai-sdk/openai';
 import { zValidator } from '@hono/zod-validator';
+import type { LanguageModelV3 } from '@ai-sdk/provider';
 import type { LanguageModel } from 'ai';
 import { createFallback } from 'ai-fallback';
 import { Hono } from 'hono';
@@ -23,7 +24,7 @@ type ProviderDef = {
   create: (opts: {
     apiKey: string;
     baseURL?: string;
-  }) => (modelId: string) => LanguageModel;
+  }) => (modelId: string) => LanguageModelV3;
 };
 
 // FORK (BYOK): `kimi` rides the Anthropic-compatible Messages API (its
@@ -32,7 +33,7 @@ type ProviderDef = {
 // `createOpenAI(...).chat(modelId)`. Base URLs come from the `KIMI_BASE_URL`
 // / `MINIMAX_BASE_URL` bindings, defaulting to the Kimi Code and MiniMax
 // international endpoints.
-const PROVIDERS = {
+const PROVIDERS: Record<Provider, ProviderDef> = {
   anthropic: {
     key: 'ANTHROPIC_API_KEY',
     create: (opts: { apiKey: string }) => createAnthropic(opts),
@@ -61,7 +62,7 @@ const PROVIDERS = {
       return (modelId: string) => provider.chat(modelId);
     },
   },
-} satisfies Record<Provider, ProviderDef>;
+};
 
 const ModelSchema: z.ZodType<Model> = z.object({
   provider: z.enum(['anthropic', 'cerebras', 'openai', 'kimi', 'minimax']),
