@@ -10,13 +10,14 @@ import MinimaxIcon from '@core/component/AI/assets/minimax.svg';
  * exposed to the frontend. Reference these constants instead of hardcoding
  * strings.
  *
- * FORK (BYOK): the list leads with the fork's providers — Kimi (Kimi
- * Platform endpoint) and MiniMax (international endpoint). The Anthropic /
- * OpenAI entries remain for deployments that configure those keys.
+ * FORK (BYOK): the list leads with the fork's providers — Kimi (Kimi Code
+ * endpoint ids `k3` / `kimi-for-coding`) and MiniMax (international
+ * endpoint). The Anthropic / OpenAI entries remain for deployments that
+ * configure those keys.
  */
 export const Model = {
-  kimiK3: 'kimi/kimi-k3',
-  kimiK27CodeHS: 'kimi/kimi-k2.7-code-highspeed',
+  kimiK3: 'kimi/k3',
+  kimiK27Code: 'kimi/kimi-for-coding',
   minimaxM3: 'minimax/MiniMax-M3',
   minimaxM27HS: 'minimax/MiniMax-M2.7-highspeed',
   sonnet5: 'anthropic/claude-sonnet-5',
@@ -37,8 +38,8 @@ type ExhaustiveMap = {
 };
 
 export const MODEL_PRETTYNAME: ExhaustiveMap = {
-  'kimi/kimi-k3': 'Kimi K3',
-  'kimi/kimi-k2.7-code-highspeed': 'Kimi K2.7 Code HS',
+  'kimi/k3': 'Kimi K3',
+  'kimi/kimi-for-coding': 'Kimi K2.7 Code',
   'minimax/MiniMax-M3': 'MiniMax M3',
   'minimax/MiniMax-M2.7-highspeed': 'MiniMax M2.7 HS',
   'anthropic/claude-sonnet-5': 'Sonnet 5',
@@ -50,8 +51,8 @@ export const MODEL_PRETTYNAME: ExhaustiveMap = {
 } as const;
 
 export const MODEL_PROVIDER_ICON: ExhaustiveMap = {
-  'kimi/kimi-k3': KimiIcon,
-  'kimi/kimi-k2.7-code-highspeed': KimiIcon,
+  'kimi/k3': KimiIcon,
+  'kimi/kimi-for-coding': KimiIcon,
   'minimax/MiniMax-M3': MinimaxIcon,
   'minimax/MiniMax-M2.7-highspeed': MinimaxIcon,
   'anthropic/claude-sonnet-5': AnthropicIcon,
@@ -95,8 +96,8 @@ export function modelsForPlan(hasPaidAccess: boolean): readonly TModel[] {
 
 /** Provider serving each model — mirrors the backend `provider` field. */
 export const MODEL_PROVIDER: ExhaustiveMap = {
-  'kimi/kimi-k3': 'kimi',
-  'kimi/kimi-k2.7-code-highspeed': 'kimi',
+  'kimi/k3': 'kimi',
+  'kimi/kimi-for-coding': 'kimi',
   'minimax/MiniMax-M3': 'minimax',
   'minimax/MiniMax-M2.7-highspeed': 'minimax',
   'anthropic/claude-sonnet-5': 'anthropic',
