@@ -5,14 +5,14 @@ import {
 } from '@components/app/split-layout/previewPersistence';
 
 /**
- * Split a base-relative URL into pathname, search (`?…` or empty), and hash
- * (`#…` or empty). The base only anchors parsing; inputs come from the
- * router's `location`, which is already URL-canonical.
+ * Parse a base-relative app URL. The base only anchors parsing — inputs come
+ * from the router's `location`, which is already URL-canonical — and only the
+ * pathname/query/hash are ever read back out.
  */
-const splitUrlParts = (url: string) => {
-  const { pathname, search, hash } = new URL(url, 'http://localhost');
-  return { pathname, search, hash };
-};
+const parseUrl = (url: string) => new URL(url, 'http://localhost');
+
+/** Serialize a parsed URL back to its base-relative string form. */
+const toRelativeUrl = (url: URL) => `${url.pathname}${url.search}${url.hash}`;
 
 /**
  * Drop a settings split from a base-relative split-layout URL, if present.
@@ -28,9 +28,9 @@ const splitUrlParts = (url: string) => {
  * only split there is no layout left to return to, so the default route is
  * returned bare.
  */
-export const stripSettingsSplitFromUrl = (url: string): string => {
-  const { pathname, search, hash } = splitUrlParts(url);
-  const segments = pathname.split('/').filter(Boolean);
+export const stripSettingsSplitFromUrl = (urlString: string): string => {
+  const url = parseUrl(urlString);
+  const segments = url.pathname.split('/').filter(Boolean);
 
   let removedSplitIndex: number | undefined;
   for (let i = 0; i + 1 < segments.length; i += 2) {
@@ -47,23 +47,20 @@ export const stripSettingsSplitFromUrl = (url: string): string => {
 
   if (segments.length === 0) return DEFAULT_ROUTE;
 
-  let nextSearch = search;
   if (removedSplitIndex !== undefined) {
-    const params = new URLSearchParams(search);
     const remappedPreview = remapPreviewQueryForRemovedSplit(
-      params.get(PREVIEW_QUERY_PARAM) ?? undefined,
+      url.searchParams.get(PREVIEW_QUERY_PARAM) ?? undefined,
       removedSplitIndex
     );
     if (remappedPreview === undefined) {
-      params.delete(PREVIEW_QUERY_PARAM);
+      url.searchParams.delete(PREVIEW_QUERY_PARAM);
     } else {
-      params.set(PREVIEW_QUERY_PARAM, remappedPreview);
+      url.searchParams.set(PREVIEW_QUERY_PARAM, remappedPreview);
     }
-    const serialized = params.toString();
-    nextSearch = serialized ? `?${serialized}` : '';
   }
 
-  return `/${segments.join('/')}${nextSearch}${hash}`;
+  url.pathname = `/${segments.join('/')}`;
+  return toRelativeUrl(url);
 };
 
 /**
@@ -73,10 +70,11 @@ export const stripSettingsSplitFromUrl = (url: string): string => {
  * `preview` query param stay valid as-is.
  */
 export const appendSettingsSplitToUrl = (
-  url: string,
+  urlString: string,
   settingsTabSlug: string
 ): string => {
-  const { pathname, search, hash } = splitUrlParts(url);
-  const base = pathname.replace(/\/$/, '');
-  return `${base}/settings/${settingsTabSlug}${search}${hash}`;
+  const url = parseUrl(urlString);
+  const base = url.pathname.replace(/\/$/, '');
+  url.pathname = `${base}/settings/${settingsTabSlug}`;
+  return toRelativeUrl(url);
 };
