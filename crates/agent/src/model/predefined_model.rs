@@ -1,33 +1,47 @@
 //! Some predefined models backend convenience
 //! Models are _not_ strictly verified. This is intentional so that we
 //! can route to any <provider>/<model-id>
+//!
+//! FORK NOTE (BYOK): the semantic tiers are remapped to the fork's BYOK
+//! providers — `Smart` is Kimi K3 (1M context), `Fast` is the high-speed
+//! Kimi coding model, and the `Sonnet4_6` mid tier (used for the memory
+//! judge and call summarizer) is MiniMax M2.7 so judge workloads run on a
+//! different provider than the generation model. The Anthropic/OpenAI
+//! variants below still route normally if those keys are configured.
+
 use crate::model::types::Model;
-use rig_core::providers::anthropic::completion::{
-    CLAUDE_HAIKU_4_5, CLAUDE_OPUS_4_7, CLAUDE_OPUS_4_8, CLAUDE_SONNET_4_6,
-};
+use rig_core::providers::anthropic::completion::CLAUDE_OPUS_4_7;
 use rig_core::providers::openai::{GPT_5_5, GPT_5_MINI};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 static ANTHROPIC: &str = "anthropic";
 static OPENAI: &str = "openai";
+static KIMI: &str = "kimi";
+static MINIMAX: &str = "minimax";
 const CLAUDE_SONNET_5: &str = "claude-sonnet-5";
+/// FORK: Smart tier — Kimi K3 on the Kimi Platform (1M-token context).
+const KIMI_K3: &str = "kimi-k3";
+/// FORK: Fast tier — high-speed Kimi coding model (~256K context).
+const KIMI_K27_CODE_HIGHSPEED: &str = "kimi-k2.7-code-highspeed";
+/// FORK: mid tier for judges/summaries — MiniMax M2.7 (~200K context).
+const MINIMAX_M27: &str = "MiniMax-M2.7";
 
 /// This type is **serialize-only**: every variant's wire form is the
 /// provider's **api id** — the exact string the API (and the model router)
 /// expects. The two semantic tiers (`Smart` / `Fast`) are server-side
 /// concepts that resolve to a concrete model, so they serialize to that
 /// model's api id too — the router never sees a semantic name, only an id it
-/// can dispatch. `Smart` and `Haiku4_5`/`Fast` may share a wire id; that's
+/// can dispatch. `Smart` and `KimiK3`/`Fast` may share a wire id; that's
 /// fine because we never deserialize this enum.
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema, Default)]
 pub enum PredefinedModel {
-    /// Best available model (currently Claude Opus 4.8)
+    /// Best available model (FORK: Kimi K3)
     #[default]
-    #[serde(rename = "claude-opus-4-8")]
+    #[serde(rename = "kimi-k3")]
     Smart,
-    /// Fastest available model (currently Claude Haiku 4.5)
-    #[serde(rename = "claude-haiku-4-5")]
+    /// Fastest available model (FORK: Kimi K2.7 Code HighSpeed)
+    #[serde(rename = "kimi-k2.7-code-highspeed")]
     Fast,
     /// Claude Opus 4.7
     #[serde(rename = "claude-opus-4-7")]
@@ -35,11 +49,11 @@ pub enum PredefinedModel {
     /// Claude Sonnet 5
     #[serde(rename = "claude-sonnet-5")]
     Sonnet5,
-    /// Claude Sonnet 4.6
-    #[serde(rename = "claude-sonnet-4-6")]
+    /// Mid tier for judges and summarizers (FORK: MiniMax M2.7)
+    #[serde(rename = "MiniMax-M2.7")]
     Sonnet4_6,
-    /// Claude Haiku 4.5
-    #[serde(rename = "claude-haiku-4-5")]
+    /// Fast tier alias (FORK: Kimi K2.7 Code HighSpeed)
+    #[serde(rename = "kimi-k2.7-code-highspeed")]
     Haiku4_5,
     /// OpenAI GPT-5.5
     #[serde(rename = "gpt-5.5")]
@@ -48,18 +62,18 @@ pub enum PredefinedModel {
     #[serde(rename = "gpt-5-mini")]
     Gpt5Mini,
     /// Retired or unrecognized model, routes to the default
-    #[serde(rename = "claude-opus-4-8")]
+    #[serde(rename = "kimi-k3")]
     Retired,
 }
 
 impl From<PredefinedModel> for super::types::Model<'static> {
     fn from(model: PredefinedModel) -> Self {
         let (provider, name) = match model {
-            PredefinedModel::Smart | PredefinedModel::Retired => (ANTHROPIC, CLAUDE_OPUS_4_8),
+            PredefinedModel::Smart | PredefinedModel::Retired => (KIMI, KIMI_K3),
             PredefinedModel::Opus4_7 => (ANTHROPIC, CLAUDE_OPUS_4_7),
             PredefinedModel::Sonnet5 => (ANTHROPIC, CLAUDE_SONNET_5),
-            PredefinedModel::Sonnet4_6 => (ANTHROPIC, CLAUDE_SONNET_4_6),
-            PredefinedModel::Fast | PredefinedModel::Haiku4_5 => (ANTHROPIC, CLAUDE_HAIKU_4_5),
+            PredefinedModel::Sonnet4_6 => (MINIMAX, MINIMAX_M27),
+            PredefinedModel::Fast | PredefinedModel::Haiku4_5 => (KIMI, KIMI_K27_CODE_HIGHSPEED),
             PredefinedModel::Gpt5_5 => (OPENAI, GPT_5_5),
             PredefinedModel::Gpt5Mini => (OPENAI, GPT_5_MINI),
         };
@@ -73,26 +87,25 @@ impl From<PredefinedModel> for super::types::Model<'static> {
 impl PredefinedModel {
     /// Returns `additional_params` JSON to enable extended thinking / reasoning.
     ///
-    /// - Opus 4.8 / 4.7: `adaptive` (model chooses when to think)
-    /// - Sonnet 5: `adaptive` (manual extended thinking is unsupported)
-    /// - Sonnet 4.6 / Haiku 4.5: `enabled` with `budget_tokens`
+    /// - Kimi K3: flat `reasoning_effort` (low/high/max) — the same shape as
+    ///   OpenAI reasoning models on the Chat Completions API
+    /// - Kimi K2.7 Code: thinking is always on server-side; send nothing
+    /// - MiniMax M2.7: reasoning cannot be disabled on the OpenAI-compatible
+    ///   API; send nothing
+    /// - Opus 4.7 / Sonnet 5: Anthropic `adaptive` (model chooses when to think)
     /// - GPT-5.5 / GPT-5 mini: Responses API `reasoning` with effort
     ///   (no `temperature`; reasoning models reject it)
     pub fn thinking_params(&self) -> serde_json::Value {
         match self {
-            Self::Smart | Self::Opus4_7 | Self::Retired => serde_json::json!({
-                "thinking": { "type": "adaptive", "display": "summarized" },
-                "temperature": 1
+            Self::Smart | Self::Retired => serde_json::json!({
+                "reasoning_effort": "high"
             }),
             Self::Sonnet5 => serde_json::json!({
                 "thinking": { "type": "adaptive", "display": "summarized" }
             }),
-            Self::Sonnet4_6 | Self::Fast | Self::Haiku4_5 => serde_json::json!({
-                "thinking": {
-                    "type": "enabled",
-                    "budget_tokens": 10_000,
-                    "display": "summarized"
-                },
+            Self::Sonnet4_6 | Self::Fast | Self::Haiku4_5 => serde_json::json!({}),
+            Self::Opus4_7 => serde_json::json!({
+                "thinking": { "type": "adaptive", "display": "summarized" },
                 "temperature": 1
             }),
             Self::Gpt5_5 => serde_json::json!({
@@ -107,10 +120,9 @@ impl PredefinedModel {
     /// Context window size in tokens.
     pub fn context_window(&self) -> u64 {
         match self {
-            Self::Smart | Self::Opus4_7 | Self::Sonnet5 | Self::Sonnet4_6 | Self::Retired => {
-                1_000_000
-            }
-            Self::Fast | Self::Haiku4_5 => 200_000,
+            Self::Smart | Self::Retired | Self::Opus4_7 | Self::Sonnet5 => 1_000_000,
+            Self::Fast | Self::Haiku4_5 => 262_144,
+            Self::Sonnet4_6 => 204_800,
             Self::Gpt5_5 | Self::Gpt5Mini => 400_000,
         }
     }
