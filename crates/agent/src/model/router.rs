@@ -687,9 +687,10 @@ impl ProviderAgent {
         ProviderAgent::Test(Box::new(build_agent(
             model,
             None,
+            handle,
+            system_prompt,
             max_turns,
             max_tokens,
-            handle,
         )))
     }
 }
