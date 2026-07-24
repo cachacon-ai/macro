@@ -6,17 +6,11 @@ import {
 
 /**
  * Split a base-relative URL into pathname, search (`?…` or empty), and hash
- * (`#…` or empty). Manual slicing (rather than `new URL`) so path segments
- * pass through byte-for-byte without percent-encoding normalization.
+ * (`#…` or empty). The base only anchors parsing; inputs come from the
+ * router's `location`, which is already URL-canonical.
  */
 const splitUrlParts = (url: string) => {
-  const hashIndex = url.indexOf('#');
-  const hash = hashIndex === -1 ? '' : url.slice(hashIndex);
-  const withoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
-  const searchIndex = withoutHash.indexOf('?');
-  const search = searchIndex === -1 ? '' : withoutHash.slice(searchIndex);
-  const pathname =
-    searchIndex === -1 ? withoutHash : withoutHash.slice(0, searchIndex);
+  const { pathname, search, hash } = new URL(url, 'http://localhost');
   return { pathname, search, hash };
 };
 
