@@ -44,23 +44,23 @@ impl EditingWorkerService for ReqwestEditingWorkerClient {
         instructions: &str,
     ) -> anyhow::Result<EditResult> {
         // FORK: edit-role fallback chains lead with the BYOK providers (Kimi
-        // primary, MiniMax fallback). Mirrors the frontend chains in
-        // apps/web/src/lib/service-clients/ai-editing-worker/client.ts.
+        // Code endpoint ids primary, MiniMax fallback). Mirrors the frontend
+        // chains in apps/web/src/lib/service-clients/ai-editing-worker/client.ts.
         let request_body = serde_json::json!({
             "documentToken": document_token.as_str(),
             "documentId": document_id,
             "prompt": instructions,
             "models": {
                 "supervisor": [
-                    { "provider": "kimi", "model": "kimi-k3" },
+                    { "provider": "kimi", "model": "k3" },
                     { "provider": "minimax", "model": "MiniMax-M3" },
                 ],
                 "interpret": [
-                    { "provider": "kimi", "model": "kimi-k2.7-code-highspeed" },
+                    { "provider": "kimi", "model": "kimi-for-coding" },
                     { "provider": "minimax", "model": "MiniMax-M2.7-highspeed" },
                 ],
                 "coding": [
-                    { "provider": "kimi", "model": "kimi-k2.7-code-highspeed" },
+                    { "provider": "kimi", "model": "kimi-for-coding" },
                     { "provider": "minimax", "model": "MiniMax-M2.7-highspeed" },
                 ],
             },
