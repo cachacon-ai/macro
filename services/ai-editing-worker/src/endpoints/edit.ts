@@ -14,22 +14,59 @@ import { createWorkerSyncSource } from '../sources';
 import { renderTraceMarkdown } from '../trace-log';
 import { insertEditTrace } from '../traces-db';
 
-type Provider = 'anthropic' | 'cerebras' | 'openai';
+type Provider = 'anthropic' | 'cerebras' | 'openai' | 'kimi' | 'minimax';
 
+type ProviderDef = {
+  key: keyof Bindings;
+  baseURLKey?: keyof Bindings;
+  defaultBaseURL?: string;
+  create: (opts: {
+    apiKey: string;
+    baseURL?: string;
+  }) => (modelId: string) => LanguageModel;
+};
+
+// FORK (BYOK): `kimi` and `minimax` ride the OpenAI-compatible Chat
+// Completions API — `createOpenAI(...).chat(modelId)` forces the Chat
+// Completions protocol (rather than Responses) against the provider's base
+// URL, so no extra SDK dependency is needed. Base URLs come from the
+// `KIMI_BASE_URL` / `MINIMAX_BASE_URL` bindings, defaulting to the Kimi
+// Platform and MiniMax international endpoints.
 const PROVIDERS = {
-  anthropic: { key: 'ANTHROPIC_API_KEY', create: createAnthropic },
-  cerebras: { key: 'CEREBRAS_API_KEY', create: createCerebras },
-  openai: { key: 'OPENAI_API_KEY', create: createOpenAI },
-} satisfies Record<
-  Provider,
-  {
-    key: keyof Bindings;
-    create: (opts: { apiKey: string }) => (modelId: string) => LanguageModel;
-  }
->;
+  anthropic: {
+    key: 'ANTHROPIC_API_KEY',
+    create: (opts: { apiKey: string }) => createAnthropic(opts),
+  },
+  cerebras: {
+    key: 'CEREBRAS_API_KEY',
+    create: (opts: { apiKey: string }) => createCerebras(opts),
+  },
+  openai: {
+    key: 'OPENAI_API_KEY',
+    create: (opts: { apiKey: string }) => createOpenAI(opts),
+  },
+  kimi: {
+    key: 'KIMI_API_KEY',
+    baseURLKey: 'KIMI_BASE_URL',
+    defaultBaseURL: 'https://api.moonshot.ai/v1',
+    create: ({ apiKey, baseURL }: { apiKey: string; baseURL?: string }) => {
+      const provider = createOpenAI({ apiKey, baseURL });
+      return (modelId: string) => provider.chat(modelId);
+    },
+  },
+  minimax: {
+    key: 'MINIMAX_API_KEY',
+    baseURLKey: 'MINIMAX_BASE_URL',
+    defaultBaseURL: 'https://api.minimax.io/v1',
+    create: ({ apiKey, baseURL }: { apiKey: string; baseURL?: string }) => {
+      const provider = createOpenAI({ apiKey, baseURL });
+      return (modelId: string) => provider.chat(modelId);
+    },
+  },
+} satisfies Record<Provider, ProviderDef>;
 
 const ModelSchema: z.ZodType<Model> = z.object({
-  provider: z.enum(['anthropic', 'cerebras', 'openai']),
+  provider: z.enum(['anthropic', 'cerebras', 'openai', 'kimi', 'minimax']),
   model: z.string(),
 });
 
@@ -67,8 +104,18 @@ function buildModels(
   models: EditModels
 ): ResolvedModels {
   const resolveOne = ({ provider, model }: Model) => {
-    const apiKey = env[PROVIDERS[provider].key];
-    return PROVIDERS[provider].create({ apiKey })(model);
+    const def = PROVIDERS[provider];
+    const apiKey = env[def.key];
+    if (!apiKey) {
+      // Unconfigured provider: throw so the caller's fallback chain advances
+      // instead of sending a keyless request upstream.
+      throw new Error(
+        `provider ${provider} is not configured (missing ${def.key})`
+      );
+    }
+    const baseURL =
+      (def.baseURLKey ? env[def.baseURLKey] : undefined) || def.defaultBaseURL;
+    return def.create({ apiKey, baseURL })(model);
   };
   const resolveModel = (specs: Model[]): LanguageModel => {
     const resolved = specs.map(resolveOne);
