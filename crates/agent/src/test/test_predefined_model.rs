@@ -12,23 +12,21 @@ fn default_is_smart() {
 
 #[test]
 fn smart_is_kimi_k3() {
-    // FORK: `Smart` resolves to Kimi K3 — both as the router id (`to_string`,
-    // provider-qualified) and as the serialize-only wire id (bare api id).
-    assert_eq!(PredefinedModel::Smart.to_string(), "kimi/kimi-k3");
+    // FORK: `Smart` resolves to Kimi K3 on the Kimi Code endpoint — both as
+    // the router id (`to_string`, provider-qualified) and as the
+    // serialize-only wire id (bare api id).
+    assert_eq!(PredefinedModel::Smart.to_string(), "kimi/k3");
     assert_eq!(
         serde_json::to_string(&PredefinedModel::Smart).unwrap(),
-        r#""kimi-k3""#
+        r#""k3""#
     );
 }
 
 #[test]
-fn fast_is_kimi_highspeed() {
-    // FORK: `Fast` resolves to the same model as `Haiku4_5` (Kimi K2.7 Code
-    // HighSpeed).
-    assert_eq!(
-        PredefinedModel::Fast.to_string(),
-        "kimi/kimi-k2.7-code-highspeed"
-    );
+fn fast_is_kimi_for_coding() {
+    // FORK: `Fast` resolves to the same model as `Haiku4_5` (Kimi K2.7 Code,
+    // id `kimi-for-coding` on the Kimi Code endpoint).
+    assert_eq!(PredefinedModel::Fast.to_string(), "kimi/kimi-for-coding");
     assert_eq!(
         PredefinedModel::Fast.to_string(),
         PredefinedModel::Haiku4_5.to_string()
@@ -79,7 +77,7 @@ fn sonnet_5_uses_adaptive_thinking() {
 
 #[test]
 fn fork_tier_context_windows() {
-    assert_eq!(PredefinedModel::Smart.context_window(), 1_000_000);
+    assert_eq!(PredefinedModel::Smart.context_window(), 262_144);
     assert_eq!(PredefinedModel::Fast.context_window(), 262_144);
     assert_eq!(PredefinedModel::Sonnet4_6.context_window(), 204_800);
 }
