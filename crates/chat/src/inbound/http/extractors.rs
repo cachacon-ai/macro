@@ -33,7 +33,7 @@ impl<P> Clone for UserPermissionsState<P> {
 /// Axum extractor resolving the requesting user's model entitlement from their
 /// permissions.
 ///
-/// Free users may use only [`FREE_MODEL`] (Haiku); professional (paid) users
+/// Free users may use only [`FREE_MODEL`]; professional (paid) users
 /// may use every chat model. Backed by [`ModelAccessServiceImpl`].
 ///
 /// Type parameter `Auth` is the authorization service implementation and `P`
@@ -155,17 +155,21 @@ mod test {
     }
 
     #[test]
-    fn free_user_defaults_to_haiku_and_only_has_haiku() {
+    fn free_user_defaults_to_free_model_and_only_has_it() {
         let free = access(&[]);
         assert_eq!(free.best_model(), FREE_MODEL);
         assert!(free.has_access(FREE_MODEL));
         assert!(!free.has_access("anthropic/claude-opus-4-8"));
+        assert!(!free.has_access("kimi/kimi-k3"));
     }
 
     #[test]
     fn professional_user_defaults_to_smart_and_has_everything() {
         let pro = access(&[PermissionId::ReadProfessionalFeatures]);
-        assert_eq!(pro.best_model(), "anthropic/claude-sonnet-5");
+        // FORK: the professional default is Kimi K3.
+        assert_eq!(pro.best_model(), "kimi/kimi-k3");
+        assert!(pro.has_access("kimi/kimi-k3"));
+        assert!(pro.has_access("minimax/MiniMax-M3"));
         assert!(pro.has_access("anthropic/claude-sonnet-5"));
         assert!(pro.has_access("anthropic/claude-opus-4-8"));
         assert!(pro.has_access(FREE_MODEL));
