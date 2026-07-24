@@ -238,14 +238,18 @@ async fn malformed_item_type_is_rejected_before_bot_acl_lookup() {
 }
 
 #[tokio::test]
-async fn unsupported_bot_entity_type_is_routed_to_the_scoped_service() {
+async fn unsupported_bot_entity_type_preserves_the_service_rejection() {
     let state = TestState::new(None);
     let response = view_router(state.clone())
         .oneshot(bot_request("user", BotScope::Team, VALID_BOT_TOKEN))
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_body(response).await,
+        r#"{"message":"Bad request: Unsupported bot entity type"}"#
+    );
     assert_eq!(
         state.entity_access.bot_calls(),
         [BotAccessCall {
