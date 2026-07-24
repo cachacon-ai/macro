@@ -333,11 +333,6 @@ export const SoupView = (props: SoupViewProps) => {
   const panel = useSplitPanelOrThrow();
   const soupView = useSoupView();
   const isNewInboxEnabled = useIsNewInboxEnabled();
-  const hasPreviewItems = useSoupPreviewAvailability({
-    rows: soupView.rows,
-    isLoading: soupView.source.isLoading,
-    splitHandle: panel.handle,
-  });
   const openFocusedEntityInPreview = () => {
     const focusedRow = soup.focus.row();
     if (
@@ -351,6 +346,12 @@ export const SoupView = (props: SoupViewProps) => {
       splitHandle: panel.handle,
     });
   };
+  const hasPreviewItems = useSoupPreviewAvailability({
+    rows: soupView.rows,
+    isLoading: soupView.source.isLoading,
+    splitHandle: panel.handle,
+    onPreviewRestored: openFocusedEntityInPreview,
+  });
 
   const entryState = panel.handle.currentEntryState();
   const contentId = panel.handle.content().id;
@@ -474,17 +475,26 @@ export const SoupView = (props: SoupViewProps) => {
     });
   });
 
-  // A fresh Inbox starts in preview mode once its initial result settles, but
-  // only when it has an entity to show. Resolve this once so manually exiting
-  // preview mode is not undone by later Soup updates.
+  // A fresh Inbox starts in preview mode once its result settles with an
+  // entity to show. An initially empty Inbox keeps that default pending, so
+  // preview mode engages as soon as its first entity arrives. Resolve at that
+  // point so manually exiting preview mode is not undone by later Soup
+  // updates — empty states after it only suspend preview mode (see
+  // useSoupPreviewAvailability).
   let initialInboxPreviewResolved = false;
   createEffect(() => {
     if (initialInboxPreviewResolved || soupView.source.isLoading()) return;
-    initialInboxPreviewResolved = true;
-    if (contentId !== 'inbox') return;
-    if (panel.handle.lastNavigationCause() !== 'fresh') return;
-    if (panel.handle.isViewerSplit()) return;
+    if (
+      contentId !== 'inbox' ||
+      panel.handle.lastNavigationCause() !== 'fresh' ||
+      panel.handle.isViewerSplit() ||
+      panel.handle.isControllerSplit()
+    ) {
+      initialInboxPreviewResolved = true;
+      return;
+    }
     if (!hasPreviewItems()) return;
+    initialInboxPreviewResolved = true;
     panel.handle.engagePreview();
     if (panel.handle.isControllerSplit()) openFocusedEntityInPreview();
   });
