@@ -68,7 +68,7 @@ impl<'de> Deserialize<'de> for SystemEventName {
 }
 
 /// A runtime or agent state transition sent to the Agent Service.
-#[derive(Debug, Clone, Serialize, JsonRpcNotification, PartialEq)]
+#[derive(Debug, Clone, Serialize, JsonRpcNotification, PartialEq, schemars::JsonSchema)]
 #[notification(method = "system_event")]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -78,6 +78,7 @@ pub struct SystemEvent {
     /// Monotonically increasing sequence within a runtime instance.
     pub sequence: u64,
     /// Typed event name with forward-compatible handling of unknown values.
+    #[schemars(with = "String")]
     pub name: SystemEventName,
     /// UTC occurrence time formatted according to RFC 3339.
     pub occurred_at: String,
@@ -211,7 +212,7 @@ impl<'de> Deserialize<'de> for CommandName {
 }
 
 /// An operation requested by the Agent Service and handled by the Agent Runtime.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest, PartialEq, schemars::JsonSchema)]
 #[request(method = "command", response = CommandResult)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -219,6 +220,7 @@ pub struct Command {
     /// Stable identifier reused when retrying this logical command.
     pub command_id: String,
     /// Typed command name with forward-compatible handling of unknown values.
+    #[schemars(with = "String")]
     pub name: CommandName,
     /// Stable logical agent identifier for an agent-scoped command.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -267,7 +269,7 @@ impl Command {
 }
 
 /// Result of executing a command.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse, PartialEq, schemars::JsonSchema)]
 #[serde(tag = "status", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum CommandResult {
@@ -296,7 +298,7 @@ impl CommandResult {
 }
 
 /// One complete ACP JSON-RPC message routed to a running agent instance.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification, schemars::JsonSchema)]
 #[notification(method = "acp")]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -308,6 +310,7 @@ pub struct AcpMessage {
     /// Identifier of the target agent process execution.
     pub agent_instance_id: String,
     /// Complete nested ACP JSON-RPC request, notification, or response.
+    #[schemars(with = "Value")]
     pub message: RawJsonRpcMessage,
 }
 

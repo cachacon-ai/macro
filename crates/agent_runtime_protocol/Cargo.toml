@@ -11,6 +11,7 @@ test-utils = []
 agent-client-protocol = { workspace = true }
 futures = { workspace = true }
 jsonrpsee = { workspace = true, features = ["ws-client"] }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
