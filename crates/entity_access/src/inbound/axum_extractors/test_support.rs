@@ -111,6 +111,13 @@ impl EntityAccessService for FakeEntityAccessService {
                 entity_type,
             });
 
+        if matches!(
+            entity_type,
+            EntityType::User | EntityType::ChannelMessage | EntityType::StaticFile
+        ) {
+            return Err(AccessError::BadRequest("Unsupported bot entity type"));
+        }
+
         let permission = self.bot_permission.ok_or(AccessError::Unauthorized)?;
         EntityAccessReceipt::try_new_bot(
             bot_id.into_storage_id(),
