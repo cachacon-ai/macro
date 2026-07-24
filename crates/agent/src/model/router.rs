@@ -12,19 +12,28 @@
 //!   (e.g. `agent_loop`) hold one type and never fan out.
 //!
 //! Ids are addressed as `provider/model` (e.g. `anthropic/claude-opus-4-8`,
-//! `groq/llama-3.3-70b`); routing picks the provider from the segment, never by
+//! `kimi/kimi-k3`); routing picks the provider from the segment, never by
 //! sniffing the id. Unroutable ids fall back to the default model.
+//!
+//! FORK NOTE (BYOK): every provider is optional. The router is built from
+//! whichever keys are present in the environment — built-ins
+//! (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CEREBRAS_API_KEY`) plus BYOK
+//! providers (`KIMI_API_KEY`/`KIMI_BASE_URL`, `MINIMAX_API_KEY`/`MINIMAX_BASE_URL`).
+//! Ids whose provider is not configured are unroutable and fall back to the
+//! default model.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use ai_toolset::{RequestContext, SearchableTool};
 use ai_usage::{UsageContext, UsageRecorder};
 use futures::StreamExt;
-use macro_env_var::env_var;
 use rig_core::agent::{Agent, AgentBuilder, MultiTurnStreamItem};
 use rig_core::completion::{CompletionModel, GetTokenUsage};
 use rig_core::message::Message;
+use rig_core::providers::anthropic::completion::CLAUDE_OPUS_4_8;
+use rig_core::providers::openai::GPT_5_5;
 use rig_core::providers::{anthropic, openai};
 use rig_core::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig_core::tool::server::ToolServerHandle;
@@ -37,14 +46,6 @@ use crate::error::AgentError;
 use crate::hook::{RegisterFn, StreamBridge, ToolRouter};
 use crate::stream::{ChatCompletionStream, StreamPart};
 
-env_var! {
-    struct ApiKeys {
-        AnthropicApiKey,
-        OpenaiApiKey,
-        CerebrasApiKey
-    }
-}
-
 /// Provider segment for native Anthropic.
 const ANTHROPIC_PROVIDER: &str = "anthropic";
 /// Provider segment the built-in OpenAI client is registered under.
@@ -54,6 +55,20 @@ const OPENAI_PROVIDER: &str = "openai";
 const CEREBRAS_PROVIDER: &str = "cerebras";
 /// Cerebras inference endpoint (OpenAI-compatible Chat Completions API).
 const CEREBRAS_BASE_URL: &str = "https://api.cerebras.ai/v1";
+/// Provider segment Kimi is registered under (OpenAI-compatible Chat
+/// Completions). FORK: BYOK provider.
+const KIMI_PROVIDER: &str = "kimi";
+/// Default Kimi endpoint: the pay-as-you-go Kimi Platform API. Override with
+/// `KIMI_BASE_URL` — e.g. `https://api.kimi.com/coding/v1` for a Kimi Code
+/// subscription key (note: Kimi restricts that endpoint to approved
+/// coding-agent clients; the Platform endpoint has no such restriction).
+const KIMI_DEFAULT_BASE_URL: &str = "https://api.moonshot.ai/v1";
+/// Provider segment MiniMax is registered under (OpenAI-compatible Chat
+/// Completions). FORK: BYOK provider.
+const MINIMAX_PROVIDER: &str = "minimax";
+/// Default MiniMax endpoint (international OpenAI-compatible API). Override
+/// with `MINIMAX_BASE_URL`.
+const MINIMAX_DEFAULT_BASE_URL: &str = "https://api.minimax.io/v1";
 
 /// A routed model id bound to the provider client that serves it.
 pub(crate) enum RoutedModel<'a> {
@@ -221,49 +236,99 @@ impl ProviderAgent {
 
 /// Routes model api-id strings to the provider client that serves them.
 ///
-/// Holds native Anthropic and OpenAI Responses clients plus a registry of
-/// OpenAI-compatible Chat Completions clients keyed by provider name. The
-/// built-in [`OPENAI_PROVIDER`] always uses Responses; register compatible
-/// providers with [`with_openai_provider`](Self::with_openai_provider).
+/// Holds optional native Anthropic and OpenAI Responses clients plus a
+/// registry of OpenAI-compatible Chat Completions clients keyed by provider
+/// name. Register compatible providers with
+/// [`with_openai_provider`](Self::with_openai_provider).
+///
+/// FORK: the built-in clients are `Option`s — a deployment can run on BYOK
+/// providers (Kimi, MiniMax) alone, with no Anthropic/OpenAI key present.
 #[derive(Clone)]
 pub struct ModelRouter {
-    anthropic: Arc<anthropic::Client>,
-    openai: Arc<openai::Client>,
+    anthropic: Option<Arc<anthropic::Client>>,
+    openai: Option<Arc<openai::Client>>,
     openai_compatible: HashMap<String, Arc<openai::CompletionsClient>>,
 }
 
 impl ModelRouter {
-    /// Build a router over native Anthropic and OpenAI Responses clients, with
-    /// no OpenAI-compatible Chat Completions providers registered yet.
-    pub fn new(anthropic: anthropic::Client, openai: openai::Client) -> Self {
+    /// An empty router with no providers registered yet. Chain the `with_*`
+    /// methods to add providers.
+    pub fn empty() -> Self {
         Self {
-            anthropic: Arc::new(anthropic),
-            openai: Arc::new(openai),
+            anthropic: None,
+            openai: None,
             openai_compatible: HashMap::new(),
         }
     }
 
-    /// Build a router with the built-in providers from the environment.
+    /// Build a router over native Anthropic and OpenAI Responses clients, with
+    /// no OpenAI-compatible Chat Completions providers registered yet.
+    pub fn new(anthropic: anthropic::Client, openai: openai::Client) -> Self {
+        Self {
+            anthropic: Some(Arc::new(anthropic)),
+            openai: Some(Arc::new(openai)),
+            openai_compatible: HashMap::new(),
+        }
+    }
+
+    /// Register the native Anthropic client from an API key.
+    pub fn with_anthropic_key(mut self, api_key: impl Into<String>) -> Result<Self, AgentError> {
+        let client = anthropic::Client::builder()
+            .api_key(api_key.into())
+            .build()?;
+        self.anthropic = Some(Arc::new(client));
+        Ok(self)
+    }
+
+    /// Register the native OpenAI Responses client from an API key.
+    pub fn with_openai_key(mut self, api_key: impl Into<String>) -> Result<Self, AgentError> {
+        let client = openai::Client::builder()
+            .api_key(api_key.into())
+            .build()?;
+        self.openai = Some(Arc::new(client));
+        Ok(self)
+    }
+
+    /// Read an env var, treating unset and empty as absent.
+    fn env_key(name: &str) -> Option<String> {
+        std::env::var(name).ok().filter(|v| !v.is_empty())
+    }
+
+    /// Build a router from the environment, registering every provider whose
+    /// key is present. All providers are optional — but at least one must be
+    /// set or the router panics on first use (see
+    /// [`default_model`](Self::default_model)).
     ///
-    /// Requires `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `CEREBRAS_API_KEY`.
-    /// Chain [`with_openai_provider`](Self::with_openai_provider) to add more.
+    /// Built-ins: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CEREBRAS_API_KEY`.
+    /// BYOK: `KIMI_API_KEY` (+ optional `KIMI_BASE_URL`) and `MINIMAX_API_KEY`
+    /// (+ optional `MINIMAX_BASE_URL`).
     pub fn try_from_env() -> Result<Self, AgentError> {
-        let env = ApiKeys::new()?;
-        let anthropic = anthropic::Client::builder()
-            .api_key(env.anthropic_api_key.to_string())
-            .build()?;
-        // Default base URL is api.openai.com; OpenAI's GPT models use
-        // Responses API so reasoning models get max_output_tokens.
-        let openai = openai::Client::builder()
-            .api_key(env.openai_api_key.to_string())
-            .build()?;
-        // Cerebras speaks the OpenAI Chat Completions API, so it rides the
-        // compatible-provider registry: `cerebras/<model>` ids route to it.
-        Self::new(anthropic, openai).with_openai_provider(
-            CEREBRAS_PROVIDER,
-            CEREBRAS_BASE_URL,
-            &env.cerebras_api_key,
-        )
+        let mut router = Self::empty();
+        if let Some(key) = Self::env_key("ANTHROPIC_API_KEY") {
+            router = router.with_anthropic_key(key)?;
+        }
+        if let Some(key) = Self::env_key("OPENAI_API_KEY") {
+            router = router.with_openai_key(key)?;
+        }
+        if let Some(key) = Self::env_key("CEREBRAS_API_KEY") {
+            // Cerebras speaks the OpenAI Chat Completions API, so it rides the
+            // compatible-provider registry: `cerebras/<model>` ids route to it.
+            router = router.with_openai_provider(CEREBRAS_PROVIDER, CEREBRAS_BASE_URL, &key)?;
+        }
+        // FORK: BYOK providers. Kimi defaults to the Kimi Platform endpoint;
+        // set KIMI_BASE_URL to use a different gateway (or the Kimi Code
+        // endpoint, subject to Kimi's coding-agent client restrictions).
+        if let Some(key) = Self::env_key("KIMI_API_KEY") {
+            let base_url =
+                Self::env_key("KIMI_BASE_URL").unwrap_or_else(|| KIMI_DEFAULT_BASE_URL.to_string());
+            router = router.with_openai_provider(KIMI_PROVIDER, &base_url, &key)?;
+        }
+        if let Some(key) = Self::env_key("MINIMAX_API_KEY") {
+            let base_url = Self::env_key("MINIMAX_BASE_URL")
+                .unwrap_or_else(|| MINIMAX_DEFAULT_BASE_URL.to_string());
+            router = router.with_openai_provider(MINIMAX_PROVIDER, &base_url, &key)?;
+        }
+        Ok(router)
     }
 
     /// The process-wide full router, built from the environment on first use.
@@ -334,17 +399,25 @@ impl ModelRouter {
     /// [`AgentError::MalformedModel`] if the id has no `provider/` segment).
     pub(crate) fn route<'a>(&self, model: &'a str) -> Result<RoutedModel<'a>, AgentError> {
         let parsed = Model::try_from(model)?;
+        self.route_model(parsed)
+    }
 
+    /// Route a parsed model to the provider that serves it.
+    fn route_model<'a>(&self, parsed: Model<'a>) -> Result<RoutedModel<'a>, AgentError> {
         if parsed.provider() == ANTHROPIC_PROVIDER {
-            return Ok(RoutedModel::Anthropic(AnthropicModel::new(
-                parsed,
-                self.anthropic.clone(),
-            )));
+            let client = self
+                .anthropic
+                .clone()
+                .ok_or_else(|| AgentError::UnknownModel(parsed.to_string()))?;
+            return Ok(RoutedModel::Anthropic(AnthropicModel::new(parsed, client)));
         }
         if parsed.provider() == OPENAI_PROVIDER {
+            let client = self
+                .openai
+                .clone()
+                .ok_or_else(|| AgentError::UnknownModel(parsed.to_string()))?;
             return Ok(RoutedModel::OpenAiResponses(OpenAiResponsesModel::new(
-                parsed,
-                self.openai.clone(),
+                parsed, client,
             )));
         }
         if let Some(client) = self.openai_compatible.get(parsed.provider()) {
@@ -353,7 +426,7 @@ impl ModelRouter {
                 OpenAiChatCompletionsModel::new(parsed, client),
             ));
         }
-        Err(AgentError::UnknownModel(model.to_string()))
+        Err(AgentError::UnknownModel(parsed.to_string()))
     }
 
     /// Route `model`, falling back to the default model on an unroutable id.
@@ -361,16 +434,42 @@ impl ModelRouter {
         self.route(model).unwrap_or_else(|_| self.default_model())
     }
 
-    /// The fallback model: native Anthropic serving [`PredefinedModel::Smart`].
+    /// The fallback model: [`PredefinedModel::Smart`] routed through the
+    /// registry.
     ///
-    /// Built via `From<PredefinedModel>` so the bound [`Model`] carries the
-    /// bare api id — `PredefinedModel`'s `Display` is the provider-qualified
-    /// routing id, which the Anthropic API rejects as a model name.
+    /// FORK: `Smart` is remapped to `kimi/kimi-k3` (see `predefined_model.rs`),
+    /// so the default works with no Anthropic key present. If the Smart
+    /// provider is not configured either, fall back to the built-in Anthropic
+    /// then OpenAI clients; panic only when the deployment has no providers
+    /// at all.
     fn default_model(&self) -> RoutedModel<'static> {
-        RoutedModel::Anthropic(AnthropicModel::new(
-            PredefinedModel::Smart.into(),
-            self.anthropic.clone(),
-        ))
+        let smart: Model<'static> = PredefinedModel::Smart.into();
+        if let Ok(routed) = self.route_model(smart) {
+            return routed;
+        }
+        if let Some(client) = &self.anthropic {
+            return RoutedModel::Anthropic(AnthropicModel::new(
+                Model {
+                    provider: Cow::Borrowed(ANTHROPIC_PROVIDER),
+                    name: Cow::Borrowed(CLAUDE_OPUS_4_8),
+                },
+                client.clone(),
+            ));
+        }
+        if let Some(client) = &self.openai {
+            return RoutedModel::OpenAiResponses(OpenAiResponsesModel::new(
+                Model {
+                    provider: Cow::Borrowed(OPENAI_PROVIDER),
+                    name: Cow::Borrowed(GPT_5_5),
+                },
+                client.clone(),
+            ));
+        }
+        panic!(
+            "ModelRouter: no providers configured — set at least one of \
+             KIMI_API_KEY, MINIMAX_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, \
+             CEREBRAS_API_KEY"
+        )
     }
 }
 
@@ -519,6 +618,7 @@ pub(crate) trait DynStreamAgent: Send + Sync {
         prompt: Message,
         history: Vec<Message>,
         max_turns: usize,
+        max_tokens: u64,
         routing: ToolRouter,
         loaded_buffer: Arc<Mutex<Vec<SearchableTool>>>,
         register_loaded: RegisterFn,
@@ -542,6 +642,7 @@ where
         prompt: Message,
         history: Vec<Message>,
         max_turns: usize,
+        max_tokens: u64,
         routing: ToolRouter,
         loaded_buffer: Arc<Mutex<Vec<SearchableTool>>>,
         register_loaded: RegisterFn,
@@ -553,7 +654,7 @@ where
         Box<dyn std::future::Future<Output = ChatCompletionStream<'static>> + Send + 'a>,
     > {
         Box::pin(drive_stream(
-            self,
+            model,
             prompt,
             history,
             max_turns,
@@ -586,10 +687,9 @@ impl ProviderAgent {
         ProviderAgent::Test(Box::new(build_agent(
             model,
             None,
-            handle,
-            system_prompt,
             max_turns,
             max_tokens,
+            handle,
         )))
     }
 }
