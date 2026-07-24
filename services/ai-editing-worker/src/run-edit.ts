@@ -21,7 +21,7 @@ import { EditingWorkspace } from './editing-workspace';
 import { buildTraceSession, type TraceSession } from './trace-log';
 
 export type Model = {
-  provider: 'anthropic' | 'cerebras' | 'openai';
+  provider: 'anthropic' | 'cerebras' | 'openai' | 'kimi' | 'minimax';
   model: string;
 };
 
