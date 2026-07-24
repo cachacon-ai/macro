@@ -5,14 +5,17 @@
 //!
 //! - [`RoutedModel`] — the routed id bound to its provider client. One arm per
 //!   wire protocol: Anthropic-native, OpenAI Responses, and OpenAI-compatible
-//!   Chat Completions. Compatible providers live in a data registry keyed by
-//!   name, so adding one is [`with_openai_provider`](ModelRouter::with_openai_provider).
+//!   Chat Completions. Compatible providers live in data registries keyed by
+//!   name — Anthropic-compatible ones via
+//!   [`with_anthropic_provider`](ModelRouter::with_anthropic_provider),
+//!   OpenAI-compatible ones via
+//!   [`with_openai_provider`](ModelRouter::with_openai_provider).
 //! - [`ProviderAgent`] — a built rig agent, with the same arms. Its
 //!   [`run_stream`](ProviderAgent::run_stream) matches internally, so callers
 //!   (e.g. `agent_loop`) hold one type and never fan out.
 //!
 //! Ids are addressed as `provider/model` (e.g. `anthropic/claude-opus-4-8`,
-//! `kimi/kimi-k3`); routing picks the provider from the segment, never by
+//! `kimi/k3`); routing picks the provider from the segment, never by
 //! sniffing the id. Unroutable ids fall back to the default model.
 //!
 //! FORK NOTE (BYOK): every provider is optional. The router is built from
@@ -21,6 +24,11 @@
 //! providers (`KIMI_API_KEY`/`KIMI_BASE_URL`, `MINIMAX_API_KEY`/`MINIMAX_BASE_URL`).
 //! Ids whose provider is not configured are unroutable and fall back to the
 //! default model.
+//!
+//! Kimi rides the **Anthropic-compatible** arm: Kimi's OpenAI-compatible
+//! coding endpoint is gated to whitelisted coding agents, while the
+//! Anthropic-compatible surface (`https://api.kimi.com/coding`) accepts
+//! third-party clients — this mirrors the proven switchboard wiring.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -55,14 +63,16 @@ const OPENAI_PROVIDER: &str = "openai";
 const CEREBRAS_PROVIDER: &str = "cerebras";
 /// Cerebras inference endpoint (OpenAI-compatible Chat Completions API).
 const CEREBRAS_BASE_URL: &str = "https://api.cerebras.ai/v1";
-/// Provider segment Kimi is registered under (OpenAI-compatible Chat
-/// Completions). FORK: BYOK provider.
+/// Provider segment Kimi is registered under (Anthropic-compatible Messages
+/// API). FORK: BYOK provider.
 const KIMI_PROVIDER: &str = "kimi";
-/// Default Kimi endpoint: the pay-as-you-go Kimi Platform API. Override with
-/// `KIMI_BASE_URL` — e.g. `https://api.kimi.com/coding/v1` for a Kimi Code
-/// subscription key (note: Kimi restricts that endpoint to approved
-/// coding-agent clients; the Platform endpoint has no such restriction).
-const KIMI_DEFAULT_BASE_URL: &str = "https://api.moonshot.ai/v1";
+/// Default Kimi endpoint: the Kimi Code subscription endpoint's
+/// Anthropic-compatible surface. (The OpenAI-compatible surface of the same
+/// endpoint is gated to whitelisted coding agents.) Override with
+/// `KIMI_BASE_URL` — e.g. `https://api.moonshot.ai/anthropic` for a Kimi
+/// Platform pay-as-you-go key (which uses different model ids, e.g.
+/// `kimi-k3`).
+const KIMI_DEFAULT_BASE_URL: &str = "https://api.kimi.com/coding";
 /// Provider segment MiniMax is registered under (OpenAI-compatible Chat
 /// Completions). FORK: BYOK provider.
 const MINIMAX_PROVIDER: &str = "minimax";
@@ -72,7 +82,7 @@ const MINIMAX_DEFAULT_BASE_URL: &str = "https://api.minimax.io/v1";
 
 /// A routed model id bound to the provider client that serves it.
 pub(crate) enum RoutedModel<'a> {
-    /// A model on Anthropic's native API.
+    /// A model on the Anthropic Messages API (native or compatible).
     Anthropic(AnthropicModel<'a>),
     /// A model on the OpenAI-compatible Chat Completions API.
     OpenAiChatCompletions(OpenAiChatCompletionsModel<'a>),
@@ -236,16 +246,15 @@ impl ProviderAgent {
 
 /// Routes model api-id strings to the provider client that serves them.
 ///
-/// Holds optional native Anthropic and OpenAI Responses clients plus a
-/// registry of OpenAI-compatible Chat Completions clients keyed by provider
-/// name. Register compatible providers with
-/// [`with_openai_provider`](Self::with_openai_provider).
+/// Holds a registry of Anthropic-compatible clients keyed by provider name,
+/// an optional OpenAI Responses client, and a registry of OpenAI-compatible
+/// Chat Completions clients keyed by provider name.
 ///
-/// FORK: the built-in clients are `Option`s — a deployment can run on BYOK
-/// providers (Kimi, MiniMax) alone, with no Anthropic/OpenAI key present.
+/// FORK: all providers are optional — a deployment can run on BYOK providers
+/// (Kimi, MiniMax) alone, with no Anthropic/OpenAI key present.
 #[derive(Clone)]
 pub struct ModelRouter {
-    anthropic: Option<Arc<anthropic::Client>>,
+    anthropic_compatible: HashMap<String, Arc<anthropic::Client>>,
     openai: Option<Arc<openai::Client>>,
     openai_compatible: HashMap<String, Arc<openai::CompletionsClient>>,
 }
@@ -255,38 +264,70 @@ impl ModelRouter {
     /// methods to add providers.
     pub fn empty() -> Self {
         Self {
-            anthropic: None,
+            anthropic_compatible: HashMap::new(),
             openai: None,
             openai_compatible: HashMap::new(),
         }
     }
 
     /// Build a router over native Anthropic and OpenAI Responses clients, with
-    /// no OpenAI-compatible Chat Completions providers registered yet.
+    /// no compatible providers registered yet.
     pub fn new(anthropic: anthropic::Client, openai: openai::Client) -> Self {
-        Self {
-            anthropic: Some(Arc::new(anthropic)),
-            openai: Some(Arc::new(openai)),
-            openai_compatible: HashMap::new(),
-        }
+        Self::empty()
+            .with_anthropic_client(ANTHROPIC_PROVIDER, anthropic)
+            .with_openai_key_client(openai)
     }
 
-    /// Register the native Anthropic client from an API key.
-    pub fn with_anthropic_key(mut self, api_key: impl Into<String>) -> Result<Self, AgentError> {
+    /// Register the native Anthropic client from an API key (default base URL).
+    pub fn with_anthropic_key(self, api_key: impl Into<String>) -> Result<Self, AgentError> {
         let client = anthropic::Client::builder()
             .api_key(api_key.into())
             .build()?;
-        self.anthropic = Some(Arc::new(client));
-        Ok(self)
+        Ok(self.with_anthropic_client(ANTHROPIC_PROVIDER, client))
+    }
+
+    /// Register an Anthropic-compatible provider from a base URL and key.
+    ///
+    /// The Anthropic-protocol mirror of
+    /// [`with_openai_provider`](Self::with_openai_provider) — models served by
+    /// it are reachable as `provider/<model-id>`. Kimi is wired this way in
+    /// [`try_from_env`](Self::try_from_env), since its coding endpoint's
+    /// OpenAI-compatible surface is gated to whitelisted coding agents.
+    pub fn with_anthropic_provider(
+        self,
+        provider: impl Into<String>,
+        base_url: &str,
+        api_key: &str,
+    ) -> Result<Self, AgentError> {
+        let client = anthropic::Client::builder()
+            .api_key(api_key)
+            .base_url(base_url)
+            .build()?;
+        Ok(self.with_anthropic_client(provider, client))
+    }
+
+    /// Register an already-built Anthropic-compatible client under `provider`.
+    pub fn with_anthropic_client(
+        mut self,
+        provider: impl Into<String>,
+        client: anthropic::Client,
+    ) -> Self {
+        self.anthropic_compatible
+            .insert(provider.into(), Arc::new(client));
+        self
     }
 
     /// Register the native OpenAI Responses client from an API key.
-    pub fn with_openai_key(mut self, api_key: impl Into<String>) -> Result<Self, AgentError> {
+    pub fn with_openai_key(self, api_key: impl Into<String>) -> Result<Self, AgentError> {
         let client = openai::Client::builder()
             .api_key(api_key.into())
             .build()?;
+        Ok(self.with_openai_key_client(client))
+    }
+
+    fn with_openai_key_client(mut self, client: openai::Client) -> Self {
         self.openai = Some(Arc::new(client));
-        Ok(self)
+        self
     }
 
     /// Read an env var, treating unset and empty as absent.
@@ -300,8 +341,8 @@ impl ModelRouter {
     /// [`default_model`](Self::default_model)).
     ///
     /// Built-ins: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CEREBRAS_API_KEY`.
-    /// BYOK: `KIMI_API_KEY` (+ optional `KIMI_BASE_URL`) and `MINIMAX_API_KEY`
-    /// (+ optional `MINIMAX_BASE_URL`).
+    /// BYOK: `KIMI_API_KEY` (+ optional `KIMI_BASE_URL`, Anthropic-compatible)
+    /// and `MINIMAX_API_KEY` (+ optional `MINIMAX_BASE_URL`, OpenAI-compatible).
     pub fn try_from_env() -> Result<Self, AgentError> {
         let mut router = Self::empty();
         if let Some(key) = Self::env_key("ANTHROPIC_API_KEY") {
@@ -315,13 +356,14 @@ impl ModelRouter {
             // compatible-provider registry: `cerebras/<model>` ids route to it.
             router = router.with_openai_provider(CEREBRAS_PROVIDER, CEREBRAS_BASE_URL, &key)?;
         }
-        // FORK: BYOK providers. Kimi defaults to the Kimi Platform endpoint;
-        // set KIMI_BASE_URL to use a different gateway (or the Kimi Code
-        // endpoint, subject to Kimi's coding-agent client restrictions).
+        // FORK: BYOK providers. Kimi rides the Anthropic-compatible registry
+        // (its OpenAI-compatible coding surface is gated to whitelisted coding
+        // agents). Defaults to the Kimi Code endpoint; set KIMI_BASE_URL to
+        // use a different Anthropic-compatible gateway.
         if let Some(key) = Self::env_key("KIMI_API_KEY") {
             let base_url =
                 Self::env_key("KIMI_BASE_URL").unwrap_or_else(|| KIMI_DEFAULT_BASE_URL.to_string());
-            router = router.with_openai_provider(KIMI_PROVIDER, &base_url, &key)?;
+            router = router.with_anthropic_provider(KIMI_PROVIDER, &base_url, &key)?;
         }
         if let Some(key) = Self::env_key("MINIMAX_API_KEY") {
             let base_url = Self::env_key("MINIMAX_BASE_URL")
@@ -335,7 +377,7 @@ impl ModelRouter {
     ///
     /// This is the only router the crate uses — every entry point routes through
     /// the same fully-populated instance, so a model id resolves identically
-    /// everywhere. Register additional OpenAI-compatible providers here as they
+    /// everywhere. Register additional compatible providers here as they
     /// are added.
     pub(crate) fn shared() -> Result<&'static ModelRouter, AgentError> {
         static ROUTER: OnceLock<ModelRouter> = OnceLock::new();
@@ -363,9 +405,8 @@ impl ModelRouter {
     ///
     /// This is the whole cost of adding a provider — models served by it are
     /// then reachable as `provider/<model-id>`. The extension point for the
-    /// open provider set (Cerebras is wired this way in [`try_from_env`]).
-    ///
-    /// [`try_from_env`]: Self::try_from_env
+    /// open provider set (Cerebras and MiniMax are wired this way in
+    /// [`try_from_env`](Self::try_from_env)).
     pub fn with_openai_provider(
         self,
         provider: impl Into<String>,
@@ -404,13 +445,6 @@ impl ModelRouter {
 
     /// Route a parsed model to the provider that serves it.
     fn route_model<'a>(&self, parsed: Model<'a>) -> Result<RoutedModel<'a>, AgentError> {
-        if parsed.provider() == ANTHROPIC_PROVIDER {
-            let client = self
-                .anthropic
-                .clone()
-                .ok_or_else(|| AgentError::UnknownModel(parsed.to_string()))?;
-            return Ok(RoutedModel::Anthropic(AnthropicModel::new(parsed, client)));
-        }
         if parsed.provider() == OPENAI_PROVIDER {
             let client = self
                 .openai
@@ -419,6 +453,10 @@ impl ModelRouter {
             return Ok(RoutedModel::OpenAiResponses(OpenAiResponsesModel::new(
                 parsed, client,
             )));
+        }
+        if let Some(client) = self.anthropic_compatible.get(parsed.provider()) {
+            let client = Arc::clone(client);
+            return Ok(RoutedModel::Anthropic(AnthropicModel::new(parsed, client)));
         }
         if let Some(client) = self.openai_compatible.get(parsed.provider()) {
             let client = Arc::clone(client);
@@ -437,7 +475,7 @@ impl ModelRouter {
     /// The fallback model: [`PredefinedModel::Smart`] routed through the
     /// registry.
     ///
-    /// FORK: `Smart` is remapped to `kimi/kimi-k3` (see `predefined_model.rs`),
+    /// FORK: `Smart` is remapped to `kimi/k3` (see `predefined_model.rs`),
     /// so the default works with no Anthropic key present. If the Smart
     /// provider is not configured either, fall back to the built-in Anthropic
     /// then OpenAI clients; panic only when the deployment has no providers
@@ -447,7 +485,7 @@ impl ModelRouter {
         if let Ok(routed) = self.route_model(smart) {
             return routed;
         }
-        if let Some(client) = &self.anthropic {
+        if let Some(client) = self.anthropic_compatible.get(ANTHROPIC_PROVIDER) {
             return RoutedModel::Anthropic(AnthropicModel::new(
                 Model {
                     provider: Cow::Borrowed(ANTHROPIC_PROVIDER),
