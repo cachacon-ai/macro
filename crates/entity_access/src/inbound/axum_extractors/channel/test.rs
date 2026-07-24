@@ -25,7 +25,7 @@ use uuid::Uuid;
 use super::*;
 use crate::{
     domain::models::{
-        AccessError, AccessLevel, AdminParticipantRole, BotId, CallChannelInfo,
+        AccessError, AccessLevel, AdminParticipantRole, BotAccessScope, BotId, CallChannelInfo,
         MemberParticipantRole, OwnerParticipantRole, UserTeamInfo, ViewOnly,
     },
     inbound::axum_extractors::test_support::{VALID_BOT_TOKEN, valid_bot_authentication},
@@ -79,6 +79,7 @@ impl EntityAccessService for FakeEntityAccessService {
     async fn generate_bot_entity_access_receipt<T: RequiredPermission>(
         &self,
         _bot_id: BotId,
+        _scope: BotAccessScope,
         _entity_id: &str,
         _entity_type: EntityType,
     ) -> Result<EntityAccessReceipt<T>, AccessError> {

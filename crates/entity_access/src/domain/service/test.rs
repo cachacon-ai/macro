@@ -3,9 +3,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::domain::models::{
-    AdminParticipantRole, BotId, CallChannelInfo, CommentAccessLevel, EditAccessLevel,
-    EntityAccessAuth, MemberParticipantRole, OwnerParticipantRole, ParticipantRole, UserTeamInfo,
-    ViewAccessLevel, ViewOnly,
+    AdminParticipantRole, BotAccessScope, BotId, BotReceiptScope, CallChannelInfo,
+    CommentAccessLevel, EditAccessLevel, EntityAccessAuth, MemberParticipantRole,
+    OwnerParticipantRole, ParticipantRole, UserTeamInfo, ViewAccessLevel, ViewOnly,
 };
 use macro_user_id::user_id::MacroUserIdStr;
 use models_permissions::share_permission::access_level::OwnerAccessLevel;
@@ -344,6 +344,12 @@ fn test_user_id() -> MacroUserIdStr<'static> {
 
 fn test_bot_id() -> BotId {
     BotId::new_from_uuid(uuid::uuid!("00000000-0000-0000-0000-000000000123"))
+}
+
+fn test_bot_scope() -> BotAccessScope {
+    BotAccessScope::Team {
+        team_id: uuid::uuid!("00000000-0000-0000-0000-000000000456"),
+    }
 }
 
 fn user_id(s: &str) -> MacroUserIdStr<'static> {
@@ -883,6 +889,7 @@ async fn generate_bot_entity_access_receipt_document_with_sufficient_access() {
     let receipt = service
         .generate_bot_entity_access_receipt::<ViewAccessLevel>(
             bot_id,
+            test_bot_scope(),
             "doc-1",
             EntityType::Document,
         )
@@ -891,6 +898,10 @@ async fn generate_bot_entity_access_receipt_document_with_sufficient_access() {
 
     assert!(matches!(receipt.auth(), EntityAccessAuth::Bot(id) if id.bot_id() == bot_id));
     assert_eq!(receipt.get_authenticated_bot().unwrap().bot_id(), bot_id);
+    assert_eq!(
+        receipt.get_authenticated_bot_auth().unwrap().scope(),
+        &BotReceiptScope::from(&test_bot_scope())
+    );
     assert!(matches!(
         receipt.get_authenticated_user(),
         Err(AccessError::Unauthorized)
@@ -913,6 +924,7 @@ async fn generate_bot_entity_access_receipt_document_with_insufficient_permissio
     let result = service
         .generate_bot_entity_access_receipt::<EditAccessLevel>(
             test_bot_id(),
+            test_bot_scope(),
             "doc-1",
             EntityType::Document,
         )
@@ -928,6 +940,7 @@ async fn generate_bot_entity_access_receipt_document_with_no_access() {
     let result = service
         .generate_bot_entity_access_receipt::<ViewAccessLevel>(
             test_bot_id(),
+            test_bot_scope(),
             "doc-1",
             EntityType::Document,
         )
@@ -946,6 +959,7 @@ async fn generate_bot_entity_access_receipt_channel_member_role_succeeds() {
     let receipt = service
         .generate_bot_entity_access_receipt::<MemberParticipantRole>(
             bot_id,
+            test_bot_scope(),
             "11111111-1111-1111-1111-111111111111",
             EntityType::Channel,
         )
@@ -969,6 +983,7 @@ async fn generate_bot_entity_access_receipt_channel_no_access_is_unauthorized() 
     let result = service
         .generate_bot_entity_access_receipt::<MemberParticipantRole>(
             test_bot_id(),
+            test_bot_scope(),
             "11111111-1111-1111-1111-111111111111",
             EntityType::Channel,
         )
@@ -985,6 +1000,7 @@ async fn generate_bot_entity_access_receipt_channel_not_found_is_preserved() {
     let result = service
         .generate_bot_entity_access_receipt::<MemberParticipantRole>(
             test_bot_id(),
+            test_bot_scope(),
             "11111111-1111-1111-1111-111111111111",
             EntityType::Channel,
         )
@@ -1001,6 +1017,7 @@ async fn generate_bot_entity_access_receipt_malformed_channel_id_is_bad_request(
     let result = service
         .generate_bot_entity_access_receipt::<MemberParticipantRole>(
             test_bot_id(),
+            test_bot_scope(),
             "not-a-uuid",
             EntityType::Channel,
         )
@@ -1019,6 +1036,7 @@ async fn generate_bot_entity_access_receipt_unsupported_types_are_bad_request() 
         let result = service
             .generate_bot_entity_access_receipt::<ViewAccessLevel>(
                 test_bot_id(),
+                test_bot_scope(),
                 "unsupported-entity",
                 entity_type,
             )

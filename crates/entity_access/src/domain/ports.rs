@@ -4,9 +4,9 @@
 
 use super::models::EntityType;
 use crate::domain::models::{
-    AccessError, AccessLevel, BotId, CallChannelInfo, ChannelRoleResult, CrmEntityAccess,
-    EntityAccessReceipt, EntityPermission, RequiredPermission, TeamRole, UserTeamInfo,
-    ViewAccessLevel,
+    AccessError, AccessLevel, BotAccessScope, BotId, CallChannelInfo, ChannelRoleResult,
+    CrmEntityAccess, EntityAccessReceipt, EntityPermission, RequiredPermission, TeamRole,
+    UserTeamInfo, ViewAccessLevel,
 };
 use macro_user_id::{lowercased::Lowercase, user_id::MacroUserId, user_id::MacroUserIdStr};
 use std::{collections::HashMap, future::Future};
@@ -245,6 +245,7 @@ pub trait EntityAccessService: Clone + Send + Sync + 'static {
     fn generate_bot_entity_access_receipt<T: RequiredPermission>(
         &self,
         bot_id: BotId,
+        scope: BotAccessScope,
         entity_id: &str,
         entity_type: EntityType,
     ) -> impl Future<Output = Result<EntityAccessReceipt<T>, AccessError>> + Send;
@@ -374,6 +375,7 @@ impl EntityAccessService for NoOpEntityAccessService {
     async fn generate_bot_entity_access_receipt<T: RequiredPermission>(
         &self,
         _bot_id: BotId,
+        _scope: BotAccessScope,
         _entity_id: &str,
         _entity_type: EntityType,
     ) -> Result<EntityAccessReceipt<T>, AccessError> {

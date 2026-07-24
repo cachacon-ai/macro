@@ -377,14 +377,50 @@ pub struct Entity {
     pub entity_type: EntityType,
 }
 
+/// Authentication context retained for a bot entity-access receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BotReceiptAuth {
+    bot_id: BotIdStr<'static>,
+    #[serde(flatten)]
+    scope: BotReceiptScope,
+}
+
+impl BotReceiptAuth {
+    /// Creates receipt authentication context for a bot and its access scope.
+    pub fn new(bot_id: BotIdStr<'static>, scope: BotReceiptScope) -> Self {
+        Self { bot_id, scope }
+    }
+
+    /// Returns the bot's canonical identifier.
+    pub fn bot_id(&self) -> BotId {
+        self.bot_id.bot_id()
+    }
+
+    /// Returns the bot's canonical storage principal.
+    pub fn bot_id_str(&self) -> &BotIdStr<'static> {
+        &self.bot_id
+    }
+
+    /// Returns the scope retained in the receipt.
+    pub fn scope(&self) -> &BotReceiptScope {
+        &self.scope
+    }
+}
+
+impl std::fmt::Display for BotReceiptAuth {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", self.bot_id)
+    }
+}
+
 /// The entity access auth type
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum EntityAccessAuth {
     /// The user is authenticated
     Authenticated(MacroUserIdStr<'static>),
-    /// A bot is authenticated.
-    Bot(BotIdStr<'static>),
+    /// A bot is authenticated under a specific access scope.
+    Bot(BotReceiptAuth),
     /// The user is unauthenticated
     Unauthenticated,
     /// Internally authenticated
@@ -443,10 +479,15 @@ impl<T: RequiredPermission> EntityAccessReceipt<T> {
     /// Creates an access receipt for an authenticated bot after validating the provided permission.
     pub fn try_new_bot(
         bot_id: BotIdStr<'static>,
+        scope: BotReceiptScope,
         entity: Entity,
         entity_permission: EntityPermission,
     ) -> Result<EntityAccessReceipt<T>, AccessError> {
-        Self::try_new(EntityAccessAuth::Bot(bot_id), entity, entity_permission)
+        Self::try_new(
+            EntityAccessAuth::Bot(BotReceiptAuth::new(bot_id, scope)),
+            entity,
+            entity_permission,
+        )
     }
 
     /// Get the authenticated user or return an authorization error.
@@ -459,13 +500,27 @@ impl<T: RequiredPermission> EntityAccessReceipt<T> {
         }
     }
 
-    /// Get the authenticated bot or return an authorization error.
+    /// Get the authenticated bot's canonical storage principal or return an authorization error.
     pub fn get_authenticated_bot(&self) -> Result<&BotIdStr<'static>, AccessError> {
+        Ok(self.get_authenticated_bot_auth()?.bot_id_str())
+    }
+
+    /// Get the authenticated bot and receipt scope or return an authorization error.
+    pub fn get_authenticated_bot_auth(&self) -> Result<&BotReceiptAuth, AccessError> {
         match &self.auth {
-            EntityAccessAuth::Bot(bot_id) => Ok(bot_id),
+            EntityAccessAuth::Bot(bot_auth) => Ok(bot_auth),
             EntityAccessAuth::Authenticated(_)
             | EntityAccessAuth::Unauthenticated
             | EntityAccessAuth::Internal => Err(AccessError::Unauthorized),
+        }
+    }
+
+    /// Returns the direct user or verified acting user represented by this receipt.
+    pub fn acting_user_id(&self) -> Option<&MacroUserIdStr<'static>> {
+        match &self.auth {
+            EntityAccessAuth::Authenticated(user_id) => Some(user_id),
+            EntityAccessAuth::Bot(bot_auth) => bot_auth.scope().acting_user_id(),
+            EntityAccessAuth::Unauthenticated | EntityAccessAuth::Internal => None,
         }
     }
 
@@ -537,11 +592,12 @@ impl<T: RequiredPermission> EntityAccessReceipt<T> {
     /// permission.
     pub fn dangerously_assert_bot(
         bot_id: BotIdStr<'static>,
+        scope: BotReceiptScope,
         entity_id: &str,
         entity_type: EntityType,
     ) -> EntityAccessReceipt<T> {
         EntityAccessReceipt {
-            auth: EntityAccessAuth::Bot(bot_id),
+            auth: EntityAccessAuth::Bot(BotReceiptAuth::new(bot_id, scope)),
             entity: Entity {
                 entity_id: entity_id.to_string(),
                 entity_type,

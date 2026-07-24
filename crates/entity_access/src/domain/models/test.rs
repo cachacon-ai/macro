@@ -15,6 +15,18 @@ fn document() -> Entity {
     }
 }
 
+fn user_receipt_scope() -> BotReceiptScope {
+    BotReceiptScope::User {
+        acting_user: user_id(),
+    }
+}
+
+fn team_receipt_scope() -> BotReceiptScope {
+    BotReceiptScope::Team {
+        team_id: uuid::uuid!("00000000-0000-0000-0000-000000000456"),
+    }
+}
+
 #[test]
 fn user_access_scope_preserves_organization_and_converts_to_receipt_scope() {
     let user_id = user_id();
@@ -104,13 +116,32 @@ fn any_entity_permission_accepts_every_permission() {
 }
 
 #[test]
-fn bot_auth_serializes_as_canonical_storage_principal() {
-    let serialized =
-        serde_json::to_value(EntityAccessAuth::Bot(bot_id().into_storage_id())).unwrap();
+fn user_scoped_bot_auth_serializes_bot_scope_and_acting_user() {
+    let bot_auth = BotReceiptAuth::new(bot_id().into_storage_id(), user_receipt_scope());
+    let serialized = serde_json::to_value(EntityAccessAuth::Bot(bot_auth)).unwrap();
 
     assert_eq!(
         serialized,
-        serde_json::json!("bot|00000000-0000-0000-0000-000000000123")
+        serde_json::json!({
+            "bot_id": "bot|00000000-0000-0000-0000-000000000123",
+            "scope": "user",
+            "acting_user": "macro|bot-user@example.com"
+        })
+    );
+}
+
+#[test]
+fn team_scoped_bot_auth_serializes_bot_scope_and_team() {
+    let bot_auth = BotReceiptAuth::new(bot_id().into_storage_id(), team_receipt_scope());
+    let serialized = serde_json::to_value(EntityAccessAuth::Bot(bot_auth)).unwrap();
+
+    assert_eq!(
+        serialized,
+        serde_json::json!({
+            "bot_id": "bot|00000000-0000-0000-0000-000000000123",
+            "scope": "team",
+            "team_id": "00000000-0000-0000-0000-000000000456"
+        })
     );
 }
 
@@ -118,6 +149,7 @@ fn bot_auth_serializes_as_canonical_storage_principal() {
 fn try_new_bot_enforces_required_permission() {
     let result = EntityAccessReceipt::<EditAccessLevel>::try_new_bot(
         bot_id().into_storage_id(),
+        user_receipt_scope(),
         document(),
         EntityPermission::AccessLevel {
             access_level: AccessLevel::View,
@@ -131,6 +163,7 @@ fn try_new_bot_enforces_required_permission() {
 fn bot_receipt_returns_bot_and_rejects_authenticated_user() {
     let receipt = EntityAccessReceipt::<ViewAccessLevel>::try_new_bot(
         bot_id().into_storage_id(),
+        user_receipt_scope(),
         document(),
         EntityPermission::AccessLevel {
             access_level: AccessLevel::View,
@@ -142,8 +175,32 @@ fn bot_receipt_returns_bot_and_rejects_authenticated_user() {
         receipt.get_authenticated_bot().unwrap(),
         &bot_id().into_storage_id()
     );
+    let bot_auth = receipt.get_authenticated_bot_auth().unwrap();
+    assert_eq!(bot_auth.bot_id(), bot_id());
+    assert_eq!(bot_auth.to_string(), bot_id().into_storage_id().to_string());
+    assert_eq!(bot_auth.scope(), &user_receipt_scope());
+    assert_eq!(receipt.acting_user_id(), Some(&user_id()));
     assert!(matches!(
         receipt.get_authenticated_user(),
+        Err(AccessError::Unauthorized)
+    ));
+}
+
+#[test]
+fn acting_user_id_returns_direct_authenticated_user() {
+    let user_id = user_id();
+    let receipt = EntityAccessReceipt::<ViewAccessLevel>::try_new_authenticated_user(
+        user_id.clone(),
+        document(),
+        EntityPermission::AccessLevel {
+            access_level: AccessLevel::View,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(receipt.acting_user_id(), Some(&user_id));
+    assert!(matches!(
+        receipt.get_authenticated_bot_auth(),
         Err(AccessError::Unauthorized)
     ));
 }
@@ -152,6 +209,7 @@ fn bot_receipt_returns_bot_and_rejects_authenticated_user() {
 fn dangerously_assert_bot_creates_owner_level_test_receipt() {
     let receipt = EntityAccessReceipt::<ViewAccessLevel>::dangerously_assert_bot(
         bot_id().into_storage_id(),
+        team_receipt_scope(),
         "document-1",
         EntityType::Document,
     );
@@ -159,6 +217,11 @@ fn dangerously_assert_bot_creates_owner_level_test_receipt() {
     assert_eq!(
         receipt.get_authenticated_bot().unwrap(),
         &bot_id().into_storage_id()
+    );
+    assert_eq!(receipt.acting_user_id(), None);
+    assert_eq!(
+        receipt.get_authenticated_bot_auth().unwrap().scope(),
+        &team_receipt_scope()
     );
     assert!(matches!(
         receipt.entity_permission(),

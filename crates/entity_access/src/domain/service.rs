@@ -4,9 +4,9 @@ use std::{collections::HashMap, marker::PhantomData, str::FromStr};
 
 use crate::domain::{
     models::{
-        AccessError, AccessLevel, BotId, CallChannelInfo, ChannelRoleResult, CrmEntityAccess,
-        Entity, EntityAccessAuth, EntityAccessReceipt, EntityPermission, EntityType,
-        RequiredPermission, TeamRole, UserTeamInfo, ViewAccessLevel,
+        AccessError, AccessLevel, BotAccessScope, BotId, CallChannelInfo, ChannelRoleResult,
+        CrmEntityAccess, Entity, EntityAccessAuth, EntityAccessReceipt, EntityPermission,
+        EntityType, RequiredPermission, TeamRole, UserTeamInfo, ViewAccessLevel,
     },
     ports::{AccessRepository, EntityAccessService},
 };
@@ -250,6 +250,7 @@ where
     async fn generate_bot_entity_access_receipt<T: RequiredPermission>(
         &self,
         bot_id: BotId,
+        scope: BotAccessScope,
         entity_id: &str,
         entity_type: EntityType,
     ) -> Result<EntityAccessReceipt<T>, AccessError> {
@@ -277,6 +278,7 @@ where
 
         EntityAccessReceipt::try_new_bot(
             bot_id.into_storage_id(),
+            (&scope).into(),
             Entity {
                 entity_id: entity_id.to_string(),
                 entity_type,

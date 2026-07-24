@@ -28,7 +28,7 @@ use super::EntityPermissionExtractor;
 use crate::{
     domain::{
         models::{
-            AccessError, AccessLevel, BotId, CallChannelInfo, EntityAccessAuth,
+            AccessError, AccessLevel, BotAccessScope, BotId, CallChannelInfo, EntityAccessAuth,
             EntityAccessReceipt, EntityPermission, EntityType, RequiredPermission, UserTeamInfo,
         },
         ports::EntityAccessService,
@@ -81,6 +81,7 @@ impl EntityAccessService for FakeEntityAccessService {
     async fn generate_bot_entity_access_receipt<T: RequiredPermission>(
         &self,
         _bot_id: BotId,
+        _scope: BotAccessScope,
         _entity_id: &str,
         _entity_type: EntityType,
     ) -> Result<EntityAccessReceipt<T>, AccessError> {
