@@ -77,49 +77,6 @@ pub async fn get_user_source_ids(
     }
 }
 
-/// Grabs a bot's active channel, owning team, and principal source ids.
-#[tracing::instrument(skip(pool), err)]
-#[cfg_attr(
-    not(test),
-    cached(
-        time = 30,
-        result = true,
-        key = "String",
-        convert = r#"{bot_id.to_string()}"#,
-    )
-)]
-pub async fn get_bot_source_ids(
-    pool: &Pool<Postgres>,
-    bot_id: &BotIdStr<'_>,
-) -> anyhow::Result<SourceIds> {
-    let source_ids = sqlx::query_scalar!(
-        r#"
-        WITH active_bot AS (
-            SELECT team_id
-            FROM bots
-            WHERE id = $2 AND deleted_at IS NULL
-        )
-        SELECT cp.channel_id::text
-        FROM active_bot
-        JOIN comms_channel_participants cp
-            ON cp.user_id = $1 AND cp.left_at IS NULL
-        UNION ALL
-        SELECT team_id::text
-        FROM active_bot
-        WHERE team_id IS NOT NULL
-        UNION ALL
-        SELECT $1
-        FROM active_bot
-        "#,
-        bot_id.as_ref(),
-        bot_id.as_uuid(),
-    )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(SourceIds(source_ids.into_iter().flatten().collect()))
-}
-
 /// Grabs the source ids available to a bot operating in its owning team's scope.
 #[tracing::instrument(skip(pool), err)]
 #[cfg_attr(
