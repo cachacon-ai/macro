@@ -14,11 +14,11 @@ import {
 const PROVIDER_OF = (m: TModel) => MODEL_PROVIDER[m];
 
 describe('modelsForPlan / defaultModelForPlan', () => {
-  it('gives paid users every model and an Anthropic-smart default', () => {
+  it('gives paid users every model and a Kimi-smart default', () => {
     const paid = modelsForPlan(true);
     // Every known model is selectable for a paid user.
     expect([...paid].sort()).toEqual([...Object.values(Model)].sort());
-    expect(DEFAULT_MODEL).toBe(Model.sonnet5);
+    expect(DEFAULT_MODEL).toBe(Model.kimiK3);
     expect(defaultModelForPlan(true)).toBe(DEFAULT_MODEL);
   });
 
@@ -27,6 +27,7 @@ describe('modelsForPlan / defaultModelForPlan', () => {
     expect(free).toEqual([FREE_DEFAULT_MODEL]);
     expect(defaultModelForPlan(false)).toBe(FREE_DEFAULT_MODEL);
     // The premium models are *not* in a free user's selectable set.
+    expect(free).not.toContain(Model.kimiK3);
     expect(free).not.toContain(Model.opus48);
     expect(free).not.toContain(Model.gpt55);
   });
@@ -89,24 +90,45 @@ describe('alternateProviderModel', () => {
     const failedProviders = new Set<string>();
     let current: TModel = Model.opus48; // anthropic
 
-    // Anthropic has an outage → suggest a different provider.
+    // Anthropic has an outage → suggest a different provider (Kimi is first
+    // in declaration order).
     failedProviders.add(PROVIDER_OF(current));
     const first = alternateProviderModel(current, {
       candidates,
       failedProviders,
     });
     expect(first).toBeDefined();
-    expect(PROVIDER_OF(first!)).toBe('openai');
+    expect(PROVIDER_OF(first!)).toBe('kimi');
     current = first!;
 
-    // OpenAI then also fails → there is no un-failed provider left, so we must
-    // NOT bounce the user back to Anthropic (which already failed this session).
+    // Kimi then also fails → suggest MiniMax, never bouncing back to a
+    // provider that already failed this session.
     failedProviders.add(PROVIDER_OF(current));
     const second = alternateProviderModel(current, {
       candidates,
       failedProviders,
     });
-    expect(second).toBeUndefined();
+    expect(second).toBeDefined();
+    expect(PROVIDER_OF(second!)).toBe('minimax');
+    current = second!;
+
+    // MiniMax fails too → OpenAI is the only un-failed provider left.
+    failedProviders.add(PROVIDER_OF(current));
+    const third = alternateProviderModel(current, {
+      candidates,
+      failedProviders,
+    });
+    expect(third).toBeDefined();
+    expect(PROVIDER_OF(third!)).toBe('openai');
+    current = third!;
+
+    // Every provider has now failed → give up rather than cycling.
+    failedProviders.add(PROVIDER_OF(current));
+    const fourth = alternateProviderModel(current, {
+      candidates,
+      failedProviders,
+    });
+    expect(fourth).toBeUndefined();
   });
 
   it('still avoids the current provider when no failures are recorded', () => {
@@ -114,6 +136,6 @@ describe('alternateProviderModel', () => {
       candidates: [...Object.values(Model)] as TModel[],
       failedProviders: new Set(),
     });
-    expect(PROVIDER_OF(alt!)).toBe('openai');
+    expect(PROVIDER_OF(alt!)).toBe('kimi');
   });
 });
