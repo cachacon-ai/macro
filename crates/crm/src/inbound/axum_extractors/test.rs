@@ -10,9 +10,9 @@ use axum::{
 use chrono::{DateTime, Utc};
 use entity_access::domain::{
     models::{
-        AccessError, AccessLevel, BotAccessScope, BotId, CallChannelInfo, EditAccessLevel,
-        EntityAccessReceipt, EntityPermission, EntityType, MemberTeamRole, RequiredPermission,
-        UserTeamInfo, ViewAccessLevel,
+        AccessError, AccessLevel, AnyEntityPermission, BotAccessScope, BotId, CallChannelInfo,
+        EditAccessLevel, EntityAccessReceipt, EntityPermission, EntityType, MemberTeamRole,
+        RequiredPermission, UserTeamInfo, ViewAccessLevel,
     },
     ports::EntityAccessService,
 };
@@ -397,7 +397,7 @@ impl CrmService for FakeCrmService {
 
     async fn create_crm_comment(
         &self,
-        _access: &CrmCommentReceipt<ViewAccessLevel>,
+        _access: &CrmCommentReceipt<AnyEntityPermission>,
         _owner: &str,
         _thread_id: Option<Uuid>,
         _thread_metadata: Option<Value>,
@@ -409,7 +409,7 @@ impl CrmService for FakeCrmService {
 
     async fn get_crm_comment_threads(
         &self,
-        _access: &CrmCommentReceipt<ViewAccessLevel>,
+        _access: &CrmCommentReceipt<AnyEntityPermission>,
     ) -> Result<Vec<CrmCommentThread>, CrmError> {
         panic!("unexpected get_crm_comment_threads call")
     }
