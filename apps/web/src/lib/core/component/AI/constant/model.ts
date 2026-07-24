@@ -1,5 +1,7 @@
 import AnthropicIcon from '@core/component/AI/assets/anthropic.svg';
 import OpenAiIcon from '@core/component/AI/assets/openai.svg';
+import KimiIcon from '@core/component/AI/assets/kimi.svg';
+import MinimaxIcon from '@core/component/AI/assets/minimax.svg';
 
 /**
  * Frontend-owned set of model ids. These are the `provider/model` ids the
@@ -7,8 +9,16 @@ import OpenAiIcon from '@core/component/AI/assets/openai.svg';
  * picks the provider) — the backend `AgentModel` enum is intentionally not
  * exposed to the frontend. Reference these constants instead of hardcoding
  * strings.
+ *
+ * FORK (BYOK): the list leads with the fork's providers — Kimi (Kimi
+ * Platform endpoint) and MiniMax (international endpoint). The Anthropic /
+ * OpenAI entries remain for deployments that configure those keys.
  */
 export const Model = {
+  kimiK3: 'kimi/kimi-k3',
+  kimiK27CodeHS: 'kimi/kimi-k2.7-code-highspeed',
+  minimaxM3: 'minimax/MiniMax-M3',
+  minimaxM27HS: 'minimax/MiniMax-M2.7-highspeed',
   sonnet5: 'anthropic/claude-sonnet-5',
   opus48: 'anthropic/claude-opus-4-8',
   haiku45: 'anthropic/claude-haiku-4-5',
@@ -27,6 +37,10 @@ type ExhaustiveMap = {
 };
 
 export const MODEL_PRETTYNAME: ExhaustiveMap = {
+  'kimi/kimi-k3': 'Kimi K3',
+  'kimi/kimi-k2.7-code-highspeed': 'Kimi K2.7 Code HS',
+  'minimax/MiniMax-M3': 'MiniMax M3',
+  'minimax/MiniMax-M2.7-highspeed': 'MiniMax M2.7 HS',
   'anthropic/claude-sonnet-5': 'Sonnet 5',
   'anthropic/claude-opus-4-8': 'Opus 4.8',
   'anthropic/claude-haiku-4-5': 'Haiku 4.5',
@@ -36,6 +50,10 @@ export const MODEL_PRETTYNAME: ExhaustiveMap = {
 } as const;
 
 export const MODEL_PROVIDER_ICON: ExhaustiveMap = {
+  'kimi/kimi-k3': KimiIcon,
+  'kimi/kimi-k2.7-code-highspeed': KimiIcon,
+  'minimax/MiniMax-M3': MinimaxIcon,
+  'minimax/MiniMax-M2.7-highspeed': MinimaxIcon,
   'anthropic/claude-sonnet-5': AnthropicIcon,
   'anthropic/claude-opus-4-8': AnthropicIcon,
   'anthropic/claude-haiku-4-5': AnthropicIcon,
@@ -44,15 +62,15 @@ export const MODEL_PROVIDER_ICON: ExhaustiveMap = {
   'openai/gpt-5-mini': OpenAiIcon,
 };
 
-/** Default model for paid users. */
-export const DEFAULT_MODEL: TModel = Model.sonnet5;
+/** Default model for paid users. FORK: Kimi K3. */
+export const DEFAULT_MODEL: TModel = Model.kimiK3;
 
 /**
  * Default model for free users. Free users aren't entitled to the premium
  * "smart" models (which the backend rejects with a 403), so they start on the
- * fast model instead of Opus.
+ * fast model instead of the flagship. FORK: MiniMax M2.7 HighSpeed.
  */
-export const FREE_DEFAULT_MODEL: TModel = Model.haiku45;
+export const FREE_DEFAULT_MODEL: TModel = Model.minimaxM27HS;
 
 /** Models a paid user may select — the full set. */
 export const PAID_MODELS: readonly TModel[] = Object.values(Model);
@@ -77,6 +95,10 @@ export function modelsForPlan(hasPaidAccess: boolean): readonly TModel[] {
 
 /** Provider serving each model — mirrors the backend `provider` field. */
 export const MODEL_PROVIDER: ExhaustiveMap = {
+  'kimi/kimi-k3': 'kimi',
+  'kimi/kimi-k2.7-code-highspeed': 'kimi',
+  'minimax/MiniMax-M3': 'minimax',
+  'minimax/MiniMax-M2.7-highspeed': 'minimax',
   'anthropic/claude-sonnet-5': 'anthropic',
   'anthropic/claude-opus-4-8': 'anthropic',
   'anthropic/claude-haiku-4-5': 'anthropic',
