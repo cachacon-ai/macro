@@ -26,12 +26,12 @@ type ProviderDef = {
   }) => (modelId: string) => LanguageModel;
 };
 
-// FORK (BYOK): `kimi` and `minimax` ride the OpenAI-compatible Chat
-// Completions API — `createOpenAI(...).chat(modelId)` forces the Chat
-// Completions protocol (rather than Responses) against the provider's base
-// URL, so no extra SDK dependency is needed. Base URLs come from the
-// `KIMI_BASE_URL` / `MINIMAX_BASE_URL` bindings, defaulting to the Kimi
-// Platform and MiniMax international endpoints.
+// FORK (BYOK): `kimi` rides the Anthropic-compatible Messages API (its
+// OpenAI-compatible coding surface is gated to whitelisted coding agents);
+// `minimax` rides the OpenAI-compatible Chat Completions API via
+// `createOpenAI(...).chat(modelId)`. Base URLs come from the `KIMI_BASE_URL`
+// / `MINIMAX_BASE_URL` bindings, defaulting to the Kimi Code and MiniMax
+// international endpoints.
 const PROVIDERS = {
   anthropic: {
     key: 'ANTHROPIC_API_KEY',
@@ -48,11 +48,9 @@ const PROVIDERS = {
   kimi: {
     key: 'KIMI_API_KEY',
     baseURLKey: 'KIMI_BASE_URL',
-    defaultBaseURL: 'https://api.moonshot.ai/v1',
-    create: ({ apiKey, baseURL }: { apiKey: string; baseURL?: string }) => {
-      const provider = createOpenAI({ apiKey, baseURL });
-      return (modelId: string) => provider.chat(modelId);
-    },
+    defaultBaseURL: 'https://api.kimi.com/coding',
+    create: ({ apiKey, baseURL }: { apiKey: string; baseURL?: string }) =>
+      createAnthropic({ apiKey, baseURL }),
   },
   minimax: {
     key: 'MINIMAX_API_KEY',
