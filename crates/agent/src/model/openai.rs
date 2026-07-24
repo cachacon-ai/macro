@@ -33,17 +33,22 @@ impl<'a> OpenAiChatCompletionsModel<'a> {
     /// `None` if the model doesn't support it.
     ///
     /// The Chat Completions API takes a flat `reasoning_effort` field, accepted
-    /// only by reasoning models (the GPT-5 family and the `o`-series); anything
-    /// else returns `None`, since sending it elsewhere 400s. `mini` / `nano`
-    /// variants get a lower effort. `temperature` is never set (reasoning models
-    /// reject it).
+    /// only by reasoning models (the GPT-5 family, the `o`-series, and Kimi K3
+    /// which documents the same field); anything else returns `None`, since
+    /// sending it elsewhere 400s. `mini` / `nano` variants get a lower effort.
+    /// `temperature` is never set (reasoning models reject it).
+    ///
+    /// MiniMax models and Kimi K2.7 Code intentionally get `None`: MiniMax
+    /// reasoning cannot be toggled off on the OpenAI-compatible API (and an
+    /// unknown field risks a 400), and K2.7 Code thinking is always on.
     pub fn thinking_params(&self) -> Option<serde_json::Value> {
         let model = self.model.name().to_lowercase();
 
         let is_reasoning = model.contains("gpt-5")
             || model.starts_with("o1")
             || model.starts_with("o3")
-            || model.starts_with("o4");
+            || model.starts_with("o4")
+            || model.starts_with("kimi-k3");
         if !is_reasoning {
             return None;
         }
