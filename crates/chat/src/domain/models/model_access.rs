@@ -24,7 +24,11 @@ pub const CHAT_MODELS: &[&str] = &[
 ];
 
 /// The default model for professional (paid) users.
-pub const PAID_DEFAULT_MODEL: &str = "kimi/k3";
+/// FORK: this is a single-user fork — no paid concept, so the paid default is
+/// the same MiniMax HS model as free. (The fork owner wanted "no paid anything
+/// at all"; the picker still respects the plan gate elsewhere, but chat
+/// defaults to MiniMax regardless.)
+pub const PAID_DEFAULT_MODEL: &str = "minimax/MiniMax-M2.7-highspeed";
 
 /// The only model available to free (non-professional) users.
 pub const FREE_MODEL: &str = "minimax/MiniMax-M2.7-highspeed";

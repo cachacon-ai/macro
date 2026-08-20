@@ -63,8 +63,11 @@ export const MODEL_PROVIDER_ICON: ExhaustiveMap = {
   'openai/gpt-5-mini': OpenAiIcon,
 };
 
-/** Default model for paid users. FORK: Kimi K3. */
-export const DEFAULT_MODEL: TModel = Model.kimiK3;
+/** Default model for paid users. FORK: MiniMax M2.7 HighSpeed — this is a
+ * single-user fork with no paid tier, so the default is MiniMax HS regardless
+ * of plan. The picker still respects the plan gate elsewhere (see
+ * modelsForPlan), but the chat default lands on MiniMax. */
+export const DEFAULT_MODEL: TModel = Model.minimaxM27HS;
 
 /**
  * Default model for free users. Free users aren't entitled to the premium
